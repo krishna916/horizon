@@ -9,7 +9,7 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.krishnamurti</groupId>
-	<artifactId>my-horizon</artifactId>
+	<artifactId>horizon</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name/>
 	<description/>

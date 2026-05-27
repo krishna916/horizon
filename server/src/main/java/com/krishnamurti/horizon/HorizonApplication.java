@@ -1,13 +1,13 @@
-package com.krishnamurti.my_horizon;
+package com.krishnamurti.horizon;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class MyHorizonApplication {
+public class HorizonApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(MyHorizonApplication.class, args);
+		SpringApplication.run(HorizonApplication.class, args);
 	}
 
 }

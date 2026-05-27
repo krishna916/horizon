@@ -1,6 +1,6 @@
-# Project Context & Workflows: my-horizon
+# Project Context & Workflows: horizon
 
-Welcome to **my-horizon**, a personal management platform. This project is structured as a full-stack application with a Java Spring Boot backend and a React/TypeScript frontend.
+Welcome to **horizon**, a personal management platform. This project is structured as a full-stack application with a Java Spring Boot backend and a React/TypeScript frontend.
 
 ---
 
@@ -27,7 +27,7 @@ my-horizon/
 └── server/                     # Backend Spring Boot application
     ├── src/
     │   ├── main/
-    │   │   ├── java/           # Java source code (com.krishnamurti.my_horizon)
+    │   │   ├── java/           # Java source code (com.krishnamurti.horizon)
     │   │   └── resources/      # Application properties, db migrations, templates
     │   └── test/               # JUnit tests and Testcontainers configurations
     ├── compose.yaml            # Local Docker Compose setup (PostgreSQL)
@@ -50,8 +50,8 @@ The backend is built with Spring Boot 4.0.6 and targets Java 25.
   - **Lombok** (`lombok`)
   - **Docker Compose & Testcontainers** (`spring-boot-docker-compose`, `spring-boot-testcontainers`)
 - **[compose.yaml](file:///D:/projects/my-horizon/server/compose.yaml)**: Defines a PostgreSQL container (`postgres:latest`) automatically wired up during development.
-- **[application.yaml](file:///D:/projects/my-horizon/server/src/main/resources/application.yaml)**: Base configuration setting the application name as `my-horizon`.
-- **[MyHorizonApplication.java](file:///D:/projects/my-horizon/server/src/main/java/com/krishnamurti/my_horizon/MyHorizonApplication.java)**: The main entry point of the Spring Boot application.
+- **[application.yaml](file:///D:/projects/my-horizon/server/src/main/resources/application.yaml)**: Base configuration setting the application name as `horizon`.
+- **[HorizonApplication.java](file:///D:/projects/my-horizon/server/src/main/java/com/krishnamurti/horizon/HorizonApplication.java)**: The main entry point of the Spring Boot application.
 
 ### Local Development Workflows (Backend)
 Navigate to the `server/` directory before running these commands:
@@ -63,7 +63,7 @@ Navigate to the `server/` directory before running these commands:
    *Note: Thanks to the Spring Boot Docker Compose module integration, running this command will automatically pull and start the PostgreSQL container defined in [compose.yaml](file:///D:/projects/my-horizon/server/compose.yaml) and wire up the database connection properties dynamically.*
 
 2. **Run Application via Testcontainers**:
-   Execute the `main` method of **[TestMyHorizonApplication.java](file:///D:/projects/my-horizon/server/src/test/java/com/krishnamurti/my_horizon/TestMyHorizonApplication.java)**. This spins up the database dependencies using Testcontainers for isolated local runs.
+   Execute the `main` method of **[TestHorizonApplication.java](file:///D:/projects/my-horizon/server/src/test/java/com/krishnamurti/horizon/TestHorizonApplication.java)**. This spins up the database dependencies using Testcontainers for isolated local runs.
 
 3. **Running Tests**:
    ```bash
