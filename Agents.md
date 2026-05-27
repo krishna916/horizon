@@ -117,4 +117,14 @@ Navigate to the `client/` directory before running these commands:
 
 * **Database Schema Changes**: Do not apply schema modifications manually. Always write a Flyway migration script in `server/src/main/resources/db/migration/`.
 * **Security & Authentication**: Spring Security is active in dependencies. Make sure to define proper endpoint access rules/configurations as APIs are introduced.
-* **Component Styling**: For web development, stick to modern, premium aesthetics (CSS custom properties, smooth transitions, proper font pairing, and responsive layouts). Avoid standard browser styling.
+* **Component Styling**: CSS framework and component library choices are **undecided** (see [docs/ai/architecture.md](file:///D:/projects/my-horizon/docs/ai/architecture.md) > Open Decisions). AI should ask the user before choosing a CSS approach for new work. Regardless of framework choice, prioritize modern, premium aesthetics (smooth transitions, proper font pairing, responsive layouts). Avoid standard browser styling.
+
+---
+
+## 📚 Project Foundation
+
+For comprehensive project context, engineering philosophy, conventions, and architectural decisions, see the **AI Foundation Documents**:
+
+→ **[docs/ai/README.md](file:///D:/projects/my-horizon/docs/ai/README.md)** — Start here
+
+These documents are designed to be read by AI systems for long-term project context. Always consult them before making architectural or convention decisions.
