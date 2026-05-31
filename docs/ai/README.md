@@ -60,6 +60,8 @@ Which file do you need?
   *Read this when writing code to know how to structure directories, name things, design APIs, and write tests.*
 - **[architecture.md](file:///D:/projects/my-horizon/docs/ai/architecture.md)**: "The Blueprint"
   *Read this to understand the tech stack, domain relationships, entity patterns, and security rules.*
+- **[tech-stack.md](file:///D:/projects/my-horizon/docs/ai/tech-stack.md)**: "The Ledger"
+  *Read this for a detailed breakdown of the exact libraries, frameworks, and tools used in both frontend and backend.*
 - **[ai-rules.md](file:///D:/projects/my-horizon/docs/ai/ai-rules.md)**: "The Contract"
   *Read this to understand behavioral expectations for AI systems (e.g., reuse before create, ask before assuming).*
 - **[decisions.md](file:///D:/projects/my-horizon/docs/ai/decisions.md)**: "The Log"

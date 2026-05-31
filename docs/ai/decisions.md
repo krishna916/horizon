@@ -70,6 +70,28 @@ Significant technical decisions are recorded here in a lightweight ADR format. T
 
 ---
 
+---
+
+### ADR-006: Frontend UI Stack — TailwindCSS v4 + shadcn/ui
+- **Date:** 2026-05-31
+- **Status:** Accepted
+- **Context:** Serious UI work is beginning. The CSS framework and component library decisions were explicitly flagged as open in ADR design documents. A modern, scalable, and productive stack was needed.
+- **Decision:** Adopt TailwindCSS v4 (via `@tailwindcss/vite`), shadcn/ui (Radix Vega preset), Radix UI primitives, Lucide React icons, and the clsx + tailwind-merge + CVA utility trio.
+- **Rationale:**
+  - TailwindCSS v4 integrates natively with Vite via the official `@tailwindcss/vite` plugin — no separate config file needed.
+  - shadcn/ui provides copy-owned, accessible, unstyled-first components. No vendor lock-in; components live in `src/components/ui/`.
+  - Radix UI ensures accessibility out of the box (keyboard navigation, ARIA attributes).
+  - Lucide React is the default icon library in the Vega preset and has a consistent, clean aesthetic.
+  - `cn()` utility (clsx + tailwind-merge) is the standard shadcn pattern for conditional class composition.
+  - CVA (class-variance-authority) enables structured, type-safe component variant management.
+- **Consequences:**
+  - All UI components go through the `components/ui/` layer first, then `components/shared/` for Horizon-specific wrappers.
+  - Tailwind classes are the primary styling mechanism — no global CSS unless strictly necessary.
+  - Component variants must be defined using CVA, not ad-hoc conditional strings.
+  - See `docs/architecture/adr/ADR-002-frontend-ui-foundation.md` for component ownership rules.
+
+---
+
 *New ADRs should be appended here as decisions are made. Number them sequentially.*
 
 ---
@@ -81,7 +103,8 @@ This section captures how the project might evolve. These are **not commitments*
 ### Near-Term (next few months)
 - **Task management v1** — full CRUD, basic statuses, priorities, due dates
 - **Auth system** — JWT login/register, then Google OAuth
-- **CSS/component framework decision** — must be resolved before significant UI work
+- ~~**CSS/component framework decision**~~ — ✅ Resolved (ADR-006: TailwindCSS v4 + shadcn/ui)
+- **Frontend routing** — React Router or TanStack Router — decide before first multi-page UI work
 - **CI/CD pipeline** — GitHub Actions for running tests on PR, basic deployment automation
 - **Project tracker** — choose a tool for issue tracking (GitHub Issues, Linear, etc.)
 
@@ -128,7 +151,7 @@ The current monolith is appropriate. Here are signals that would justify increas
 | **Frontend routing library?** | React Router is the standard, but alternatives exist | Affects navigation architecture | Before first multi-page UI work |
 | **Frontend state management?** | React context, Zustand, Jotai, Redux? Or just component state + URL params? | Affects how data flows through the frontend | Before frontend grows beyond a few components |
 | **Frontend data fetching?** | Raw fetch + custom hooks vs. TanStack Query vs. SWR? | Affects caching, loading states, error handling patterns | Before second API integration |
-| **CSS/component framework?** | TailwindCSS, vanilla CSS, Mantine, shadcn/ui, etc. | Affects every UI component | Before serious UI work begins |
+| ~~**CSS/component framework?**~~ | ✅ Resolved: TailwindCSS v4 + shadcn/ui (ADR-006) | — | Done |
 | **Project tracker?** | GitHub Issues, Linear, Jira, or something else? | Affects branch naming (feature/<issueId>) | Before structured development begins |
 | **Soft delete strategy?** | `is_deleted` boolean vs. `deleted_at` timestamp vs. separate archive table | Affects query patterns and data recovery | Before first entity with delete support |
 

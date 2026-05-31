@@ -17,11 +17,23 @@ The codebase is divided into two primary directories:
 ```text
 my-horizon/
 ├── client/                     # Frontend React application
-│   ├── src/                    # React components and source code
+│   ├── src/
+│   │   ├── app/                # App-level setup (providers, routes)
+│   │   ├── components/
+│   │   │   ├── ui/             # shadcn-generated components (Button, Card, Input, …)
+│   │   │   └── shared/         # Reusable Horizon-specific components (PageHeader, EmptyState, …)
+│   │   ├── features/           # Domain-specific feature modules (tasks/, goals/, …)
+│   │   ├── hooks/              # Shared custom React hooks
+│   │   ├── lib/                # Utility helpers (cn(), etc.)
+│   │   ├── services/           # API client and service abstractions
+│   │   ├── styles/             # Global styles beyond index.css
+│   │   ├── types/              # Shared TypeScript type definitions
+│   │   ├── utils/              # Pure utility functions
 │   │   ├── main.tsx            # App entry point
 │   │   └── App.tsx             # Main App layout & logic
+│   ├── components.json         # shadcn/ui configuration
 │   ├── package.json            # Node dependencies and scripts
-│   ├── vite.config.ts          # Vite configuration (React Compiler enabled)
+│   ├── vite.config.ts          # Vite configuration (Tailwind + React Compiler)
 │   └── tsconfig.json           # TypeScript configuration
 │
 └── server/                     # Backend Spring Boot application
@@ -83,8 +95,11 @@ The frontend is a React 19 application built using Vite and TypeScript.
 
 ### Key Frontend Components & Config Files
 - **[package.json](file:///D:/projects/my-horizon/client/package.json)**: Manage frontend packages and build scripts.
-- **[vite.config.ts](file:///D:/projects/my-horizon/client/vite.config.ts)**: Configured with React 19 and `@rolldown/plugin-babel` supporting the new **React Compiler** preset for optimized performance.
-- **[App.tsx](file:///D:/projects/my-horizon/client/src/App.tsx)**: Main application container showcasing default UI elements and routing.
+- **[vite.config.ts](file:///D:/projects/my-horizon/client/vite.config.ts)**: Configured with TailwindCSS v4 (`@tailwindcss/vite`), React 19, `@rolldown/plugin-babel` (React Compiler), and `@/` path alias.
+- **[components.json](file:///D:/projects/my-horizon/client/components.json)**: shadcn/ui configuration — style: `radix-vega`, baseColor: `zinc`, CSS variables enabled.
+- **[src/lib/utils.ts](file:///D:/projects/my-horizon/client/src/lib/utils.ts)**: The `cn()` utility for merging Tailwind classes.
+- **[src/components/ui/](file:///D:/projects/my-horizon/client/src/components/ui)**: shadcn-generated components (Button, Card, Input). Do not hand-edit generated files unless wrapping them in `shared/`.
+- **[App.tsx](file:///D:/projects/my-horizon/client/src/App.tsx)**: Main application container.
 
 ### Local Development Workflows (Frontend)
 Navigate to the `client/` directory before running these commands:
@@ -117,7 +132,13 @@ Navigate to the `client/` directory before running these commands:
 
 * **Database Schema Changes**: Do not apply schema modifications manually. Always write a Flyway migration script in `server/src/main/resources/db/migration/`.
 * **Security & Authentication**: Spring Security is active in dependencies. Make sure to define proper endpoint access rules/configurations as APIs are introduced.
-* **Component Styling**: CSS framework and component library choices are **undecided** (see [docs/ai/architecture.md](file:///D:/projects/my-horizon/docs/ai/architecture.md) > Open Decisions). AI should ask the user before choosing a CSS approach for new work. Regardless of framework choice, prioritize modern, premium aesthetics (smooth transitions, proper font pairing, responsive layouts). Avoid standard browser styling.
+* **Component Styling**: The UI stack is **locked** (TailwindCSS v4 + shadcn/ui + Radix UI). See [ADR-006 in decisions.md](file:///D:/projects/my-horizon/docs/ai/decisions.md) and [docs/architecture/adr/ADR-002-frontend-ui-foundation.md](file:///D:/projects/my-horizon/docs/architecture/adr/ADR-002-frontend-ui-foundation.md) for component ownership rules.
+  - Use `cn()` from `@/lib/utils` for all conditional class composition.
+  - Use CVA (`class-variance-authority`) for component variant definitions.
+  - Add new shadcn components via `npx shadcn@latest add <component>` — do not hand-write them from scratch.
+  - `components/ui/` — shadcn-generated only, no business logic.
+  - `components/shared/` — Horizon-specific reusable components wrapping or composing UI primitives.
+  - `features/*/components/` — domain-specific components.
 
 ---
 

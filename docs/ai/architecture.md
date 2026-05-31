@@ -17,6 +17,11 @@ This document covers the technology stack, domain design, entity structures, and
 | **Build Tool (Backend)** | Maven | Standard for Spring Boot, already configured |
 | **ORM** | Spring Data JPA / Hibernate | Standard Spring ecosystem choice |
 | **Migrations** | Flyway | Already integrated, SQL-based migrations |
+| **CSS Framework** | TailwindCSS v4 | Utility-first, integrated via `@tailwindcss/vite` plugin |
+| **Component Library** | shadcn/ui (Radix Vega style) | Accessible, unstyled-first components built on Radix UI |
+| **UI Primitives** | Radix UI | Via shadcn/ui — headless, accessible primitives |
+| **Icon Library** | Lucide React | Clean, consistent icon set, default in shadcn Vega preset |
+| **Styling Utilities** | clsx + tailwind-merge + CVA | `cn()` utility for conditional classes; CVA for component variant management |
 
 ### Deployment Targets
 
@@ -43,10 +48,8 @@ These should **not** be introduced unless the user explicitly requests them:
 - Docker/Kubernetes for deployment (platforms handle this)
 
 ### Open Decisions (not yet resolved)
-- **CSS framework:** TailwindCSS, vanilla CSS, or another option — undecided. AI should ask before choosing a CSS approach for new work.
-- **Component library:** Whether to adopt a component library (e.g., Radix, shadcn/ui, Mantine, etc.) — undecided. AI should not assume vanilla components are the default.
 
-> These decisions should be made before serious UI work begins. Explore options that align with modern industry trends and developer productivity.
+*No open frontend stack decisions remain. The CSS framework and component library were resolved in ADR-006 (see `docs/ai/decisions.md`). Future open decisions will be recorded here as they arise.*
 
 ### Technologies on the Horizon (future interest, not planned)
 - AI/LLM integration (approach undecided — will need data guardrails)
