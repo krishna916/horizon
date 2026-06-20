@@ -1,151 +1,23 @@
-# Project Context & Workflows: horizon
+# AGENTS.md — horizon
 
-Welcome to **horizon**, a personal management platform. This project is structured as a full-stack application with a Java Spring Boot backend and a React/TypeScript frontend.
+Full-stack app: **React 19 + Vite (client/)** and **Spring Boot 4.0.6 + Maven (server/)** targeting Java 25.
 
----
+## Architectural Boundaries
 
-## 🏗️ Architecture Overview
+- **Modular Monolith**: Horizon remains a Modular Monolith. Do not introduce microservices, CQRS, or eventing without an ADR.
+- **Cross-Module Communication**: Modules must communicate exclusively through `module.api`. Direct access to internal packages (e.g. repositories, domain models, or internal services) of other modules is strictly prohibited.
+- **Ownership = Authorization**: Access is granted solely based on resource ownership. Every primary resource is owned by a specific user.
+- **Decisions & Escalations**:
+  - Consult [HORIZON_DECISION_SUMMARY.md](file:///D:/projects/my-horizon/docs/ai/HORIZON_DECISION_SUMMARY.md) for authoritative product and architectural decisions.
+  - Follow the escalation rules in [ENG-001 Engineering Guidelines Section 15](file:///D:/projects/my-horizon/docs/ai/ENG-001%20Engineering%20Guidelines%20v1.0.md#L964) before modifying public APIs, crossing module boundaries, or changing ownership rules.
 
-The codebase is divided into two primary directories:
-1. **[client](file:///D:/projects/my-horizon/client)**: Frontend application built with React 19, TypeScript, and Vite.
-2. **[server](file:///D:/projects/my-horizon/server)**: Backend API built with Java 25, Spring Boot 4.0.6, and Maven.
+## Client & Server Agent Guides
 
----
+For detailed tech stack, conventions, and commands:
+- **Client (Frontend)**: Refer to [client/AGENTS.md](file:///D:/projects/my-horizon/client/AGENTS.md)
+- **Server (Backend)**: Refer to [server/AGENTS.md](file:///D:/projects/my-horizon/server/AGENTS.md)
 
-## 📁 Directory Structure
+## Startup
 
-```text
-my-horizon/
-├── client/                     # Frontend React application
-│   ├── src/
-│   │   ├── app/                # App-level setup (providers, routes)
-│   │   ├── components/
-│   │   │   ├── ui/             # shadcn-generated components (Button, Card, Input, …)
-│   │   │   └── shared/         # Reusable Horizon-specific components (PageHeader, EmptyState, …)
-│   │   ├── features/           # Domain-specific feature modules (tasks/, goals/, …)
-│   │   ├── hooks/              # Shared custom React hooks
-│   │   ├── lib/                # Utility helpers (cn(), etc.)
-│   │   ├── services/           # API client and service abstractions
-│   │   ├── styles/             # Global styles beyond index.css
-│   │   ├── types/              # Shared TypeScript type definitions
-│   │   ├── utils/              # Pure utility functions
-│   │   ├── main.tsx            # App entry point
-│   │   └── App.tsx             # Main App layout & logic
-│   ├── components.json         # shadcn/ui configuration
-│   ├── package.json            # Node dependencies and scripts
-│   ├── vite.config.ts          # Vite configuration (Tailwind + React Compiler)
-│   └── tsconfig.json           # TypeScript configuration
-│
-└── server/                     # Backend Spring Boot application
-    ├── src/
-    │   ├── main/
-    │   │   ├── java/           # Java source code (com.krishnamurti.horizon)
-    │   │   └── resources/      # Application properties, db migrations, templates
-    │   └── test/               # JUnit tests and Testcontainers configurations
-    ├── compose.yaml            # Local Docker Compose setup (PostgreSQL)
-    └── pom.xml                 # Maven dependencies and build definition
-```
-
----
-
-## 💻 Backend: Spring Boot & Maven
-
-The backend is built with Spring Boot 4.0.6 and targets Java 25.
-
-### Key Backend Components & Config Files
-- **[pom.xml](file:///D:/projects/my-horizon/server/pom.xml)**: Maven configuration defining dependencies, including:
-  - **Spring Web** (`spring-boot-starter-webmvc`)
-  - **Spring Data JPA** (`spring-boot-starter-data-jpa`)
-  - **Spring Security** (`spring-boot-starter-security`)
-  - **Flyway Migrations** (`spring-boot-starter-flyway`)
-  - **SpringDoc OpenAPI v3** (`springdoc-openapi-starter-webmvc-ui`)
-  - **Lombok** (`lombok`)
-  - **Docker Compose & Testcontainers** (`spring-boot-docker-compose`, `spring-boot-testcontainers`)
-- **[compose.yaml](file:///D:/projects/my-horizon/server/compose.yaml)**: Defines a PostgreSQL container (`postgres:latest`) automatically wired up during development.
-- **[application.yaml](file:///D:/projects/my-horizon/server/src/main/resources/application.yaml)**: Base configuration setting the application name as `horizon`.
-- **[HorizonApplication.java](file:///D:/projects/my-horizon/server/src/main/java/com/krishnamurti/horizon/HorizonApplication.java)**: The main entry point of the Spring Boot application.
-
-### Local Development Workflows (Backend)
-Navigate to the `server/` directory before running these commands:
-
-1. **Run Application with Docker Compose**:
-   ```bash
-   ./mvnw spring-boot:run
-   ```
-   *Note: Thanks to the Spring Boot Docker Compose module integration, running this command will automatically pull and start the PostgreSQL container defined in [compose.yaml](file:///D:/projects/my-horizon/server/compose.yaml) and wire up the database connection properties dynamically.*
-
-2. **Run Application via Testcontainers**:
-   Execute the `main` method of **[TestHorizonApplication.java](file:///D:/projects/my-horizon/server/src/test/java/com/krishnamurti/horizon/TestHorizonApplication.java)**. This spins up the database dependencies using Testcontainers for isolated local runs.
-
-3. **Running Tests**:
-   ```bash
-   ./mvnw test
-   ```
-   This runs unit and integration tests defined under `src/test/java/`.
-
-4. **Flyway Migrations**:
-   Flyway migration files should be added in SQL format to:
-   `server/src/main/resources/db/migration/` (e.g. `V1__init.sql`).
-
----
-
-## 🎨 Frontend: React, TS, & Vite
-
-The frontend is a React 19 application built using Vite and TypeScript.
-
-### Key Frontend Components & Config Files
-- **[package.json](file:///D:/projects/my-horizon/client/package.json)**: Manage frontend packages and build scripts.
-- **[vite.config.ts](file:///D:/projects/my-horizon/client/vite.config.ts)**: Configured with TailwindCSS v4 (`@tailwindcss/vite`), React 19, `@rolldown/plugin-babel` (React Compiler), and `@/` path alias.
-- **[components.json](file:///D:/projects/my-horizon/client/components.json)**: shadcn/ui configuration — style: `radix-vega`, baseColor: `zinc`, CSS variables enabled.
-- **[src/lib/utils.ts](file:///D:/projects/my-horizon/client/src/lib/utils.ts)**: The `cn()` utility for merging Tailwind classes.
-- **[src/components/ui/](file:///D:/projects/my-horizon/client/src/components/ui)**: shadcn-generated components (Button, Card, Input). Do not hand-edit generated files unless wrapping them in `shared/`.
-- **[App.tsx](file:///D:/projects/my-horizon/client/src/App.tsx)**: Main application container.
-
-### Local Development Workflows (Frontend)
-Navigate to the `client/` directory before running these commands:
-
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
-
-2. **Start Dev Server (Vite)**:
-   ```bash
-   npm run dev
-   ```
-   Typically runs on [http://localhost:5173](http://localhost:5173).
-
-3. **Build Production Bundle**:
-   ```bash
-   npm run build
-   ```
-   Compiles TypeScript files (`tsc -b`) and bundles assets via Vite.
-
-4. **Run Linter (ESLint)**:
-   ```bash
-   npm run lint
-   ```
-
----
-
-## 💡 Developer Guidelines
-
-* **Database Schema Changes**: Do not apply schema modifications manually. Always write a Flyway migration script in `server/src/main/resources/db/migration/`.
-* **Security & Authentication**: Spring Security is active in dependencies. Make sure to define proper endpoint access rules/configurations as APIs are introduced.
-* **Component Styling**: The UI stack is **locked** (TailwindCSS v4 + shadcn/ui + Radix UI). See [ADR-006 in decisions.md](file:///D:/projects/my-horizon/docs/ai/decisions.md) and [docs/architecture/adr/ADR-002-frontend-ui-foundation.md](file:///D:/projects/my-horizon/docs/architecture/adr/ADR-002-frontend-ui-foundation.md) for component ownership rules.
-  - Use `cn()` from `@/lib/utils` for all conditional class composition.
-  - Use CVA (`class-variance-authority`) for component variant definitions.
-  - Add new shadcn components via `npx shadcn@latest add <component>` — do not hand-write them from scratch.
-  - `components/ui/` — shadcn-generated only, no business logic.
-  - `components/shared/` — Horizon-specific reusable components wrapping or composing UI primitives.
-  - `features/*/components/` — domain-specific components.
-
----
-
-## 📚 Project Foundation
-
-For comprehensive project context, engineering philosophy, conventions, and architectural decisions, see the **AI Foundation Documents**:
-
-→ **[docs/ai/README.md](file:///D:/projects/my-horizon/docs/ai/README.md)** — Start here
-
-These documents are designed to be read by AI systems for long-term project context. Always consult them before making architectural or convention decisions.
+- Run `./start.sh` from the repository root to start PostgreSQL, the backend (port 8081), and the frontend dev server.
+- On Windows, use `./mvnw.cmd` for Maven commands.

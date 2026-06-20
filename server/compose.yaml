@@ -2,8 +2,10 @@ services:
   postgres:
     image: 'postgres:17'
     environment:
-      - 'POSTGRES_DB=mydatabase'
-      - 'POSTGRES_PASSWORD=secret'
-      - 'POSTGRES_USER=myuser'
+      - 'POSTGRES_DB=horizon'
+      - 'POSTGRES_PASSWORD=horizon'
+      - 'POSTGRES_USER=horizon'
     ports:
-      - '5432'
+      - '5433:5432'
+    volumes:
+      - ./database/postgres:/var/lib/postgresql/data
