@@ -9,12 +9,20 @@ Horizon is a personal productivity platform built using React 19 and Spring Boot
 
 ## Quick Start
 To launch the database, backend, and frontend concurrently, run:
+
+On Unix-based operating systems (Linux/macOS) or Windows (Git Bash):
 ```bash
 ./start.sh
 ```
-On Windows (Git Bash/WSL):
-```bash
-./start.sh
+
+On Windows (PowerShell):
+```powershell
+.\start.ps1
+```
+
+On Windows (Command Prompt / Double-click):
+```cmd
+start.bat
 ```
 
 For step-by-step installation instructions, dependencies, and troubleshooting, refer to [DEV_SETUP.md](DEV_SETUP.md).

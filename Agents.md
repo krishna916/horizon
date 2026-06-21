@@ -19,5 +19,6 @@ For detailed tech stack, conventions, and commands:
 
 ## Startup
 
-- Run `./start.sh` from the repository root to start PostgreSQL, the backend (port 8081), and the frontend dev server.
+- Run `./start.sh` from the repository root on Unix/Git Bash to start PostgreSQL, the backend (port 8081), and the frontend dev server.
+- On Windows, run `.\start.ps1` in PowerShell or `start.bat` in Command Prompt to start the entire environment.
 - On Windows, use `./mvnw.cmd` for Maven commands.

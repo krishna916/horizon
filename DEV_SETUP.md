@@ -10,6 +10,14 @@ This guide outlines how to set up your local development environment for Horizon
 
 ## Local Development Setup
 
+### Quick Start (All Services)
+You can launch the PostgreSQL container, Spring Boot backend, and React client concurrently using the quick-start scripts:
+- **Linux/macOS (or Git Bash on Windows):** Run `./start.sh` from the repository root.
+- **Windows (PowerShell):** Run `.\start.ps1` from the repository root.
+- **Windows (Command Prompt / Double-click):** Run `start.bat` from the repository root.
+
+Alternatively, you can run the services individually as outlined below:
+
 ### 1. Database Configuration
 Horizon uses PostgreSQL 17. The database port is mapped to `5433` on the host to avoid conflicts with other local Postgres instances.
 
