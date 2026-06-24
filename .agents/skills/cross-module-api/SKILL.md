@@ -1,6 +1,6 @@
 ---
 name: cross-module-api
-description: Guidelines and procedures for implementing cross-module communication via module.api packages.
+description: Use when implementing, refactoring, or designing inter-module communication, cross-module service dependencies, or module boundaries in the modular monolith. Covers creating or modifying module.api packages, exposing shared services/DTOs, and enforcing Modular Monolith layer coupling rules.
 ---
 
 # Cross-Module Communication via API Boundaries

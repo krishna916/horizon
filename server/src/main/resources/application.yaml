@@ -5,8 +5,15 @@ spring:
     compose:
       enabled: false
   datasource:
-    url: jdbc:postgresql://localhost:5433/horizon?sslmode=disable
+    url: jdbc:postgresql://localhost:5433/horizon?sslmode=disable&TimeZone=UTC
     username: horizon
     password: horizon
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  session:
+    timeout: 30d
+    jdbc:
+      initialize-schema: never
 server:
   port: 8081

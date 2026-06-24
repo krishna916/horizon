@@ -1,17 +1,25 @@
 import React from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
+import { userApi } from '@/user/api'
+import { HomeComponent } from '../home/HomeComponent'
 
 void React
 
 export const Route = createFileRoute('/')({
+  beforeLoad: async ({ context }) => {
+    try {
+      await context.queryClient.ensureQueryData({
+        queryKey: ['me'],
+        queryFn: async () => {
+          const response = await userApi.getCurrentUser();
+          return response.data;
+        },
+      });
+    } catch (error) {
+      throw redirect({
+        to: '/login',
+      });
+    }
+  },
   component: HomeComponent,
 })
-
-function HomeComponent() {
-  return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
-      <h1>Welcome to Horizon</h1>
-      <p>This is the landing route of your modular productivity workspace.</p>
-    </div>
-  )
-}

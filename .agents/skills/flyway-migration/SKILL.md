@@ -1,6 +1,6 @@
 ---
 name: flyway-migration
-description: Manage Flyway SQL database schema migrations and validation in Spring Boot.
+description: Use when database schemas are created, altered, updated, or migrated. Covers creating new Flyway SQL migration scripts (*.sql) under db/migration, running database validations, schema validation tasks, or debugging Flyway validation mismatches.
 ---
 
 # Flyway Database Schema Migrations

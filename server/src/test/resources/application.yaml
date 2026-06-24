@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: horizon
+  datasource:
+    url: jdbc:postgresql://localhost:5433/horizon?sslmode=disable&TimeZone=UTC
+    username: horizon
+    password: horizon
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+server:
+  port: 8081

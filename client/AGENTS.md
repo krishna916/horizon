@@ -32,3 +32,14 @@ npm run lint                            # ESLint
 - **shadcn/ui Components:** Add via `npx shadcn@latest add <component>`. Do not modify files in `components/ui/` manually.
 - **Utility:** Use `cn()` from `@/lib/utils` for conditional class composition. Use CVA for component variants.
 - **Path Alias:** `@/` maps to `./src/` (configured in `vite.config.ts` and `tsconfig.json`).
+- **Direct Hook Imports:** Always import React hooks (e.g., `useState`, `useEffect`, `useMemo`) directly as named imports from `'react'`. Avoid using the `React.*` namespace prefix (e.g., prefer `useState()` over `React.useState()`) to maintain style consistency.
+
+## Testing Conventions
+
+- **Vitest Unit/Integration Tests**: Run `npm run test` (which executes `vitest run`). Ensure all frontend component and hook tests are passing before committing.
+- **Playwright E2E Tests**: Run `npm run test:e2e` (which executes `playwright test`).
+- **Resilient Playwright Selectors**:
+  - Prefer using name-based selectors (e.g., `page.locator('input[name="email"]')`) or robust IDs over transient placeholders or visual labels that are subject to UI/copy refactors.
+  - For checkbox inputs, locate them by ID (e.g., `#agreeTerms-checkbox`) or label, and interact with them using Playwright's native `check()` method.
+- **E2E Mocking**:
+  - When running E2E tests without a live backend, mock security/identity APIs (e.g., `/api/v1/users/me` or `/api/v1/auth/register`) using Playwright's `page.route` to prevent unexpected redirects to the login screen.

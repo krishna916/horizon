@@ -1,5 +1,6 @@
-package com.krishnamurti.horizon.shared.domain;
+package com.krishnamurti.horizon_test.shared.domain;
 
+import com.krishnamurti.horizon.shared.domain.BaseEntity;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import org.junit.jupiter.api.Test;

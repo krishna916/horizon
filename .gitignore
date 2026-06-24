@@ -35,3 +35,25 @@ build/
 /client/node_modules/
 /client/dist/
 /server/database
+
+/docs/superpowers
+/docs/implementations
+
+### Playwright & Testing ###
+/client/test-results/
+/client/playwright-report/
+/client/.vitest/
+
+### Impeccable Customization ###
+.impeccable/config.local.json
+
+### Local Configuration Overrides ###
+/server/src/main/resources/application-local.yaml
+/server/src/main/resources/application-local.properties
+.env
+.env*.local
+
+### OS Files ###
+.DS_Store
+Thumbs.db
+*.log

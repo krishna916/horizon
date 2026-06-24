@@ -17,6 +17,27 @@ For detailed tech stack, conventions, and commands:
 - **Client (Frontend)**: Refer to [client/AGENTS.md](file:///D:/projects/my-horizon/client/AGENTS.md)
 - **Server (Backend)**: Refer to [server/AGENTS.md](file:///D:/projects/my-horizon/server/AGENTS.md)
 
+## Common Pitfalls & Invariants
+
+### 1. JVM Timezone for PostgreSQL
+PostgreSQL 17 may reject JDBC connections from systems with timezones like `Asia/Calcutta` during test execution or CLI commands.
+- **REQUIRED SUB-SKILL**: Use `testing-spring-integration` to configure and run Maven/Surefire tests under the UTC timezone.
+
+### 2. React 19 & shadcn/ui v4 Conventions
+- **Radix Slot:** Import `Slot` from `"radix-ui"`, but render it as `<Slot.Root {...props} />` (not `<Slot />`).
+- **Type Safety on Slots:** To avoid children typing errors, type custom wrappers around slots (e.g., `FormControl`) using standard HTML element props (like `React.ComponentProps<"div">`) instead of referencing the slot type.
+- **Type-Only Imports:** Always import TypeScript interfaces/types using `import type` to satisfy the strict `verbatimModuleSyntax` configuration.
+- **TanStack Query v5:** Use `isPending` instead of `isLoading` for queries and mutations.
+- **App-Bootstrap API Mocking:** APIs called during application initialization or routing bootstrap (e.g., current user check in `beforeLoad` on `/` or root routes) must be mocked in global render tests like `App.test.tsx` (using `vi.mock`) to prevent unhandled network failures and unexpected route redirects.
+
+### 3. Spring Session JDBC & MockMvc Testing
+- **REQUIRED SUB-SKILL**: Use `testing-spring-integration` for session invalidation MockMvc assertions and authenticated MockMvc request cookie management.
+
+### 4. UI Aesthetics & Grayscale Contrast (Zinc & Paper)
+- **Read DESIGN.md:** Before designing any UI, run `node .agents/skills/impeccable/scripts/context.mjs` to fetch current design principles.
+- **Banned Decorative Accents:** Never use decorative glassmorphism (`backdrop-blur-md`), ambient shadows at rest (`shadow-2xl`), uppercase eyebrow kicked headers, or radial background gradients. Surfaces must remain flat-by-default and rely on borders for structure.
+- **Standard Inputs:** Use native `<Input />` focus styles without adding custom ring classes.
+
 ## Startup
 
 - Run `./start.sh` from the repository root on Unix/Git Bash to start PostgreSQL, the backend (port 8081), and the frontend dev server.
