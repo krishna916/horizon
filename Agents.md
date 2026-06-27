@@ -38,6 +38,15 @@ PostgreSQL 17 may reject JDBC connections from systems with timezones like `Asia
 - **Banned Decorative Accents:** Never use decorative glassmorphism (`backdrop-blur-md`), ambient shadows at rest (`shadow-2xl`), uppercase eyebrow kicked headers, or radial background gradients. Surfaces must remain flat-by-default and rely on borders for structure.
 - **Standard Inputs:** Use native `<Input />` focus styles without adding custom ring classes.
 
+### 5. Repository Markdown Links (Portability)
+When creating or modifying documentation markdown files (e.g. index maps, guides, READMEs) inside the project repository, always use repository-relative links (e.g., `./ARCHITECTURE_OVERVIEW.md#system-architecture`) to avoid breaking links on other machines. Use absolute `file:///` URLs only inside chat responses, implementation plans, walkthroughs, and transient workspace-local artifacts to ensure UI clickability.
+
+### 6. Pre-Planning Context Alignment (Mandatory)
+- **REQUIRED SKILL**: Before creating any implementation plan, feature specification, or starting code changes (except pure documentation updates), you MUST use `align-context` to consult the documentation index map at [INDEX.md](file:///D:/projects/my-horizon/docs/ai/INDEX.md). Locate and incorporate all relevant architectural, product, and engineering guidelines directly into your proposed plan or code edits.
+
+### 7. Documentation Index Map Synchronization
+- **REQUIRED SKILL**: Whenever any markdown documentation files inside the `docs/ai/` directory are added, renamed, or modified, you MUST run the `sync-docs-index` skill (by running `node .agents/skills/sync-docs-index/scripts/sync-index.mjs`) to regenerate the [INDEX.md](file:///D:/projects/my-horizon/docs/ai/INDEX.md) index map. Do not edit `INDEX.md` manually.
+
 ## Startup
 
 - Run `./start.sh` from the repository root on Unix/Git Bash to start PostgreSQL, the backend (port 8081), and the frontend dev server.
