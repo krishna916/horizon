@@ -10,8 +10,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST controller for authentication endpoints (register, login, logout).
- * Consolidates authentication operations into a single REST resource boundary.
+ * REST controller for authentication endpoints (register, login, logout). Consolidates
+ * authentication operations into a single REST resource boundary.
  */
 @RestController
 @RequestMapping("/api/v1/auth")

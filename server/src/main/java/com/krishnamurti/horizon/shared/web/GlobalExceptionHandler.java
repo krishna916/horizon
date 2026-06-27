@@ -1,6 +1,7 @@
 package com.krishnamurti.horizon.shared.web;
 
-import com.krishnamurti.horizon.shared.web.EmailAlreadyRegisteredException;
+import java.util.HashMap;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.validation.FieldError;
@@ -9,14 +10,11 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * Global exception handler that converts exceptions to RFC 9457 Problem Details.
  *
- * <p>Centralizes error responses across all controllers. Each handler maps a specific
- * exception type to an appropriate HTTP status and ProblemDetail representation.</p>
+ * <p>Centralizes error responses across all controllers. Each handler maps a specific exception
+ * type to an appropriate HTTP status and ProblemDetail representation.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -57,7 +55,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ProblemDetail handleHttpMessageNotReadable(org.springframework.http.converter.HttpMessageNotReadableException ex) {
+    public ProblemDetail handleHttpMessageNotReadable(
+            org.springframework.http.converter.HttpMessageNotReadableException ex) {
         ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         detail.setTitle("Malformed JSON Request");
         detail.setDetail("The request body is missing or could not be parsed.");
@@ -66,7 +65,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
-    public ProblemDetail handleNoResourceFound(org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+    public ProblemDetail handleNoResourceFound(
+            org.springframework.web.servlet.resource.NoResourceFoundException ex) {
         ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
         detail.setTitle("Resource Not Found");
         detail.setDetail(ex.getMessage());

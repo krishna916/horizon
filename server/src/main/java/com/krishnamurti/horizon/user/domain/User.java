@@ -4,17 +4,16 @@ import com.krishnamurti.horizon.shared.domain.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import java.util.Objects;
 import lombok.Getter;
 import lombok.Setter;
-
-import java.util.Objects;
 
 /**
  * User aggregate root.
  *
- * <p>Represents a registered Horizon user. The aggregate enforces the invariant
- * that a user always has a normalized email address and a password hash.
- * Plain-text passwords must never exist within the domain model.</p>
+ * <p>Represents a registered Horizon user. The aggregate enforces the invariant that a user always
+ * has a normalized email address and a password hash. Plain-text passwords must never exist within
+ * the domain model.
  */
 @Entity
 @Table(name = "users")
@@ -40,12 +39,12 @@ public class User extends BaseEntity {
     /**
      * Factory method for creating a new User aggregate.
      *
-     * <p>Enforces domain invariants: the email must be normalized (lowercase)
-     * and the password must already be encoded. Plain-text passwords are rejected
-     * by design — the aggregate only stores password hashes.</p>
+     * <p>Enforces domain invariants: the email must be normalized (lowercase) and the password must
+     * already be encoded. Plain-text passwords are rejected by design — the aggregate only stores
+     * password hashes.
      *
      * @param normalizedEmail the user's email address, already normalized to lowercase
-     * @param passwordHash    the encoded password hash (never plain-text)
+     * @param passwordHash the encoded password hash (never plain-text)
      * @return a new User aggregate
      * @throws NullPointerException if normalizedEmail or passwordHash is null
      */

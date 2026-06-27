@@ -1,15 +1,15 @@
 package com.krishnamurti.horizon.user.domain;
 
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for the User aggregate.
  *
- * <p>Tests domain invariants: normalized email and password hash are required,
- * plain-text passwords are never accepted.</p>
+ * <p>Tests domain invariants: normalized email and password hash are required, plain-text passwords
+ * are never accepted.
  */
 class UserTest {
 
@@ -25,15 +25,15 @@ class UserTest {
     @Test
     void shouldRejectNullEmail() {
         assertThatNullPointerException()
-            .isThrownBy(() -> User.create(null, "$2a$10$encodedHash"))
-            .withMessage("email must not be null");
+                .isThrownBy(() -> User.create(null, "$2a$10$encodedHash"))
+                .withMessage("email must not be null");
     }
 
     @Test
     void shouldRejectNullPasswordHash() {
         assertThatNullPointerException()
-            .isThrownBy(() -> User.create("user@example.com", null))
-            .withMessage("passwordHash must not be null");
+                .isThrownBy(() -> User.create("user@example.com", null))
+                .withMessage("passwordHash must not be null");
     }
 
     @Test

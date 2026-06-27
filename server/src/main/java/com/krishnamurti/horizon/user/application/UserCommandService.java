@@ -11,6 +11,8 @@ import com.krishnamurti.horizon.user.web.UserSettingsResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import java.util.Locale;
+import java.util.Objects;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
@@ -22,16 +24,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import java.util.Locale;
-
 /**
  * Application service for user command operations.
  *
- * <p>Handles the registration use case: normalizes the email, verifies uniqueness,
- * encodes the password, creates the User aggregate, persists it, and returns
- * the authenticated user representation.</p>
+ * <p>Handles the registration use case: normalizes the email, verifies uniqueness, encodes the
+ * password, creates the User aggregate, persists it, and returns the authenticated user
+ * representation.
  *
- * <p>One use case = one transaction (ENG-001 §7).</p>
+ * <p>One use case = one transaction (ENG-001 §7).
  */
 @Service
 public class UserCommandService {
@@ -40,7 +40,10 @@ public class UserCommandService {
     private final UserSettingsRepository userSettingsRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public UserCommandService(UserRepository userRepository, UserSettingsRepository userSettingsRepository, PasswordEncoder passwordEncoder) {
+    public UserCommandService(
+            UserRepository userRepository,
+            UserSettingsRepository userSettingsRepository,
+            PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.userSettingsRepository = userSettingsRepository;
         this.passwordEncoder = passwordEncoder;
@@ -49,7 +52,7 @@ public class UserCommandService {
     /**
      * Registers a new user account.
      *
-     * @param email       the raw email address provided by the user
+     * @param email the raw email address provided by the user
      * @param rawPassword the raw password provided by the user
      * @return the authenticated user representation
      * @throws EmailAlreadyRegisteredException if the email is already registered
@@ -63,7 +66,7 @@ public class UserCommandService {
         }
 
         String encodedPassword = passwordEncoder.encode(rawPassword);
-        User user = User.create(normalizedEmail, encodedPassword);
+        User user = Objects.requireNonNull(User.create(normalizedEmail, encodedPassword));
         userRepository.save(user);
 
         UserSettings settings = UserSettings.createDefault(user);
@@ -75,7 +78,7 @@ public class UserCommandService {
     /**
      * Authenticates an existing user and establishes an authenticated session.
      *
-     * @param email       the user's email address
+     * @param email the user's email address
      * @param rawPassword the user's raw password
      * @return the authenticated user representation
      * @throws InvalidCredentialsException if the email is not found or password is incorrect
@@ -83,14 +86,17 @@ public class UserCommandService {
     @Transactional
     public CurrentUserResponse login(String email, String rawPassword) {
         String normalizedEmail = email.toLowerCase(Locale.ROOT).trim();
-        User user = userRepository.findByEmail(normalizedEmail)
-            .orElseThrow(InvalidCredentialsException::new);
+        User user =
+                userRepository
+                        .findByEmail(normalizedEmail)
+                        .orElseThrow(InvalidCredentialsException::new);
 
         if (!passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
             throw new InvalidCredentialsException();
         }
 
-        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        ServletRequestAttributes attributes =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         if (attributes != null) {
             HttpServletRequest request = attributes.getRequest();
             HttpServletResponse response = attributes.getResponse();
@@ -101,15 +107,17 @@ public class UserCommandService {
                 session.invalidate();
             }
 
-            // Create new session
-            HttpSession newSession = request.getSession(true);
+            // Create new session (side-effect: establishes a fresh session after invalidation)
+            request.getSession(true);
 
             // Set Spring Security context
-            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                user.getId(),
-                null,
-                java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
-            );
+            UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(
+                            user.getId(),
+                            null,
+                            java.util.List.of(
+                                    new org.springframework.security.core.authority
+                                            .SimpleGrantedAuthority("ROLE_USER")));
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(authentication);
             SecurityContextHolder.setContext(context);
@@ -121,12 +129,11 @@ public class UserCommandService {
         return new CurrentUserResponse(user.getId(), user.getEmail());
     }
 
-    /**
-     * Terminates the current user session and clears security context.
-     */
+    /** Terminates the current user session and clears security context. */
     @Transactional
     public void logout() {
-        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        ServletRequestAttributes attributes =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         if (attributes != null) {
             HttpServletRequest request = attributes.getRequest();
             HttpSession session = request.getSession(false);
@@ -137,17 +144,23 @@ public class UserCommandService {
         SecurityContextHolder.clearContext();
     }
 
-    /**
-     * Updates user settings for the specified user ID.
-     */
+    /** Updates user settings for the specified user ID. */
     @Transactional
     public UserSettingsResponse updateUserSettings(Long userId, String theme) {
-        UserSettings settings = userSettingsRepository.findByUserId(userId)
-            .orElseGet(() -> {
-                User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new InsufficientAuthenticationException("User not found"));
-                return UserSettings.createDefault(user);
-            });
+        UserSettings settings =
+                userSettingsRepository
+                        .findByUserId(userId)
+                        .orElseGet(
+                                () -> {
+                                    User user =
+                                            userRepository
+                                                    .findById(userId)
+                                                    .orElseThrow(
+                                                            () ->
+                                                                    new InsufficientAuthenticationException(
+                                                                            "User not found"));
+                                    return UserSettings.createDefault(user);
+                                });
 
         settings.setTheme(theme);
         userSettingsRepository.save(settings);

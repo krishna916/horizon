@@ -13,7 +13,7 @@ vi.mock('@/user/api', () => ({
 
 test('renders App and checks heading', async () => {
   render(<App />);
-  const heading = await screen.findByRole('heading', { name: /Welcome to Horizon/i, level: 1 });
+  const heading = await screen.findByRole('heading', { name: /Good/i, level: 1 });
   expect(heading).toBeInTheDocument();
 });
 

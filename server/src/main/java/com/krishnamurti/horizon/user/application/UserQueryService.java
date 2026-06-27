@@ -29,24 +29,42 @@ public class UserQueryService {
     }
 
     public CurrentUserResponse getCurrentUser() {
-        Long userId = currentUserProvider.getCurrentUserId()
-            .orElseThrow(() -> new InsufficientAuthenticationException("User is not authenticated"));
+        Long userId =
+                currentUserProvider
+                        .getCurrentUserId()
+                        .orElseThrow(
+                                () ->
+                                        new InsufficientAuthenticationException(
+                                                "User is not authenticated"));
 
-        User user = userRepository.findById(userId)
-            .orElseThrow(() -> new InsufficientAuthenticationException("Authenticated user not found"));
+        User user =
+                userRepository
+                        .findById(userId)
+                        .orElseThrow(
+                                () ->
+                                        new InsufficientAuthenticationException(
+                                                "Authenticated user not found"));
 
         return new CurrentUserResponse(user.getId(), user.getEmail());
     }
 
     @Transactional
     public UserSettingsResponse getUserSettings(Long userId) {
-        UserSettings settings = userSettingsRepository.findByUserId(userId)
-            .orElseGet(() -> {
-                User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new InsufficientAuthenticationException("User not found"));
-                UserSettings newSettings = UserSettings.createDefault(user);
-                return userSettingsRepository.save(newSettings);
-            });
+        UserSettings settings =
+                userSettingsRepository
+                        .findByUserId(userId)
+                        .orElseGet(
+                                () -> {
+                                    User user =
+                                            userRepository
+                                                    .findById(userId)
+                                                    .orElseThrow(
+                                                            () ->
+                                                                    new InsufficientAuthenticationException(
+                                                                            "User not found"));
+                                    UserSettings newSettings = UserSettings.createDefault(user);
+                                    return userSettingsRepository.save(newSettings);
+                                });
 
         return new UserSettingsResponse(settings.getTheme());
     }

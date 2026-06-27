@@ -1,48 +1,33 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { HomeComponent } from '../home/HomeComponent';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 
-const mockUseLogoutUser = vi.fn();
 const mockNavigate = vi.fn();
-
-vi.mock('../user/hooks/useLogoutUser', () => ({
-  useLogoutUser: () => mockUseLogoutUser(),
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
 }));
 
-vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return {
-    ...actual,
-    useNavigate: () => mockNavigate,
-  };
-});
+const mockUseCurrentUser = vi.fn();
+vi.mock('@/user/hooks/useCurrentUser', () => ({
+  useCurrentUser: () => mockUseCurrentUser(),
+}));
 
-const mockMutateAsync = vi.fn();
-
-describe('HomeComponent', () => {
+describe('Home Index Route integration', () => {
   beforeEach(() => {
-    mockUseLogoutUser.mockReturnValue({
-      mutateAsync: mockMutateAsync,
-      isPending: false,
-      error: null,
-    });
-    mockMutateAsync.mockResolvedValue(undefined);
     mockNavigate.mockClear();
+    mockUseCurrentUser.mockReturnValue({
+      data: { id: 1, email: 'test@example.com' },
+      isPending: false,
+    });
   });
 
-  it('renders welcome message and logout button', () => {
+  it('renders dashboard greeting and layout cards', () => {
     render(<HomeComponent />);
     
-    expect(screen.getByText('Welcome to Horizon')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Logout/i })).toBeInTheDocument();
-  });
-
-  it('calls logout mutation and navigates on click', async () => {
-    render(<HomeComponent />);
-
-    fireEvent.click(screen.getByRole('button', { name: /Logout/i }));
-
-    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalled());
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/login' }));
+    expect(screen.getByText(/Good/)).toBeInTheDocument();
+    expect(screen.getByText(/test/)).toBeInTheDocument();
+    expect(screen.getByText("Today's Commitments")).toBeInTheDocument();
+    expect(screen.getByText('Inbox')).toBeInTheDocument();
+    expect(screen.getByText('Recent Progress')).toBeInTheDocument();
   });
 });
