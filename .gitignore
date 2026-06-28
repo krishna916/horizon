@@ -44,8 +44,9 @@ build/
 /client/playwright-report/
 /client/.vitest/
 
-### Impeccable Customization ###
-.impeccable/config.local.json
+### Impeccable & Superpowers Customization ###
+/.impeccable/
+/.superpowers/
 
 ### Local Configuration Overrides ###
 /server/src/main/resources/application-local.yaml
