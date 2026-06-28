@@ -1,7 +1,7 @@
-import * as React from 'react';
+import type { ComponentProps } from 'react';
 import { Button } from '@/components/ui/button';
 
-interface SocialButtonProps extends React.ComponentProps<typeof Button> {
+interface SocialButtonProps extends ComponentProps<typeof Button> {
   provider: 'google';
 }
 

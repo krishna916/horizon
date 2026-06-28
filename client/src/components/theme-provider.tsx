@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 export type Theme = 'light' | 'dark' | 'system';
@@ -87,12 +88,15 @@ export function ThemeProvider({
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
 
-  const setTheme = (newTheme: Theme) => {
-    setSafeStorageItem(storageKey, newTheme);
-    setThemeState(newTheme);
-  };
+  const setTheme = useCallback(
+    (newTheme: Theme) => {
+      setSafeStorageItem(storageKey, newTheme);
+      setThemeState(newTheme);
+    },
+    [storageKey]
+  );
 
-  const value = useMemo(() => ({ theme, setTheme }), [theme]);
+  const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme]);
 
   return (
     <ThemeProviderContext.Provider {...props} value={value}>

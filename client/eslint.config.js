@@ -34,4 +34,27 @@ export default defineConfig([
       ],
     },
   },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "ImportDeclaration[source.value='react'][specifiers.0.type='ImportNamespaceSpecifier']",
+          message:
+            "Namespace imports from 'react' are not allowed. Use named imports instead (e.g. import { useState } from 'react').",
+        },
+        {
+          selector: 'ExportDefaultDeclaration',
+          message: 'Default exports are not allowed. Use named exports instead.',
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/routes/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ]);

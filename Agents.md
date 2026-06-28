@@ -25,10 +25,12 @@ PostgreSQL 17 may reject JDBC connections from systems with timezones like `Asia
 
 ### 2. React 19 & shadcn/ui v4 Conventions
 - **Radix Slot:** Import `Slot` from `"radix-ui"`, but render it as `<Slot.Root {...props} />` (not `<Slot />`).
-- **Type Safety on Slots:** To avoid children typing errors, type custom wrappers around slots (e.g., `FormControl`) using standard HTML element props (like `React.ComponentProps<"div">`) instead of referencing the slot type.
+- **Type Safety on Slots:** To avoid children typing errors, type custom wrappers around slots (e.g., `FormControl`) using standard HTML element props (like `ComponentProps<"div">`) instead of referencing the slot type.
 - **Type-Only Imports:** Always import TypeScript interfaces/types using `import type` to satisfy the strict `verbatimModuleSyntax` configuration.
 - **TanStack Query v5:** Use `isPending` instead of `isLoading` for queries and mutations.
 - **App-Bootstrap API Mocking:** APIs called during application initialization or routing bootstrap (e.g., current user check in `beforeLoad` on `/` or root routes) must be mocked in global render tests like `App.test.tsx` (using `vi.mock`) to prevent unhandled network failures and unexpected route redirects.
+- **No React Namespace Imports:** Wildcard React imports (`import * as React`) are disallowed by ESLint. Use named imports (e.g. `import { useState } from 'react'`) and type-only imports (e.g. `import type { ComponentProps } from 'react'`).
+- **No Default Exports:** Default exports (`export default`) are disallowed in all source files under `src/`. Use named exports instead.
 
 ### 3. Spring Session JDBC & MockMvc Testing
 - **REQUIRED SUB-SKILL**: Use `testing-spring-integration` for session invalidation MockMvc assertions and authenticated MockMvc request cookie management.

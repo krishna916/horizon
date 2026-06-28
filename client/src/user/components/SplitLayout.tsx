@@ -1,8 +1,8 @@
-import * as React from 'react';
+import type { ReactNode } from 'react';
 import { BrandPanel } from './BrandPanel';
 
 export interface SplitLayoutProps {
-  children: React.ReactNode;
+  children: ReactNode;
   variant?: 'light' | 'dark';
 }
 
