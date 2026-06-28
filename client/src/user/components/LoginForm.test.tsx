@@ -1,3 +1,4 @@
+import type React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { LoginForm } from './LoginForm';
 import { useLoginUser } from '../hooks/useLoginUser';
@@ -12,7 +13,19 @@ const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => {
   return {
     useNavigate: () => mockNavigate,
-    Link: ({ children, to, ...props }: any) => <a href={to} {...props}>{children}</a>,
+    Link: ({
+      children,
+      to,
+      ...props
+    }: {
+      children: React.ReactNode;
+      to: string;
+      [key: string]: unknown;
+    }) => (
+      <a href={to} {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}>
+        {children}
+      </a>
+    ),
   };
 });
 
@@ -53,10 +66,12 @@ describe('LoginForm', () => {
     });
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }));
 
-    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledWith({
-      email: 'test@example.com',
-      password: 'password123',
-    }));
+    await waitFor(() =>
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        password: 'password123',
+      })
+    );
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/' }));
   });
 });

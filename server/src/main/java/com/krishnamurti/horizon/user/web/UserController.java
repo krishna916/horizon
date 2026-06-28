@@ -12,8 +12,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST controller for user resource operations.
- * Consolidates user profile and settings endpoints into a single resource boundary.
+ * REST controller for user resource operations. Consolidates user profile and settings endpoints
+ * into a single resource boundary.
  */
 @RestController
 @RequestMapping("/api/v1/users")
@@ -39,15 +39,26 @@ public class UserController {
 
     @GetMapping("/me/settings")
     public UserSettingsResponse getSettings() {
-        Long userId = currentUserProvider.getCurrentUserId()
-            .orElseThrow(() -> new InsufficientAuthenticationException("User is not authenticated"));
+        Long userId =
+                currentUserProvider
+                        .getCurrentUserId()
+                        .orElseThrow(
+                                () ->
+                                        new InsufficientAuthenticationException(
+                                                "User is not authenticated"));
         return userQueryService.getUserSettings(userId);
     }
 
     @PatchMapping("/me/settings")
-    public UserSettingsResponse updateSettings(@Valid @RequestBody UpdateUserSettingsRequest request) {
-        Long userId = currentUserProvider.getCurrentUserId()
-            .orElseThrow(() -> new InsufficientAuthenticationException("User is not authenticated"));
+    public UserSettingsResponse updateSettings(
+            @Valid @RequestBody UpdateUserSettingsRequest request) {
+        Long userId =
+                currentUserProvider
+                        .getCurrentUserId()
+                        .orElseThrow(
+                                () ->
+                                        new InsufficientAuthenticationException(
+                                                "User is not authenticated"));
         return userCommandService.updateUserSettings(userId, request.theme());
     }
 }

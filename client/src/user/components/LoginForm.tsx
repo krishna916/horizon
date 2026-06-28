@@ -7,7 +7,14 @@ import { useNavigate, Link } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form';
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+} from '@/components/ui/form';
 
 type LoginFormFields = LoginRequest & { rememberMe?: boolean };
 
@@ -41,9 +48,7 @@ export function LoginForm() {
 
       <div className="text-center lg:text-left mb-6">
         <h1 className="text-3xl font-medium tracking-tight text-foreground m-0">Welcome back</h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          Sign in to continue.
-        </p>
+        <p className="text-sm text-muted-foreground mt-2">Sign in to continue.</p>
       </div>
 
       <Form {...form}>
@@ -61,7 +66,7 @@ export function LoginForm() {
               </FormItem>
             )}
           />
-          
+
           <FormField
             control={form.control}
             name="password"
@@ -93,25 +98,38 @@ export function LoginForm() {
                       className="size-4 rounded border-border text-primary focus:ring-ring focus:ring-offset-background cursor-pointer"
                     />
                   </FormControl>
-                  <label htmlFor="rememberMe-checkbox" className="text-sm font-normal text-muted-foreground select-none cursor-pointer">
+                  <label
+                    htmlFor="rememberMe-checkbox"
+                    className="text-sm font-normal text-muted-foreground select-none cursor-pointer"
+                  >
                     Remember me
                   </label>
                 </FormItem>
               )}
             />
-            
-            <a href="#" className="text-sm font-normal text-muted-foreground hover:text-foreground hover:underline underline-offset-2 transition-colors">
+
+            <button
+              type="button"
+              className="text-sm font-normal text-muted-foreground hover:text-foreground hover:underline underline-offset-2 transition-colors"
+            >
               Forgot password?
-            </a>
+            </button>
           </div>
 
           {error && (
-            <div className="text-xs text-destructive text-center p-3 rounded-md bg-destructive/10 border border-destructive/20" role="alert">
+            <div
+              className="text-xs text-destructive text-center p-3 rounded-md bg-destructive/10 border border-destructive/20"
+              role="alert"
+            >
               {error.response?.data?.title || 'Invalid email or password'}
             </div>
           )}
 
-          <Button type="submit" disabled={isPending} className="w-full h-10 mt-2 font-medium bg-primary text-primary-foreground hover:bg-primary/95 transition-colors shadow-none cursor-pointer">
+          <Button
+            type="submit"
+            disabled={isPending}
+            className="w-full h-10 mt-2 font-medium bg-primary text-primary-foreground hover:bg-primary/95 transition-colors shadow-none cursor-pointer"
+          >
             {isPending ? 'Signing in…' : 'Sign In'}
           </Button>
         </form>
@@ -130,9 +148,15 @@ export function LoginForm() {
 
       {/* Footer Links */}
       <div className="flex items-center justify-center gap-8 mt-12 mb-2 font-mono text-[10px] text-muted-foreground/50 tracking-widest uppercase">
-        <a href="/privacy" className="hover:text-foreground transition-colors">Privacy</a>
-        <a href="/terms" className="hover:text-foreground transition-colors">Terms</a>
-        <a href="/help" className="hover:text-foreground transition-colors">Help</a>
+        <a href="/privacy" className="hover:text-foreground transition-colors">
+          Privacy
+        </a>
+        <a href="/terms" className="hover:text-foreground transition-colors">
+          Terms
+        </a>
+        <a href="/help" className="hover:text-foreground transition-colors">
+          Help
+        </a>
       </div>
     </div>
   );

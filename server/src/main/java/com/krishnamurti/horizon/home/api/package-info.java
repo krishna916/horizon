@@ -1,4 +1,2 @@
-/**
- * Public API and contracts for the home module.
- */
+/** Public API and contracts for the home module. */
 package com.krishnamurti.horizon.home.api;

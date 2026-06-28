@@ -1,10 +1,10 @@
 package com.krishnamurti.horizon.shared.domain;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import lombok.Getter;
+import lombok.Setter;
 
 @MappedSuperclass
 @Getter

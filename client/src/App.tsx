@@ -1,7 +1,7 @@
-import { RouterProvider, createRouter } from '@tanstack/react-router'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { routeTree } from './routeTree.gen'
-import { ThemeProvider } from '@/components/theme-provider'
+import { RouterProvider, createRouter } from '@tanstack/react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { routeTree } from './routeTree.gen';
+import { ThemeProvider } from '@/components/theme-provider';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -10,28 +10,27 @@ const queryClient = new QueryClient({
       retry: 1,
     },
   },
-})
+});
 
 const router = createRouter({
   routeTree,
   context: {
     queryClient,
   },
-})
+});
 
 declare module '@tanstack/react-router' {
   interface Register {
-    router: typeof router
+    router: typeof router;
   }
 }
 
-export default function App() {
+export function App() {
   return (
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>
     </ThemeProvider>
-  )
+  );
 }
-

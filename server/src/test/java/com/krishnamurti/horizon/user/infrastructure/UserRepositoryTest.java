@@ -1,5 +1,8 @@
 package com.krishnamurti.horizon.user.infrastructure;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+
 import com.krishnamurti.horizon.user.domain.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,22 +15,18 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-
 /**
  * Repository tests for {@link UserRepository}.
  *
- * <p>Validates persistence behavior against PostgreSQL using Testcontainers.
- * Uses @DataJpaTest for a lightweight slice test with real database.</p>
+ * <p>Validates persistence behavior against PostgreSQL using Testcontainers. Uses @DataJpaTest for
+ * a lightweight slice test with real database.
  */
 @DataJpaTest
 @Testcontainers
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class UserRepositoryTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17");
+    @Container static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17");
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -37,8 +36,7 @@ class UserRepositoryTest {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
     }
 
-    @Autowired
-    private UserRepository userRepository;
+    @Autowired private UserRepository userRepository;
 
     @Test
     void shouldSaveAndFindUserByEmail() {
@@ -75,7 +73,7 @@ class UserRepositoryTest {
         User user2 = User.create("user@example.com", "$2a$10$differentHash");
 
         assertThatExceptionOfType(DataIntegrityViolationException.class)
-            .isThrownBy(() -> userRepository.saveAndFlush(user2));
+                .isThrownBy(() -> userRepository.saveAndFlush(user2));
     }
 
     @Test

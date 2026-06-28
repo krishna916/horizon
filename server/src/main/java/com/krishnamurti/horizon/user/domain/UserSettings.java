@@ -8,7 +8,7 @@ import lombok.Setter;
 /**
  * UserSettings aggregate root/entity.
  *
- * <p>Represents settings/preferences associated with a registered user.</p>
+ * <p>Represents settings/preferences associated with a registered user.
  */
 @Entity
 @Table(name = "user_settings")

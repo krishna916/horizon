@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 export type Theme = 'light' | 'dark' | 'system';
@@ -18,10 +19,14 @@ const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undef
 
 const getSafeStorageItem = (key: string): Theme | null => {
   try {
-    if (typeof window !== 'undefined' && window.localStorage && typeof window.localStorage.getItem === 'function') {
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      typeof window.localStorage.getItem === 'function'
+    ) {
       return window.localStorage.getItem(key) as Theme | null;
     }
-  } catch (e) {
+  } catch (_e) {
     // Ignore storage issues in test/restricted environments
   }
   return null;
@@ -29,10 +34,14 @@ const getSafeStorageItem = (key: string): Theme | null => {
 
 const setSafeStorageItem = (key: string, value: Theme): void => {
   try {
-    if (typeof window !== 'undefined' && window.localStorage && typeof window.localStorage.setItem === 'function') {
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      typeof window.localStorage.setItem === 'function'
+    ) {
       window.localStorage.setItem(key, value);
     }
-  } catch (e) {
+  } catch (_e) {
     // Ignore storage issues
   }
 };
@@ -79,12 +88,15 @@ export function ThemeProvider({
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
 
-  const setTheme = (newTheme: Theme) => {
-    setSafeStorageItem(storageKey, newTheme);
-    setThemeState(newTheme);
-  };
+  const setTheme = useCallback(
+    (newTheme: Theme) => {
+      setSafeStorageItem(storageKey, newTheme);
+      setThemeState(newTheme);
+    },
+    [storageKey]
+  );
 
-  const value = useMemo(() => ({ theme, setTheme }), [theme]);
+  const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme]);
 
   return (
     <ThemeProviderContext.Provider {...props} value={value}>

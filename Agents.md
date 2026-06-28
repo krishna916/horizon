@@ -25,10 +25,12 @@ PostgreSQL 17 may reject JDBC connections from systems with timezones like `Asia
 
 ### 2. React 19 & shadcn/ui v4 Conventions
 - **Radix Slot:** Import `Slot` from `"radix-ui"`, but render it as `<Slot.Root {...props} />` (not `<Slot />`).
-- **Type Safety on Slots:** To avoid children typing errors, type custom wrappers around slots (e.g., `FormControl`) using standard HTML element props (like `React.ComponentProps<"div">`) instead of referencing the slot type.
+- **Type Safety on Slots:** To avoid children typing errors, type custom wrappers around slots (e.g., `FormControl`) using standard HTML element props (like `ComponentProps<"div">`) instead of referencing the slot type.
 - **Type-Only Imports:** Always import TypeScript interfaces/types using `import type` to satisfy the strict `verbatimModuleSyntax` configuration.
 - **TanStack Query v5:** Use `isPending` instead of `isLoading` for queries and mutations.
 - **App-Bootstrap API Mocking:** APIs called during application initialization or routing bootstrap (e.g., current user check in `beforeLoad` on `/` or root routes) must be mocked in global render tests like `App.test.tsx` (using `vi.mock`) to prevent unhandled network failures and unexpected route redirects.
+- **No React Namespace Imports:** Wildcard React imports (`import * as React`) are disallowed by ESLint. Use named imports (e.g. `import { useState } from 'react'`) and type-only imports (e.g. `import type { ComponentProps } from 'react'`).
+- **No Default Exports:** Default exports (`export default`) are disallowed in all source files under `src/`. Use named exports instead.
 
 ### 3. Spring Session JDBC & MockMvc Testing
 - **REQUIRED SUB-SKILL**: Use `testing-spring-integration` for session invalidation MockMvc assertions and authenticated MockMvc request cookie management.
@@ -46,6 +48,12 @@ When creating or modifying documentation markdown files (e.g. index maps, guides
 
 ### 7. Documentation Index Map Synchronization
 - **REQUIRED SKILL**: Whenever any markdown documentation files inside the `docs/ai/` directory are added, renamed, or modified, you MUST run the `sync-docs-index` skill (by running `node .agents/skills/sync-docs-index/scripts/sync-index.mjs`) to regenerate the [INDEX.md](file:///D:/projects/my-horizon/docs/ai/INDEX.md) index map. Do not edit `INDEX.md` manually.
+
+### 8. PowerShell Command Chaining (Windows)
+PowerShell does not support `&&` as a command separator (bash-only). On this Windows machine:
+- Use `;` to chain commands: `npx tsc -b ; npx vite build`
+- Or run each command separately in sequence
+- `npm run build` already handles this internally via the npm script runner (which uses sh, not PowerShell), so `npm run build` always works fine
 
 ## Startup
 

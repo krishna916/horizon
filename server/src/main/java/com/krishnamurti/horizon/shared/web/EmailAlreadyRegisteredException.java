@@ -3,7 +3,7 @@ package com.krishnamurti.horizon.shared.web;
 /**
  * Thrown when a registration attempt uses an email address that is already registered.
  *
- * <p>Maps to HTTP 409 Conflict via {@link GlobalExceptionHandler}.</p>
+ * <p>Maps to HTTP 409 Conflict via {@link GlobalExceptionHandler}.
  */
 public class EmailAlreadyRegisteredException extends RuntimeException {
 
