@@ -32,11 +32,15 @@ export function RecentProgressCard({
               </div>
               <div className="grid grid-cols-2 gap-4 border-l border-border/80 pl-3">
                 <div className="space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">Today</span>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">
+                    Today
+                  </span>
                   <p className="text-lg font-semibold text-foreground">{tasksCompletedToday}</p>
                 </div>
                 <div className="space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">This Week</span>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">
+                    This Week
+                  </span>
                   <p className="text-lg font-semibold text-foreground">{tasksCompletedThisWeek}</p>
                 </div>
               </div>
@@ -49,12 +53,20 @@ export function RecentProgressCard({
               </div>
               <div className="grid grid-cols-2 gap-4 border-l border-border/80 pl-3">
                 <div className="space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">Today</span>
-                  <p className="text-lg font-semibold text-foreground">{checklistItemsCompletedToday}</p>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">
+                    Today
+                  </span>
+                  <p className="text-lg font-semibold text-foreground">
+                    {checklistItemsCompletedToday}
+                  </p>
                 </div>
                 <div className="space-y-0.5">
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">This Week</span>
-                  <p className="text-lg font-semibold text-foreground">{checklistItemsCompletedThisWeek}</p>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">
+                    This Week
+                  </span>
+                  <p className="text-lg font-semibold text-foreground">
+                    {checklistItemsCompletedThisWeek}
+                  </p>
                 </div>
               </div>
             </div>

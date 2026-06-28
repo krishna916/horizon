@@ -1,3 +1,4 @@
+import type React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { HomeComponent } from './HomeComponent';
@@ -9,6 +10,19 @@ vi.mock('@/user/hooks/useCurrentUser', () => ({
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
+  Link: ({
+    children,
+    to,
+    className,
+  }: {
+    children: React.ReactNode;
+    to: string;
+    className?: string;
+  }) => (
+    <a href={to} className={className}>
+      {children}
+    </a>
+  ),
 }));
 
 describe('HomeComponent Integration', () => {
@@ -16,6 +30,7 @@ describe('HomeComponent Integration', () => {
     mockUseCurrentUser.mockReturnValue({
       data: null,
       isPending: true,
+      isError: false,
     });
 
     const { container } = render(<HomeComponent />);
@@ -26,6 +41,7 @@ describe('HomeComponent Integration', () => {
     mockUseCurrentUser.mockReturnValue({
       data: { id: 1, email: 'john@example.com' },
       isPending: false,
+      isError: false,
     });
 
     render(<HomeComponent />);

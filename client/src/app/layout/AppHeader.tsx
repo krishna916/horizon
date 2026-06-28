@@ -1,30 +1,30 @@
-import { useLocation } from '@tanstack/react-router'
-import { Search, Bell, HelpCircle } from 'lucide-react'
-import { Input } from '@/components/ui/input'
+import { useLocation } from '@tanstack/react-router';
+import { Search, Bell, HelpCircle } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 export function AppHeader() {
-  const location = useLocation()
+  const location = useLocation();
 
   const getTitle = (pathname: string) => {
     switch (pathname) {
       case '/':
-        return 'Home'
+        return 'Home';
       case '/today':
-        return 'Today'
+        return 'Today';
       case '/inbox':
-        return 'Inbox'
+        return 'Inbox';
       case '/tasks':
-        return 'Tasks'
+        return 'Tasks';
       case '/notes':
-        return 'Notes'
+        return 'Notes';
       case '/settings':
-        return 'Settings'
+        return 'Settings';
       default:
-        return 'Horizon'
+        return 'Horizon';
     }
-  }
+  };
 
-  const title = getTitle(location.pathname)
+  const title = getTitle(location.pathname);
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-background px-8">
@@ -58,5 +58,5 @@ export function AppHeader() {
         </button>
       </div>
     </header>
-  )
+  );
 }

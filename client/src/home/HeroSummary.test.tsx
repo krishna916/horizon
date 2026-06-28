@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { HeroSummary } from './HeroSummary';
 import type { HomeSummary } from './types';
 
@@ -16,6 +16,10 @@ const mockSummary: HomeSummary = {
 };
 
 describe('HeroSummary', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders time-based greeting and username from email', () => {
     // Mock system time to morning
     vi.useFakeTimers();
@@ -24,9 +28,9 @@ describe('HeroSummary', () => {
     render(<HeroSummary email="test@example.com" summary={mockSummary} />);
 
     expect(screen.getByText('Good morning, test')).toBeInTheDocument();
-    expect(screen.getByText('Here is the current state of your personal system.')).toBeInTheDocument();
-    
-    vi.useRealTimers();
+    expect(
+      screen.getByText('Here is the current state of your personal system.')
+    ).toBeInTheDocument();
   });
 
   it('renders metric highlights correctly', () => {

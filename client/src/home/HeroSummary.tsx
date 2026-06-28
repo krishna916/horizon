@@ -7,7 +7,7 @@ export interface HeroSummaryProps {
 
 export function HeroSummary({ email, summary }: HeroSummaryProps) {
   const username = email ? email.split('@')[0] : 'User';
-  
+
   const getGreeting = () => {
     const hours = new Date().getHours();
     if (hours < 12) return 'Good morning';

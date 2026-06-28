@@ -1,34 +1,46 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import type React from 'react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { TodaysCommitmentsCard } from './TodaysCommitmentsCard';
 import { InboxCard } from './InboxCard';
 import { RecentProgressCard } from './RecentProgressCard';
 
-const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => mockNavigate,
+  Link: ({
+    children,
+    to,
+    className,
+  }: {
+    children: React.ReactNode;
+    to: string;
+    className?: string;
+  }) => (
+    <a href={to} className={className}>
+      {children}
+    </a>
+  ),
 }));
 
 describe('Briefing Cards', () => {
-  it('renders TodaysCommitmentsCard and handles navigation', () => {
+  it('renders TodaysCommitmentsCard and navigates to /today', () => {
     render(<TodaysCommitmentsCard overdueCount={3} dueTodayCount={5} />);
 
     expect(screen.getByText("Today's Commitments")).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByText('5')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Today's Commitments"));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/today' });
+    const link = screen.getByRole('link', { name: /today's commitments/i });
+    expect(link).toHaveAttribute('href', '/today');
   });
 
-  it('renders InboxCard and handles navigation', () => {
+  it('renders InboxCard and navigates to /inbox', () => {
     render(<InboxCard inboxCount={8} />);
 
     expect(screen.getByText('Inbox')).toBeInTheDocument();
     expect(screen.getByText('8')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Inbox'));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/inbox' });
+    const link = screen.getByRole('link', { name: /inbox/i });
+    expect(link).toHaveAttribute('href', '/inbox');
   });
 
   it('renders RecentProgressCard correctly', () => {

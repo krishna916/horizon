@@ -2,7 +2,7 @@
 
 Vite-based single page application targeting **React 19** and **TailwindCSS v4**.
 
-*Refer to the [Frontend Architecture Summary in ARCHITECTURE_OVERVIEW.md](file:///D:/projects/my-horizon/docs/ai/ARCHITECTURE_OVERVIEW.md#L310) for core frontend architecture standards.*
+_Refer to the [Frontend Architecture Summary in ARCHITECTURE_OVERVIEW.md](file:///D:/projects/my-horizon/docs/ai/ARCHITECTURE_OVERVIEW.md#L310) for core frontend architecture standards._
 
 ## Core Tech Stack & Libraries
 
@@ -24,7 +24,14 @@ npm run dev                             # dev server on http://localhost:5173
 npx @tanstack/router-cli generate       # generate routing tree manually (run if tsc fails)
 npm run build                           # tsc -b && vite build
 npm run lint                            # ESLint
+npm run format                          # prettier --write .
+npm run format:check                    # prettier --check .
+npm run typecheck                       # tsc -b (type check only)
 ```
+
+> **ESLint plugin installs:** `eslint-plugin-jsx-a11y` declares a peer dep ceiling of ESLint v9.
+> This project uses ESLint v10. Use `npm install --legacy-peer-deps eslint-plugin-jsx-a11y` to bypass
+> the false ERESOLVE conflict. The plugin is fully compatible with v10.
 
 ## Conventions
 
@@ -37,6 +44,14 @@ npm run lint                            # ESLint
 ## Testing Conventions
 
 - **Vitest Unit/Integration Tests**: Run `npm run test` (which executes `vitest run`). Ensure all frontend component and hook tests are passing before committing.
+- **TanStack Router mocks must include `Link`:** When a `vi.mock('@tanstack/react-router', ...)` factory is used, always export `Link` alongside any other router exports. If any component under test uses `<Link>`, the mock must provide it or Vitest will throw a runtime error at render time. Minimal stub:
+  ```ts
+  vi.mock('@tanstack/react-router', () => ({
+    useNavigate: () => vi.fn(),
+    Link: ({ children, to, className }: { children: React.ReactNode; to: string; className?: string }) =>
+      <a href={to} className={className}>{children}</a>,
+  }));
+  ```
 - **Playwright E2E Tests**: Run `npm run test:e2e` (which executes `playwright test`).
 - **Resilient Playwright Selectors**:
   - Prefer using name-based selectors (e.g., `page.locator('input[name="email"]')`) or robust IDs over transient placeholders or visual labels that are subject to UI/copy refactors.

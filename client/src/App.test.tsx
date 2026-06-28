@@ -16,4 +16,3 @@ test('renders App and checks heading', async () => {
   const heading = await screen.findByRole('heading', { name: /Good/i, level: 1 });
   expect(heading).toBeInTheDocument();
 });
-

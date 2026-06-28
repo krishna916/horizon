@@ -18,10 +18,14 @@ const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undef
 
 const getSafeStorageItem = (key: string): Theme | null => {
   try {
-    if (typeof window !== 'undefined' && window.localStorage && typeof window.localStorage.getItem === 'function') {
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      typeof window.localStorage.getItem === 'function'
+    ) {
       return window.localStorage.getItem(key) as Theme | null;
     }
-  } catch (e) {
+  } catch (_e) {
     // Ignore storage issues in test/restricted environments
   }
   return null;
@@ -29,10 +33,14 @@ const getSafeStorageItem = (key: string): Theme | null => {
 
 const setSafeStorageItem = (key: string, value: Theme): void => {
   try {
-    if (typeof window !== 'undefined' && window.localStorage && typeof window.localStorage.setItem === 'function') {
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      typeof window.localStorage.setItem === 'function'
+    ) {
       window.localStorage.setItem(key, value);
     }
-  } catch (e) {
+  } catch (_e) {
     // Ignore storage issues
   }
 };

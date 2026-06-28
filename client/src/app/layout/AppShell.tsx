@@ -1,7 +1,7 @@
-import { Outlet } from '@tanstack/react-router'
-import { AppSidebar } from './AppSidebar'
-import { AppHeader } from './AppHeader'
-import { AppContent } from './AppContent'
+import { Outlet } from '@tanstack/react-router';
+import { AppSidebar } from './AppSidebar';
+import { AppHeader } from './AppHeader';
+import { AppContent } from './AppContent';
 
 export function AppShell() {
   return (
@@ -14,5 +14,5 @@ export function AppShell() {
         </AppContent>
       </div>
     </div>
-  )
+  );
 }

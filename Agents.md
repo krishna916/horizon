@@ -47,6 +47,12 @@ When creating or modifying documentation markdown files (e.g. index maps, guides
 ### 7. Documentation Index Map Synchronization
 - **REQUIRED SKILL**: Whenever any markdown documentation files inside the `docs/ai/` directory are added, renamed, or modified, you MUST run the `sync-docs-index` skill (by running `node .agents/skills/sync-docs-index/scripts/sync-index.mjs`) to regenerate the [INDEX.md](file:///D:/projects/my-horizon/docs/ai/INDEX.md) index map. Do not edit `INDEX.md` manually.
 
+### 8. PowerShell Command Chaining (Windows)
+PowerShell does not support `&&` as a command separator (bash-only). On this Windows machine:
+- Use `;` to chain commands: `npx tsc -b ; npx vite build`
+- Or run each command separately in sequence
+- `npm run build` already handles this internally via the npm script runner (which uses sh, not PowerShell), so `npm run build` always works fine
+
 ## Startup
 
 - Run `./start.sh` from the repository root on Unix/Git Bash to start PostgreSQL, the backend (port 8081), and the frontend dev server.

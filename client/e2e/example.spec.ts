@@ -48,7 +48,7 @@ test('successful registration smoke test', async ({ page }) => {
   await emailInput.fill('smoke-test@example.com');
   await passwordInput.fill('password123');
   await confirmPasswordInput.fill('password123');
-  
+
   await agreeCheckbox.check();
 
   await submitButton.click();
@@ -56,4 +56,3 @@ test('successful registration smoke test', async ({ page }) => {
   // On success, the form component redirects to '/'
   await expect(page).toHaveURL('/');
 });
-

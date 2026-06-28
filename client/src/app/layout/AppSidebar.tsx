@@ -1,23 +1,23 @@
-import { Link, useNavigate, useLocation } from '@tanstack/react-router'
-import { Home, Calendar, Inbox, CheckCircle, FileText, Settings, Plus, LogOut } from 'lucide-react'
-import { useCurrentUser } from '@/user/hooks/useCurrentUser'
-import { useLogoutUser } from '@/user/hooks/useLogoutUser'
-import { cn } from '@/lib/utils'
+import { Link, useNavigate, useLocation } from '@tanstack/react-router';
+import { Home, Calendar, Inbox, CheckCircle, FileText, Settings, Plus, LogOut } from 'lucide-react';
+import { useCurrentUser } from '@/user/hooks/useCurrentUser';
+import { useLogoutUser } from '@/user/hooks/useLogoutUser';
+import { cn } from '@/lib/utils';
 
 export function AppSidebar() {
-  const { data: user } = useCurrentUser()
-  const logoutMutation = useLogoutUser()
-  const navigate = useNavigate()
-  const location = useLocation()
+  const { data: user } = useCurrentUser();
+  const logoutMutation = useLogoutUser();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = async () => {
     try {
-      await logoutMutation.mutateAsync()
-      navigate({ to: '/login' })
-    } catch (error) {
+      await logoutMutation.mutateAsync();
+      navigate({ to: '/login' });
+    } catch (_error) {
       // Handled by mutation state
     }
-  }
+  };
 
   const navItems = [
     { label: 'Home', path: '/', icon: Home },
@@ -25,9 +25,9 @@ export function AppSidebar() {
     { label: 'Inbox', path: '/inbox', icon: Inbox },
     { label: 'Tasks', path: '/tasks', icon: CheckCircle },
     { label: 'Notes', path: '/notes', icon: FileText },
-  ]
+  ];
 
-  const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'U'
+  const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : 'U';
 
   return (
     <aside className="w-64 h-full bg-sidebar border-r border-sidebar-border text-sidebar-foreground flex flex-col">
@@ -56,22 +56,22 @@ export function AppSidebar() {
       {/* Navigation Links */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path
+          const isActive = location.pathname === item.path;
           return (
             <Link
               key={item.path}
               to={item.path}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-sidebar-foreground transition-all duration-200 cursor-pointer select-none",
+                'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-sidebar-foreground transition-all duration-200 cursor-pointer select-none',
                 isActive
-                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                  : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                  : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
               )}
             >
               <item.icon className="h-4 w-4 shrink-0" />
               <span>{item.label}</span>
             </Link>
-          )
+          );
         })}
       </nav>
 
@@ -80,10 +80,10 @@ export function AppSidebar() {
         <Link
           to="/settings"
           className={cn(
-            "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-sidebar-foreground transition-all duration-200 cursor-pointer select-none mb-2",
+            'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-sidebar-foreground transition-all duration-200 cursor-pointer select-none mb-2',
             location.pathname === '/settings'
-              ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-              : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+              : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
           )}
         >
           <Settings className="h-4 w-4 shrink-0" />
@@ -98,7 +98,10 @@ export function AppSidebar() {
             </div>
             <div className="flex flex-col overflow-hidden">
               <span className="text-[10px] text-muted-foreground select-none">Profile</span>
-              <span className="text-xs font-medium text-sidebar-foreground truncate max-w-[120px]" title={user?.email}>
+              <span
+                className="text-xs font-medium text-sidebar-foreground truncate max-w-[120px]"
+                title={user?.email}
+              >
                 {user?.email || 'Loading…'}
               </span>
             </div>
@@ -116,5 +119,5 @@ export function AppSidebar() {
         </div>
       </div>
     </aside>
-  )
+  );
 }

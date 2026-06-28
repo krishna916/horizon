@@ -7,20 +7,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { SocialButton } from './SocialButton';
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form';
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+} from '@/components/ui/form';
 import { Sparkles } from 'lucide-react';
 
-const registerFormSchema = z.object({
-  email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  confirmPassword: z.string().min(1, 'Please confirm your password'),
-  agreeTerms: z.boolean().refine((val) => val === true, {
-    message: 'You must agree to the terms and conditions',
-  }),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: 'Passwords do not match',
-  path: ['confirmPassword'],
-});
+const registerFormSchema = z
+  .object({
+    email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
+    password: z.string().min(8, 'Password must be at least 8 characters'),
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
+    agreeTerms: z.boolean().refine((val) => val === true, {
+      message: 'You must agree to the terms and conditions',
+    }),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
 
 type RegisterFormFields = z.infer<typeof registerFormSchema>;
 
@@ -54,7 +63,9 @@ export function RegisterForm() {
       </div>
 
       <div className="text-center lg:text-left mb-6">
-        <h1 className="text-3xl font-medium tracking-tight text-foreground m-0">Create your account</h1>
+        <h1 className="text-3xl font-medium tracking-tight text-foreground m-0">
+          Create your account
+        </h1>
         <p className="text-sm text-muted-foreground mt-2">
           Create an account to start using Horizon.
         </p>
@@ -75,7 +86,7 @@ export function RegisterForm() {
               </FormItem>
             )}
           />
-          
+
           <FormField
             control={form.control}
             name="password"
@@ -95,7 +106,9 @@ export function RegisterForm() {
             name="confirmPassword"
             render={({ field }) => (
               <FormItem className="space-y-1">
-                <FormLabel className="text-sm font-normal text-foreground">Confirm Password</FormLabel>
+                <FormLabel className="text-sm font-normal text-foreground">
+                  Confirm Password
+                </FormLabel>
                 <FormControl>
                   <PasswordInput placeholder="••••••••" {...field} />
                 </FormControl>
@@ -121,13 +134,22 @@ export function RegisterForm() {
                   />
                 </FormControl>
                 <div className="space-y-1 leading-none text-left">
-                  <label htmlFor="agreeTerms-checkbox" className="text-sm font-normal text-muted-foreground select-none cursor-pointer">
+                  <label
+                    htmlFor="agreeTerms-checkbox"
+                    className="text-sm font-normal text-muted-foreground select-none cursor-pointer"
+                  >
                     I agree to the{' '}
-                    <a href="/terms" className="text-foreground hover:underline underline-offset-2 font-medium">
+                    <a
+                      href="/terms"
+                      className="text-foreground hover:underline underline-offset-2 font-medium"
+                    >
                       Terms of Service
                     </a>{' '}
                     and{' '}
-                    <a href="/privacy" className="text-foreground hover:underline underline-offset-2 font-medium">
+                    <a
+                      href="/privacy"
+                      className="text-foreground hover:underline underline-offset-2 font-medium"
+                    >
                       Privacy Policy
                     </a>
                     .
@@ -139,12 +161,19 @@ export function RegisterForm() {
           />
 
           {error && (
-            <div className="text-xs text-destructive text-center p-3 rounded-md bg-destructive/10 border border-destructive/20" role="alert">
+            <div
+              className="text-xs text-destructive text-center p-3 rounded-md bg-destructive/10 border border-destructive/20"
+              role="alert"
+            >
               {error.response?.data?.title || 'Registration failed'}
             </div>
           )}
 
-          <Button type="submit" disabled={isPending} className="w-full h-10 mt-2 font-medium bg-primary text-primary-foreground hover:bg-primary/95 transition-colors shadow-none cursor-pointer">
+          <Button
+            type="submit"
+            disabled={isPending}
+            className="w-full h-10 mt-2 font-medium bg-primary text-primary-foreground hover:bg-primary/95 transition-colors shadow-none cursor-pointer"
+          >
             {isPending ? 'Registering…' : 'Create Account'}
           </Button>
         </form>
@@ -158,9 +187,7 @@ export function RegisterForm() {
           </span>
         </div>
 
-        <SocialButton provider="google">
-          Continue with Google
-        </SocialButton>
+        <SocialButton provider="google">Continue with Google</SocialButton>
 
         <p className="text-sm text-center text-muted-foreground mt-6">
           Already have an account?{' '}
@@ -172,9 +199,15 @@ export function RegisterForm() {
 
       {/* Footer Links */}
       <div className="flex items-center justify-center gap-8 mt-12 mb-2 font-mono text-[10px] text-muted-foreground/50 tracking-widest uppercase">
-        <a href="/privacy" className="hover:text-foreground transition-colors">Privacy</a>
-        <a href="/terms" className="hover:text-foreground transition-colors">Terms</a>
-        <a href="/help" className="hover:text-foreground transition-colors">Help</a>
+        <a href="/privacy" className="hover:text-foreground transition-colors">
+          Privacy
+        </a>
+        <a href="/terms" className="hover:text-foreground transition-colors">
+          Terms
+        </a>
+        <a href="/help" className="hover:text-foreground transition-colors">
+          Help
+        </a>
       </div>
     </div>
   );

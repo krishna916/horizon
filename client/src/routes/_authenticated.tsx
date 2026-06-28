@@ -1,6 +1,7 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
-import { userApi } from '@/user/api'
-import { AppShell } from '@/app/layout/AppShell'
+import { createFileRoute, redirect } from '@tanstack/react-router';
+import { isAxiosError } from 'axios';
+import { userApi } from '@/user/api';
+import { AppShell } from '@/app/layout/AppShell';
 
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async ({ context }) => {
@@ -8,15 +9,21 @@ export const Route = createFileRoute('/_authenticated')({
       await context.queryClient.ensureQueryData({
         queryKey: ['me'],
         queryFn: async () => {
-          const response = await userApi.getCurrentUser()
-          return response.data
+          const response = await userApi.getCurrentUser();
+          return response.data;
         },
-      })
+      });
     } catch (error) {
-      throw redirect({
-        to: '/login',
-      })
+      if (
+        isAxiosError(error) &&
+        (error.response?.status === 401 || error.response?.status === 403)
+      ) {
+        throw redirect({
+          to: '/login',
+        });
+      }
+      throw error;
     }
   },
   component: AppShell,
-})
+});

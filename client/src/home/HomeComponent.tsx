@@ -6,11 +6,14 @@ import { RecentProgressCard } from './RecentProgressCard';
 import { MOCK_HOME_SUMMARY } from './mockData';
 
 export function HomeComponent() {
-  const { data: user, isPending } = useCurrentUser();
+  const { data: user, isPending, isError } = useCurrentUser();
 
   if (isPending) {
     return (
-      <div className="w-full h-full flex flex-col p-8 space-y-6 animate-pulse" data-testid="loading-skeleton">
+      <div
+        className="w-full h-full flex flex-col p-8 space-y-6 animate-pulse"
+        data-testid="loading-skeleton"
+      >
         <div className="h-8 bg-muted rounded w-1/3" />
         <div className="h-4 bg-muted rounded w-1/2" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
@@ -18,6 +21,17 @@ export function HomeComponent() {
           <div className="h-48 bg-muted rounded-xl" />
           <div className="h-48 bg-muted rounded-xl" />
         </div>
+      </div>
+    );
+  }
+
+  if (isError || !user) {
+    return (
+      <div
+        className="w-full h-full flex flex-col items-center justify-center p-8 text-muted-foreground"
+        data-testid="user-unavailable"
+      >
+        <p className="text-sm">Unable to load your dashboard. Please try refreshing the page.</p>
       </div>
     );
   }
@@ -34,8 +48,12 @@ export function HomeComponent() {
         <RecentProgressCard
           tasksCompletedToday={MOCK_HOME_SUMMARY.recentProgress.tasksCompletedToday}
           tasksCompletedThisWeek={MOCK_HOME_SUMMARY.recentProgress.tasksCompletedThisWeek}
-          checklistItemsCompletedToday={MOCK_HOME_SUMMARY.recentProgress.checklistItemsCompletedToday}
-          checklistItemsCompletedThisWeek={MOCK_HOME_SUMMARY.recentProgress.checklistItemsCompletedThisWeek}
+          checklistItemsCompletedToday={
+            MOCK_HOME_SUMMARY.recentProgress.checklistItemsCompletedToday
+          }
+          checklistItemsCompletedThisWeek={
+            MOCK_HOME_SUMMARY.recentProgress.checklistItemsCompletedThisWeek
+          }
         />
       </div>
     </div>
