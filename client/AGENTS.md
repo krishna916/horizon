@@ -2,7 +2,7 @@
 
 Vite-based single page application targeting **React 19** and **TailwindCSS v4**.
 
-_Refer to the [Frontend Architecture Summary in ARCHITECTURE_OVERVIEW.md](file:///D:/projects/my-horizon/docs/ai/ARCHITECTURE_OVERVIEW.md#L310) for core frontend architecture standards._
+_Refer to the [Frontend Architecture Summary in ARCHITECTURE_OVERVIEW.md](../docs/ai/ARCHITECTURE_OVERVIEW.md#L310) for core frontend architecture standards._
 
 ## Core Tech Stack & Libraries
 
@@ -31,7 +31,8 @@ npm run typecheck                       # tsc -b (type check only)
 
 > **ESLint plugin installs:** `eslint-plugin-jsx-a11y` declares a peer dep ceiling of ESLint v9.
 > This project uses ESLint v10. Use `npm install --legacy-peer-deps eslint-plugin-jsx-a11y` to bypass
-> the false ERESOLVE conflict. The plugin is fully compatible with v10.
+> the false ERESOLVE conflict, as it runs correctly in this repo when installed with `--legacy-peer-deps`.
+> See [jsx-eslint/eslint-plugin-jsx-a11y#1075](https://github.com/jsx-eslint/eslint-plugin-jsx-a11y/issues/1075) for upstream v10 support status.
 
 ## Conventions
 

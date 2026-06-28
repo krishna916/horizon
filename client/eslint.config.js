@@ -40,7 +40,7 @@ export default defineConfig([
       'no-restricted-syntax': [
         'error',
         {
-          selector: "ImportDeclaration[source.value='react'][specifiers.0.type='ImportNamespaceSpecifier']",
+          selector: "ImportDeclaration[source.value='react'] > ImportNamespaceSpecifier",
           message:
             "Namespace imports from 'react' are not allowed. Use named imports instead (e.g. import { useState } from 'react').",
         },
