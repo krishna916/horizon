@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Horizon · Tasks design review</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="review-bar"><span>DESIGN REVIEW <span class="review-note">· illustrative content · approved initial version</span></span><div><button data-scene="list">List</button><button data-scene="details">Details</button><button data-scene="create">Create</button><button data-scene="page">Full page</button><button data-scene="history">History</button><button id="reset">Reset demo</button></div></div>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">Horizon<span>PRODUCTIVITY</span></div>
+      <button class="capture" disabled><span data-icon="plus"></span>Capture</button>
+      <nav aria-label="Main navigation">
+        <span class="nav-link"><span data-icon="home"></span>Home</span>
+        <span class="nav-link"><span data-icon="calendar"></span>Today</span>
+        <span class="nav-link"><span data-icon="inbox"></span>Inbox</span>
+        <button class="nav-link active" data-scene="list"><span data-icon="circle-check"></span>Tasks</button>
+        <span class="nav-link"><span data-icon="file"></span>Notes</span>
+      </nav>
+      <div class="sidebar-footer"><span class="nav-link"><span data-icon="settings"></span>Settings</span><div class="profile"><span class="avatar">K</span><div><small>Profile</small><span>Local design review</span></div></div></div>
+    </aside>
+    <div class="main">
+      <header class="app-header"><h2>Tasks</h2><div class="search"><span data-icon="search"></span><input placeholder="Search tasks…" aria-label="Search tasks" disabled></div><div class="header-icons"><span data-icon="bell"></span><span data-icon="help"></span></div></header>
+      <div class="workspace" id="workspace">
+        <main class="task-list" id="list-pane">
+          <div class="list-intro"><h1>All Tasks</h1><p>Stay organized and clear the path ahead.</p></div>
+          <button class="add-task" id="add-task"><span data-icon="plus"></span>Add a task to Active…</button>
+          <div class="list-controls">
+            <div class="sort-control"><span data-icon="sort"></span><label for="sort">Sort</label><select id="sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="due-asc">Due date: earliest first</option><option value="due-desc">Due date: latest first</option><option value="priority-desc">Priority: highest first</option><option value="priority-asc">Priority: lowest first</option></select></div>
+            <label class="toggle-label"><input id="show-history" type="checkbox" role="switch"><span class="switch"></span><span>Completed history</span></label>
+            <label class="toggle-label"><input id="show-archived" type="checkbox" role="switch"><span class="switch"></span><span>Archived tasks</span></label>
+          </div>
+          <div id="groups"></div>
+        </main>
+        <div class="splitter" id="splitter" role="separator" aria-label="Resize task panel" aria-orientation="vertical" aria-valuemin="35" aria-valuemax="70" aria-valuenow="60" tabindex="0" hidden></div>
+        <aside class="detail-panel" id="panel" aria-label="Task details" hidden></aside>
+        <main class="full-page" id="full-page" hidden></main>
+      </div>
+    </div>
+  </div>
+  <div id="row-menu" class="row-menu" popover></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="unsaved"><h2>Save or cancel your edit</h2><p>Finish the current edit before leaving this task.</p><div><button class="button" id="cancel-unsaved">Cancel edit</button><button class="button primary" id="save-unsaved">Save edit</button></div></dialog>
+  <script src="mockup.js"></script>
+</body>
+</html>
