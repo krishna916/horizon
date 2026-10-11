@@ -29,10 +29,8 @@ npm run format:check                    # prettier --check .
 npm run typecheck                       # tsc -b (type check only)
 ```
 
-> **ESLint plugin installs:** `eslint-plugin-jsx-a11y` declares a peer dep ceiling of ESLint v9.
-> This project uses ESLint v10. Use `npm install --legacy-peer-deps eslint-plugin-jsx-a11y` to bypass
-> the false ERESOLVE conflict, as it runs correctly in this repo when installed with `--legacy-peer-deps`.
-> See [jsx-eslint/eslint-plugin-jsx-a11y#1075](https://github.com/jsx-eslint/eslint-plugin-jsx-a11y/issues/1075) for upstream v10 support status.
+> **ESLint accessibility rules:** This project uses `eslint-plugin-jsx-a11y-x`, which supports ESLint v10.
+> Run the standard `npm install` command; no peer dependency override is needed.
 
 ## Conventions
 
