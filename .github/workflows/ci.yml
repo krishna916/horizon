@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            server/pom.xml
+            server/.mvn/wrapper/maven-wrapper.properties
+
+      - name: Verify Docker availability
+        run: docker info --format '{{.ServerVersion}}'
+
+      - name: Run Maven verification
+        run: ./mvnw -B -ntp verify
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-surefire-reports
+          path: server/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
