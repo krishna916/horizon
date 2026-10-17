@@ -1,0 +1,73 @@
+package com.krishnamurti.horizon.task.application;
+
+import com.krishnamurti.horizon.shared.security.CurrentUserProvider;
+import com.krishnamurti.horizon.task.domain.Task;
+import com.krishnamurti.horizon.task.domain.TaskPriority;
+import com.krishnamurti.horizon.task.infrastructure.TaskKeyAllocator;
+import com.krishnamurti.horizon.task.infrastructure.TaskRepository;
+import java.time.LocalDate;
+import java.util.Map;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/** Transactional task write use cases. */
+@Service
+public class TaskCommandService {
+
+    private final TaskRepository taskRepository;
+    private final TaskKeyAllocator taskKeyAllocator;
+    private final CurrentUserProvider currentUserProvider;
+
+    public TaskCommandService(
+            TaskRepository taskRepository,
+            TaskKeyAllocator taskKeyAllocator,
+            CurrentUserProvider currentUserProvider) {
+        this.taskRepository = taskRepository;
+        this.taskKeyAllocator = taskKeyAllocator;
+        this.currentUserProvider = currentUserProvider;
+    }
+
+    @Transactional
+    public Task create(
+            String title,
+            Map<String, Object> description,
+            TaskPriority priority,
+            LocalDate dueDate) {
+        Long userId = requireCurrentUserId();
+        long number = taskKeyAllocator.allocateNextNumber(userId);
+        Task task = Task.create(userId, "TASK-" + number, title, description, priority, dueDate);
+        return taskRepository.saveAndFlush(task);
+    }
+
+    @Transactional
+    public Task update(Long taskId, TaskPatch patch) {
+        Long userId = requireCurrentUserId();
+        Task task =
+                taskRepository
+                        .findByIdAndUserIdAndDeletedAtIsNull(taskId, userId)
+                        .orElseThrow(TaskNotFoundException::new);
+
+        if (patch.title().present()) {
+            task.updateTitle(patch.title().value());
+        }
+        if (patch.description().present()) {
+            task.updateDescription(patch.description().value());
+        }
+        if (patch.priority().present()) {
+            task.updatePriority(patch.priority().value());
+        }
+        if (patch.dueDate().present()) {
+            task.updateDueDate(patch.dueDate().value());
+        }
+
+        return taskRepository.saveAndFlush(task);
+    }
+
+    private Long requireCurrentUserId() {
+        return currentUserProvider
+                .getCurrentUserId()
+                .orElseThrow(
+                        () -> new InsufficientAuthenticationException("User is not authenticated"));
+    }
+}
