@@ -30,10 +30,20 @@ public class TaskExceptionHandler {
     @ExceptionHandler(InvalidTaskException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ProblemDetail handleInvalidTask(InvalidTaskException exception) {
+        return validationFailure(exception.getField(), exception.getMessage());
+    }
+
+    @ExceptionHandler(TaskRequestValidationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ProblemDetail handleInvalidRequest(TaskRequestValidationException exception) {
+        return validationFailure(exception.getField(), exception.getMessage());
+    }
+
+    private ProblemDetail validationFailure(String field, String message) {
         ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         detail.setTitle("Validation Failed");
         detail.setDetail("The request body contains invalid fields.");
-        detail.setProperty("errors", Map.of(exception.getField(), exception.getMessage()));
+        detail.setProperty("errors", Map.of(field, message));
         return detail;
     }
 }

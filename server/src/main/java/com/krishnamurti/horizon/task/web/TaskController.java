@@ -8,6 +8,7 @@ import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,14 +24,17 @@ public class TaskController {
     private final TaskCommandService taskCommandService;
     private final TaskQueryService taskQueryService;
     private final TaskResponseMapper taskResponseMapper;
+    private final TaskRequestMapper taskRequestMapper;
 
     public TaskController(
             TaskCommandService taskCommandService,
             TaskQueryService taskQueryService,
-            TaskResponseMapper taskResponseMapper) {
+            TaskResponseMapper taskResponseMapper,
+            TaskRequestMapper taskRequestMapper) {
         this.taskCommandService = taskCommandService;
         this.taskQueryService = taskQueryService;
         this.taskResponseMapper = taskResponseMapper;
+        this.taskRequestMapper = taskRequestMapper;
     }
 
     @PostMapping
@@ -49,6 +53,13 @@ public class TaskController {
     @GetMapping("/{id}")
     public TaskDetailResponse get(@PathVariable Long id) {
         return taskResponseMapper.toDetail(taskQueryService.get(id));
+    }
+
+    @PatchMapping("/{id}")
+    public TaskDetailResponse update(
+            @PathVariable Long id, @RequestBody UpdateTaskRequest request) {
+        return taskResponseMapper.toDetail(
+                taskCommandService.update(id, taskRequestMapper.toPatch(request)));
     }
 
     @GetMapping

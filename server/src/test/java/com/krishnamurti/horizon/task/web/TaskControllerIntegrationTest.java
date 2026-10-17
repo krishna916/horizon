@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -228,6 +229,246 @@ class TaskControllerIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"title\":\"Bad date\",\"dueDate\":\"not-a-date\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void patchPriorityOnlyPreservesOtherFields() throws Exception {
+        createTask(
+                "Priority patch",
+                "{\"title\":\"Priority"
+                    + " patch\",\"description\":{\"type\":\"doc\",\"content\":[]},\"dueDate\":\"2026-10-20\"}");
+        Long id = taskIdForTitle("Priority patch");
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"priority\":\"LOW\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.priority").value("LOW"))
+                .andExpect(jsonPath("$.description.type").value("doc"))
+                .andExpect(jsonPath("$.dueDate").value("2026-10-20"));
+    }
+
+    @Test
+    void patchNullClearsPriorityDueDateDescription() throws Exception {
+        createTask(
+                "Clear optional",
+                "{\"title\":\"Clear"
+                    + " optional\",\"description\":{\"type\":\"doc\",\"content\":[]},\"priority\":\"HIGH\",\"dueDate\":\"2026-10-20\"}");
+        Long id = taskIdForTitle("Clear optional");
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"description\":null,\"priority\":null,\"dueDate\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.description").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.priority").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.dueDate").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    void patchOmittedDescriptionLeavesItIntact() throws Exception {
+        createTask(
+                "Keep description",
+                "{\"title\":\"Keep"
+                    + " description\",\"description\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\"}]}}");
+        Long id = taskIdForTitle("Keep description");
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"dueDate\":\"2026-10-21\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.description.type").value("doc"))
+                .andExpect(jsonPath("$.description.content[0].type").value("paragraph"))
+                .andExpect(jsonPath("$.dueDate").value("2026-10-21"));
+    }
+
+    @Test
+    void patchTitleStripsWhitespaceAndRejectsBlank() throws Exception {
+        createTask("Normalize patch title", "{\"title\":\"Before\"}");
+        Long id = taskIdForTitle("Before");
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"  After  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("After"));
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"  \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"));
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("After"));
+    }
+
+    @Test
+    void patchEmptyObjectOrImmutableFieldReturns400() throws Exception {
+        createTask("Reject patch", "{\"title\":\"Reject patch\"}");
+        Long id = taskIdForTitle("Reject patch");
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"));
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"userId\":99}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"));
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"key\":\"TASK-99\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void patchMalformedDateOrInvalidPriorityReturns400() throws Exception {
+        createTask("Bad patch values", "{\"title\":\"Bad patch values\"}");
+        Long id = taskIdForTitle("Bad patch values");
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"dueDate\":\"not-a-date\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"priority\":\"URGENT\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"description\":\"not a document\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Bad patch values"))
+                .andExpect(jsonPath("$.priority").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.dueDate").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    void patchWrongTypeReturns400() throws Exception {
+        createTask("Wrong patch type", "{\"title\":\"Wrong patch type\"}");
+        Long id = taskIdForTitle("Wrong patch type");
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":17}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":null}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"description\":[]}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Wrong patch type"));
+    }
+
+    @Test
+    void patchMissingAndOtherOwnerReturnSame404() throws Exception {
+        createTask("Patch owner", "{\"title\":\"Patch owner\"}");
+        Long id = taskIdForTitle("Patch owner");
+        String otherEmail = UUID.randomUUID() + "@example.com";
+        userCommandService.register(otherEmail, PASSWORD);
+        Cookie otherCookie = login(otherEmail);
+        String body = "{\"title\":\"Changed\"}";
+
+        MvcResult otherOwnerResult =
+                mockMvc.perform(
+                                patch("/api/v1/tasks/{id}", id)
+                                        .cookie(otherCookie)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isNotFound())
+                        .andReturn();
+        MvcResult missingResult =
+                mockMvc.perform(
+                                patch("/api/v1/tasks/{id}", Long.MAX_VALUE)
+                                        .cookie(otherCookie)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isNotFound())
+                        .andReturn();
+
+        assertThat(otherOwnerResult.getResponse().getContentAsString())
+                .isEqualTo(missingResult.getResponse().getContentAsString());
+    }
+
+    @Test
+    void patchUpdatesTimestampPreservingIdKeyCreatedAt() throws Exception {
+        createTask("Timestamp patch", "{\"title\":\"Timestamp patch\"}");
+        Long id = taskIdForTitle("Timestamp patch");
+        MvcResult before =
+                mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        String beforeJson = before.getResponse().getContentAsString();
+        String createdAt = JsonPath.parse(beforeJson).read("$.createdAt", String.class);
+        String updatedAt = JsonPath.parse(beforeJson).read("$.updatedAt", String.class);
+        String key = JsonPath.parse(beforeJson).read("$.key", String.class);
+        Thread.sleep(10);
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Timestamp changed\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.key").value(key))
+                .andExpect(jsonPath("$.createdAt").value(createdAt))
+                .andExpect(jsonPath("$.updatedAt").value(org.hamcrest.Matchers.not(updatedAt)));
+    }
+
+    @Test
+    void patchOnDeletedTaskReturns404() throws Exception {
+        createTask("Deleted patch", "{\"title\":\"Deleted patch\"}");
+        Long id = taskIdForTitle("Deleted patch");
+        jdbcTemplate.update(
+                "UPDATE task SET deleted_at = ? WHERE id = ?",
+                OffsetDateTime.now(ZoneOffset.UTC),
+                id);
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Cannot update\"}"))
+                .andExpect(status().isNotFound());
     }
 
     private void createTask(String title, String body) throws Exception {
