@@ -3,17 +3,14 @@ package com.krishnamurti.horizon.user.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.krishnamurti.horizon.TestcontainersConfiguration;
 import com.krishnamurti.horizon.user.domain.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Repository tests for {@link UserRepository}.
@@ -21,20 +18,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>Validates persistence behavior against PostgreSQL using Testcontainers. Uses @DataJpaTest for
  * a lightweight slice test with real database.
  */
-@DataJpaTest
-@Testcontainers
+@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(TestcontainersConfiguration.class)
 class UserRepositoryTest {
-
-    @Container static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17");
-
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
-    }
 
     @Autowired private UserRepository userRepository;
 
