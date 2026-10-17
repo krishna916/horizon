@@ -15,9 +15,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -281,6 +283,103 @@ class TaskPersistenceIntegrationTest {
 
         assertThat(reloaded.getCreatedAt()).isEqualTo(createdAt);
         assertThat(reloaded.getUpdatedAt()).isAfter(createdAt);
+    }
+
+    @Test
+    void concurrentDisjointFieldUpdatesPreserveBothChanges() throws Exception {
+        Long userId = createUserId();
+        Task saved =
+                taskRepository.saveAndFlush(
+                        Task.create(
+                                userId,
+                                "TASK-1",
+                                "Concurrent updates",
+                                null,
+                                TaskPriority.MEDIUM,
+                                LocalDate.of(2026, 10, 20)));
+        Long taskId = saved.getId();
+        entityManager.clear();
+        Task original =
+                taskRepository.findByIdAndUserIdAndDeletedAtIsNull(taskId, userId).orElseThrow();
+        String taskKey = original.getTaskKey();
+        OffsetDateTime createdAt = original.getCreatedAt();
+        OffsetDateTime updatedAt = original.getUpdatedAt();
+        Thread.sleep(10);
+        CountDownLatch bothRowsLoaded = new CountDownLatch(2);
+        CountDownLatch startUpdates = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> priorityUpdate =
+                    executor.submit(
+                            () ->
+                                    updateInSeparateTransaction(
+                                            taskId,
+                                            userId,
+                                            bothRowsLoaded,
+                                            startUpdates,
+                                            task -> task.updatePriority(TaskPriority.HIGH)));
+            Future<?> dueDateUpdate =
+                    executor.submit(
+                            () ->
+                                    updateInSeparateTransaction(
+                                            taskId,
+                                            userId,
+                                            bothRowsLoaded,
+                                            startUpdates,
+                                            task ->
+                                                    task.updateDueDate(
+                                                            LocalDate.of(2026, 10, 21))));
+
+            assertThat(bothRowsLoaded.await(10, TimeUnit.SECONDS)).isTrue();
+            startUpdates.countDown();
+            priorityUpdate.get(10, TimeUnit.SECONDS);
+            dueDateUpdate.get(10, TimeUnit.SECONDS);
+        } finally {
+            startUpdates.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+
+        Task reloaded =
+                taskRepository.findByIdAndUserIdAndDeletedAtIsNull(taskId, userId).orElseThrow();
+
+        assertThat(reloaded.getPriority()).isEqualTo(TaskPriority.HIGH);
+        assertThat(reloaded.getDueDate()).isEqualTo(LocalDate.of(2026, 10, 21));
+        assertThat(reloaded.getId()).isEqualTo(taskId);
+        assertThat(reloaded.getTaskKey()).isEqualTo(taskKey);
+        assertThat(reloaded.getUserId()).isEqualTo(userId);
+        assertThat(reloaded.getCreatedAt()).isEqualTo(createdAt);
+        assertThat(reloaded.getUpdatedAt()).isAfter(updatedAt);
+    }
+
+    private void updateInSeparateTransaction(
+            Long taskId,
+            Long userId,
+            CountDownLatch bothRowsLoaded,
+            CountDownLatch startUpdates,
+            java.util.function.Consumer<Task> update) {
+        new TransactionTemplate(transactionManager)
+                .executeWithoutResult(
+                        status -> {
+                            Task task =
+                                    taskRepository
+                                            .findByIdAndUserIdAndDeletedAtIsNull(taskId, userId)
+                                            .orElseThrow();
+                            bothRowsLoaded.countDown();
+                            try {
+                                if (!startUpdates.await(10, TimeUnit.SECONDS)) {
+                                    throw new AssertionError(
+                                            "Timed out waiting to start task updates");
+                                }
+                            } catch (InterruptedException exception) {
+                                Thread.currentThread().interrupt();
+                                throw new AssertionError(
+                                        "Interrupted while waiting to update task", exception);
+                            }
+                            update.accept(task);
+                            taskRepository.saveAndFlush(task);
+                        });
     }
 
     private Task createTask(Long userId, String key, String title) {

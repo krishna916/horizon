@@ -13,12 +13,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import lombok.Getter;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /** Aggregate root for an individually owned task. */
 @Entity
 @Table(name = "task")
+@DynamicUpdate
 @Getter
 public class Task extends BaseEntity {
 
