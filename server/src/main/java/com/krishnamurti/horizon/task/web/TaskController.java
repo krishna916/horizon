@@ -44,8 +44,8 @@ public class TaskController {
                 taskCommandService.create(
                         request.title(),
                         request.description(),
-                        request.priority(),
-                        request.dueDate());
+                        taskRequestMapper.parsePriority(request.priority()),
+                        taskRequestMapper.parseDueDate(request.dueDate()));
         URI location = URI.create("/api/v1/tasks/" + task.getId());
         return ResponseEntity.created(location).body(taskResponseMapper.toDetail(task));
     }

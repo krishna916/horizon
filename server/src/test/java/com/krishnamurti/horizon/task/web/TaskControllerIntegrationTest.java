@@ -232,6 +232,168 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void postAndPatchInvalidPriorityReturnSameFieldValidationShape() throws Exception {
+        createTask(
+                "Priority validation target",
+                "{\"title\":\"Priority validation"
+                        + " target\",\"priority\":\"HIGH\",\"dueDate\":\"2026-10-20\"}");
+        Long id = taskIdForTitle("Priority validation target");
+
+        String postPriorityValueError =
+                assertFieldValidation(
+                        mockMvc.perform(
+                                        post("/api/v1/tasks")
+                                                .cookie(ownerCookie)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"title\":\"Invalid priority"
+                                                            + " value\",\"priority\":\"URGENT\"}"))
+                                .andReturn(),
+                        "priority");
+        String postPriorityTypeError =
+                assertFieldValidation(
+                        mockMvc.perform(
+                                        post("/api/v1/tasks")
+                                                .cookie(ownerCookie)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"title\":\"Invalid priority"
+                                                                + " type\",\"priority\":42}"))
+                                .andReturn(),
+                        "priority");
+        assertThat(
+                        assertFieldValidation(
+                                mockMvc.perform(
+                                                patch("/api/v1/tasks/{id}", id)
+                                                        .cookie(ownerCookie)
+                                                        .contentType(MediaType.APPLICATION_JSON)
+                                                        .content("{\"priority\":\"URGENT\"}"))
+                                        .andReturn(),
+                                "priority"))
+                .isEqualTo(postPriorityValueError);
+        assertThat(
+                        assertFieldValidation(
+                                mockMvc.perform(
+                                                patch("/api/v1/tasks/{id}", id)
+                                                        .cookie(ownerCookie)
+                                                        .contentType(MediaType.APPLICATION_JSON)
+                                                        .content("{\"priority\":42}"))
+                                        .andReturn(),
+                                "priority"))
+                .isEqualTo(postPriorityTypeError);
+
+        assertThat(taskIdCountForTitle("Invalid priority value")).isZero();
+        assertThat(taskIdCountForTitle("Invalid priority type")).isZero();
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.priority").value("HIGH"))
+                .andExpect(jsonPath("$.dueDate").value("2026-10-20"));
+    }
+
+    @Test
+    void postAndPatchInvalidDueDateReturnSameFieldValidationShape() throws Exception {
+        createTask(
+                "Date validation target",
+                "{\"title\":\"Date validation"
+                        + " target\",\"priority\":\"HIGH\",\"dueDate\":\"2026-10-20\"}");
+        Long id = taskIdForTitle("Date validation target");
+
+        String postDateValueError =
+                assertFieldValidation(
+                        mockMvc.perform(
+                                        post("/api/v1/tasks")
+                                                .cookie(ownerCookie)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"title\":\"Invalid date"
+                                                            + " value\",\"dueDate\":\"not-a-date\"}"))
+                                .andReturn(),
+                        "dueDate");
+        String postDateTypeError =
+                assertFieldValidation(
+                        mockMvc.perform(
+                                        post("/api/v1/tasks")
+                                                .cookie(ownerCookie)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"title\":\"Invalid date"
+                                                                + " type\",\"dueDate\":42}"))
+                                .andReturn(),
+                        "dueDate");
+        assertThat(
+                        assertFieldValidation(
+                                mockMvc.perform(
+                                                patch("/api/v1/tasks/{id}", id)
+                                                        .cookie(ownerCookie)
+                                                        .contentType(MediaType.APPLICATION_JSON)
+                                                        .content("{\"dueDate\":\"not-a-date\"}"))
+                                        .andReturn(),
+                                "dueDate"))
+                .isEqualTo(postDateValueError);
+        assertThat(
+                        assertFieldValidation(
+                                mockMvc.perform(
+                                                patch("/api/v1/tasks/{id}", id)
+                                                        .cookie(ownerCookie)
+                                                        .contentType(MediaType.APPLICATION_JSON)
+                                                        .content("{\"dueDate\":42}"))
+                                        .andReturn(),
+                                "dueDate"))
+                .isEqualTo(postDateTypeError);
+
+        assertThat(taskIdCountForTitle("Invalid date value")).isZero();
+        assertThat(taskIdCountForTitle("Invalid date type")).isZero();
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.priority").value("HIGH"))
+                .andExpect(jsonPath("$.dueDate").value("2026-10-20"));
+    }
+
+    @Test
+    void createKeepsOptionalNullsAndMalformedJsonUsesGlobalResponse() throws Exception {
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"  Normalized title  \"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.title").value("Normalized title"))
+                .andExpect(jsonPath("$.priority").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.dueDate").value(org.hamcrest.Matchers.nullValue()));
+        Long normalizedTaskId = taskIdForTitle("Normalized title");
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Explicit"
+                                                + " nulls\",\"priority\":null,\"dueDate\":null}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.priority").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.dueDate").value(org.hamcrest.Matchers.nullValue()));
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Malformed JSON Request"));
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", normalizedTaskId)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Malformed JSON Request"));
+        mockMvc.perform(get("/api/v1/tasks/{id}", normalizedTaskId).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Normalized title"));
+        assertThat(taskIdCountForTitle("Normalized title")).isEqualTo(1);
+        assertThat(taskIdCountForTitle("Explicit nulls")).isEqualTo(1);
+    }
+
+    @Test
     void patchPriorityOnlyPreservesOtherFields() throws Exception {
         createTask(
                 "Priority patch",
@@ -506,5 +668,15 @@ class TaskControllerIntegrationTest {
     private long taskIdCountForTitle(String title) {
         return jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM task WHERE title = ?", Long.class, title);
+    }
+
+    private String assertFieldValidation(MvcResult result, String field) throws Exception {
+        assertThat(result.getResponse().getStatus()).isEqualTo(400);
+        String body = result.getResponse().getContentAsString();
+        assertThat(JsonPath.parse(body).read("$.title", String.class))
+                .isEqualTo("Validation Failed");
+        String message = JsonPath.parse(body).read("$.errors." + field, String.class);
+        assertThat(message).isNotBlank();
+        return message;
     }
 }

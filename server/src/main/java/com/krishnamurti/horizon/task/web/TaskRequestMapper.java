@@ -36,6 +36,34 @@ public class TaskRequestMapper {
                 dateUpdate(fields));
     }
 
+    public TaskPriority parsePriority(JsonNode value) {
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.isString()) {
+            fail("priority", "Must be a valid priority string or null.");
+        }
+        try {
+            return TaskPriority.valueOf(value.stringValue());
+        } catch (IllegalArgumentException exception) {
+            throw new TaskRequestValidationException("priority", "Must be a valid priority.");
+        }
+    }
+
+    public LocalDate parseDueDate(JsonNode value) {
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.isString()) {
+            fail("dueDate", "Must be an ISO date string or null.");
+        }
+        try {
+            return LocalDate.parse(value.stringValue());
+        } catch (DateTimeParseException exception) {
+            throw new TaskRequestValidationException("dueDate", "Must be a valid ISO date.");
+        }
+    }
+
     private FieldUpdate<String> stringUpdate(Map<String, JsonNode> fields, String field) {
         if (!fields.containsKey(field)) {
             return FieldUpdate.absent();
@@ -86,14 +114,7 @@ public class TaskRequestMapper {
         if (value.isNull()) {
             return FieldUpdate.of(null);
         }
-        if (!value.isString()) {
-            fail("priority", "Must be a valid priority string or null.");
-        }
-        try {
-            return FieldUpdate.of(TaskPriority.valueOf(value.stringValue()));
-        } catch (IllegalArgumentException exception) {
-            throw new TaskRequestValidationException("priority", "Must be a valid priority.");
-        }
+        return FieldUpdate.of(parsePriority(value));
     }
 
     private FieldUpdate<LocalDate> dateUpdate(Map<String, JsonNode> fields) {
@@ -104,14 +125,7 @@ public class TaskRequestMapper {
         if (value.isNull()) {
             return FieldUpdate.of(null);
         }
-        if (!value.isString()) {
-            fail("dueDate", "Must be an ISO date string or null.");
-        }
-        try {
-            return FieldUpdate.of(LocalDate.parse(value.stringValue()));
-        } catch (DateTimeParseException exception) {
-            throw new TaskRequestValidationException("dueDate", "Must be a valid ISO date.");
-        }
+        return FieldUpdate.of(parseDueDate(value));
     }
 
     private Object toJavaValue(JsonNode value) {
