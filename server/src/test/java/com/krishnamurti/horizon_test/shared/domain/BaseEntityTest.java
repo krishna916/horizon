@@ -2,6 +2,7 @@ package com.krishnamurti.horizon_test.shared.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.krishnamurti.horizon.TestcontainersConfiguration;
 import com.krishnamurti.horizon.shared.domain.BaseEntity;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -11,26 +12,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.context.annotation.Import;
 
-@DataJpaTest
-@Testcontainers
+@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(TestcontainersConfiguration.class)
 class BaseEntityTest {
-
-    @Container static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17");
-
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
-    }
 
     @Autowired private TestEntityManager entityManager;
 
