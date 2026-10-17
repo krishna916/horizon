@@ -77,6 +77,37 @@ npx playwright install
 npm run test:e2e
 ```
 
+## CI-Equivalent Checks (Before Opening a PR)
+
+The required local checks use Java 25 for the backend and Node.js 24 for the frontend, matching the GitHub Actions runners. Node.js 20+ remains suitable for ordinary frontend development; use Node.js 24 when reproducing CI results. Backend verification also needs a running Docker daemon because repository and integration tests start PostgreSQL with Testcontainers.
+
+From the repository root, run the backend gate:
+
+```bash
+cd server
+docker info
+./mvnw -B -ntp verify
+```
+
+On Windows, use `.\mvnw.cmd -B -ntp verify` instead of `./mvnw -B -ntp verify` (run `docker info` from the same directory first). `verify` is the CI gate; it runs Maven's configured verification lifecycle, not only `mvn test`.
+
+In a separate terminal, also from the repository root, run the frontend gate:
+
+```bash
+cd client
+npm ci --legacy-peer-deps --ignore-scripts
+npm run lint
+npm run format:check
+npm run test
+npm run build
+```
+
+These npm commands mirror CI exactly. `npm ci` recreates `node_modules`, and `--ignore-scripts` disables dependency lifecycle scripts during installation. Backend tests use Testcontainers to start PostgreSQL, so Docker must be available; starting the app with `docker compose up` is not required for those tests. Docker Compose is still useful when running the application locally.
+
+Pull requests targeting `master` and pushes to `master` run the same two independent jobs, named `backend` and `frontend`. Open the GitHub Actions run and select either job to inspect its steps and logs. On backend failure, check the run summary for the `backend-surefire-reports` artifact; it is uploaded when reports exist.
+
+To retry a failed job, open **Actions → the failed run → Re-run failed jobs**. A canceled PR run means a newer run for that same PR replaced it; cancellation is not a test failure, so check that the latest PR commit has both job results. If a check fails, use its step logs and reproduce it with the commands above. Do not bypass a required check. These checks need no local credentials, `.env` file, repository secrets, or manually started PostgreSQL. Playwright is not part of this V1 CI gate; the E2E instructions above remain available for local use.
+
 ## IDE Settings & Extensions
 - **VS Code:** Install recommended extensions: Extension Pack for Java, Spring Boot Extension Pack, ESLint, Prettier, Tailwind CSS.
 - **IntelliJ IDEA:** Ensure Lombok plugin is enabled and annotation processing is active.
