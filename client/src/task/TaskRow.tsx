@@ -3,9 +3,9 @@ import { formatTaskDueDate } from './task-view';
 import type { TaskPriority, TaskSummary } from './types';
 
 interface TaskRowProps {
-  task: TaskSummary;
-  now: Date;
-  completed: boolean;
+  readonly task: TaskSummary;
+  readonly now: Date;
+  readonly completed: boolean;
 }
 
 const priorityLabels: Record<TaskPriority, string> = {
