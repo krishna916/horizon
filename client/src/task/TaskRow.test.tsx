@@ -76,6 +76,26 @@ describe('TaskRow', () => {
     expect(container.querySelector('svg')).toBeNull();
   });
 
+  it.each([
+    ['multi-sentence', 'Review the release notes. Confirm API compatibility. Share the summary.'],
+    ['unbroken', `task-${'x'.repeat(200)}`],
+  ])('wraps the full %s title without truncation', (_case, title) => {
+    render(
+      <ul>
+        <TaskRow task={task({ title })} now={new Date(2026, 9, 18)} completed={false} />
+      </ul>
+    );
+
+    const titleElement = screen.getByText(title);
+    expect(titleElement).toHaveClass('break-words');
+    expect(titleElement).not.toHaveClass(
+      'truncate',
+      'text-ellipsis',
+      'overflow-hidden',
+      'whitespace-nowrap'
+    );
+  });
+
   it('visually mutes and strikes completed titles but leaves active titles plain', () => {
     const { rerender } = render(
       <ul>
