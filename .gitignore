@@ -38,6 +38,7 @@ build/
 
 /docs/superpowers
 /docs/implementations
+/docs/design-docs/
 
 ### Playwright & Testing ###
 /client/test-results/
