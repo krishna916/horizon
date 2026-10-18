@@ -67,7 +67,8 @@ describe('TaskDetailSurface', () => {
   it('shows loading then server data and working panel navigation controls', async () => {
     let resolveDetail!: (value: AxiosResponse<TaskDetail>) => void;
     getSpy.mockImplementation(
-      () => new Promise((resolve) => (resolveDetail = resolve)) as Promise<AxiosResponse<TaskDetail>>
+      () =>
+        new Promise((resolve) => (resolveDetail = resolve)) as Promise<AxiosResponse<TaskDetail>>
     );
     const onClose = vi.fn();
     const onOpenFullPage = vi.fn();
@@ -94,7 +95,9 @@ describe('TaskDetailSurface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close task details' }));
     expect(onOpenFullPage).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('button', { name: /archive|restore|delete|edit/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /archive|restore|delete|edit/i })
+    ).not.toBeInTheDocument();
   });
 
   it('shows the same generic unavailable state for 404 and never leaves the prior task visible', async () => {
@@ -137,7 +140,9 @@ describe('TaskDetailSurface', () => {
   it('does not fetch for invalid IDs and gives a working close action', () => {
     const onClose = vi.fn();
     const { Wrapper } = createWrapper();
-    render(<TaskDetailSurface taskId={0} surface="panel" onClose={onClose} />, { wrapper: Wrapper });
+    render(<TaskDetailSurface taskId={0} surface="panel" onClose={onClose} />, {
+      wrapper: Wrapper,
+    });
 
     expect(screen.getByRole('alert')).toHaveTextContent(/task is unavailable/i);
     fireEvent.click(screen.getByRole('button', { name: 'Close task details' }));

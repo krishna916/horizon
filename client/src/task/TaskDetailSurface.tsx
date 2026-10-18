@@ -36,7 +36,9 @@ export function TaskDetailSurface({
   } else if (currentUser.isError || !currentUser.data) {
     content = (
       <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">
-        <p className="text-muted-foreground">We couldn&apos;t verify your session. Please try again.</p>
+        <p className="text-muted-foreground">
+          We couldn&apos;t verify your session. Please try again.
+        </p>
         <button
           type="button"
           onClick={() => void currentUser.refetch()}
@@ -56,7 +58,9 @@ export function TaskDetailSurface({
     } else {
       content = (
         <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">
-          <p className="text-muted-foreground">We couldn&apos;t load this task. Please try again.</p>
+          <p className="text-muted-foreground">
+            We couldn&apos;t load this task. Please try again.
+          </p>
           <button
             type="button"
             onClick={() => void taskQuery.refetch()}

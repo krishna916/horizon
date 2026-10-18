@@ -26,7 +26,10 @@ const task = (id: number, title: string): TaskSummary => ({
 
 const taskDetail = (id: number, title: string): TaskDetail => ({
   ...task(id, title),
-  description: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: title }] }] },
+  description: {
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: title }] }],
+  },
   deletedAt: null,
 });
 
@@ -82,12 +85,11 @@ describe('TaskWorkspace session boundary', () => {
         }) as AxiosResponse<TaskListResponse>
     );
 
-    render(
-      <TaskWorkspace selection={{ kind: 'valid', id: 1 }} />,
-      { wrapper: createWrapper() }
-    );
+    render(<TaskWorkspace selection={{ kind: 'valid', id: 1 }} />, { wrapper: createWrapper() });
     expect(await screen.findByText('Account one private task')).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: 'Account one private detail' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Account one private detail' })
+    ).toBeInTheDocument();
 
     act(() => focusManager.setFocused(false));
     sharedSessionUserId = 2;
@@ -97,7 +99,9 @@ describe('TaskWorkspace session boundary', () => {
     await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(2));
     expect(await screen.findAllByText('Verifying session…')).toHaveLength(2);
     expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Account one private detail' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Account one private detail' })
+    ).not.toBeInTheDocument();
     expect(taskListSpy).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -108,7 +112,9 @@ describe('TaskWorkspace session boundary', () => {
     expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
     expect(taskListSpy).toHaveBeenCalledTimes(2);
     expect(await screen.findByRole('alert')).toHaveTextContent(/task is unavailable/i);
-    expect(screen.queryByRole('heading', { name: 'Account one private detail' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Account one private detail' })
+    ).not.toBeInTheDocument();
     expect(taskDetailSpy).toHaveBeenCalledTimes(2);
   });
 
@@ -125,22 +131,23 @@ describe('TaskWorkspace session boundary', () => {
       response({ items: [task(1, 'Account one private task')] }) as AxiosResponse<TaskListResponse>
     );
 
-    render(
-      <TaskWorkspace selection={{ kind: 'valid', id: 1 }} />,
-      { wrapper: createWrapper() }
-    );
+    render(<TaskWorkspace selection={{ kind: 'valid', id: 1 }} />, { wrapper: createWrapper() });
     expect(await screen.findByText('Account one private task')).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: 'Account one private detail' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Account one private detail' })
+    ).toBeInTheDocument();
 
     act(() => focusManager.setFocused(false));
     act(() => focusManager.setFocused(true));
 
     const alerts = await screen.findAllByRole('alert');
-    expect(alerts.some((alert) => /couldn't verify your session/i.test(alert.textContent ?? ''))).toBe(
-      true
-    );
+    expect(
+      alerts.some((alert) => /couldn't verify your session/i.test(alert.textContent ?? ''))
+    ).toBe(true);
     expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Account one private detail' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Account one private detail' })
+    ).not.toBeInTheDocument();
     expect(taskListSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -109,7 +109,12 @@ export function TaskSplitView({
 
   if (atOverlayWidth) {
     return (
-      <div ref={workspaceRef} data-testid="task-split-view" data-layout="overlay" className="relative flex h-full min-h-0 w-full">
+      <div
+        ref={workspaceRef}
+        data-testid="task-split-view"
+        data-layout="overlay"
+        className="relative flex h-full min-h-0 w-full"
+      >
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{list}</div>
         <TaskOverlay open={isOpen} onClose={onCloseOverlay}>
           {detail}
@@ -119,8 +124,17 @@ export function TaskSplitView({
   }
 
   return (
-    <div ref={workspaceRef} data-testid="task-split-view" data-layout="split" className="flex h-full min-h-0 w-full overflow-hidden">
-      <div data-testid="task-list-pane" className="min-h-0 min-w-0 overflow-y-auto" style={{ width: `${actualListRatio}%` }}>
+    <div
+      ref={workspaceRef}
+      data-testid="task-split-view"
+      data-layout="split"
+      className="flex h-full min-h-0 w-full overflow-hidden"
+    >
+      <div
+        data-testid="task-list-pane"
+        className="min-h-0 min-w-0 overflow-y-auto"
+        style={{ width: `${listPixels}px` }}
+      >
         {list}
       </div>
       {isOpen && (workspaceWidth === 0 || workspaceWidth >= OVERLAY_BELOW_PX) && (

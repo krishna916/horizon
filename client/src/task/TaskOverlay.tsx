@@ -22,19 +22,24 @@ export function TaskOverlay({ open, onClose, children }: TaskOverlayProps): Reac
           aria-label="Task details"
           aria-describedby={undefined}
           onOpenAutoFocus={() => {
-            openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            openerRef.current =
+              document.activeElement instanceof HTMLElement ? document.activeElement : null;
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             const opener = openerRef.current;
-            const fallback = document.querySelector<HTMLElement>('[data-task-list-heading]') ?? document.querySelector<HTMLElement>('h1');
+            const fallback =
+              document.querySelector<HTMLElement>('[data-task-list-heading]') ??
+              document.querySelector<HTMLElement>('h1');
             const canRestoreToOpener = opener?.isConnected && opener !== document.body;
             (canRestoreToOpener ? opener : fallback)?.focus();
           }}
           className="fixed inset-y-0 right-0 z-50 flex max-h-dvh w-[min(640px,100vw)] max-w-full flex-col overflow-y-auto border-l border-border bg-background shadow-2xl outline-none"
         >
           <div className="flex min-h-14 shrink-0 items-center justify-between border-b border-border px-4">
-            <Dialog.Title className="text-sm font-medium text-foreground">Task details</Dialog.Title>
+            <Dialog.Title className="text-sm font-medium text-foreground">
+              Task details
+            </Dialog.Title>
             <Dialog.Close asChild>
               <button
                 type="button"

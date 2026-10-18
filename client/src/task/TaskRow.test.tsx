@@ -39,7 +39,9 @@ describe('TaskRow', () => {
   it('renders title and available metadata in the approved two-line order', () => {
     const { container } = renderTaskRow();
     const row = screen.getByRole('listitem');
-    const opener = within(row).getByRole('button', { name: 'Open TASK-7: Review the release notes' });
+    const opener = within(row).getByRole('button', {
+      name: 'Open TASK-7: Review the release notes',
+    });
     const title = within(opener).getByText('Review the release notes');
     const key = within(opener).getByText('TASK-7');
     const priority = within(opener).getByText('High');
@@ -47,7 +49,9 @@ describe('TaskRow', () => {
 
     expect(title).toBeInTheDocument();
     expect(key.compareDocumentPosition(priority) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(priority.compareDocumentPosition(dueDate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      priority.compareDocumentPosition(dueDate) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
     expect(container.querySelectorAll('li')).toHaveLength(1);
     expect(row.querySelector('svg')).toBeInTheDocument();
     expect(row.querySelectorAll('button')).toHaveLength(1);
@@ -93,17 +97,32 @@ describe('TaskRow', () => {
   it('visually mutes and strikes completed titles but leaves active titles plain', () => {
     const { rerender } = render(
       <ul>
-        <TaskRow task={task()} now={new Date(2026, 9, 18)} completed={false} onOpen={vi.fn()} selected={false} />
+        <TaskRow
+          task={task()}
+          now={new Date(2026, 9, 18)}
+          completed={false}
+          onOpen={vi.fn()}
+          selected={false}
+        />
       </ul>
     );
     expect(screen.getByText('Review the release notes')).not.toHaveClass('line-through');
 
     rerender(
       <ul>
-        <TaskRow task={task()} now={new Date(2026, 9, 18)} completed onOpen={vi.fn()} selected={false} />
+        <TaskRow
+          task={task()}
+          now={new Date(2026, 9, 18)}
+          completed
+          onOpen={vi.fn()}
+          selected={false}
+        />
       </ul>
     );
-    expect(screen.getByText('Review the release notes')).toHaveClass('line-through', 'text-muted-foreground');
+    expect(screen.getByText('Review the release notes')).toHaveClass(
+      'line-through',
+      'text-muted-foreground'
+    );
   });
 
   it('opens from title and key clicks and keeps native keyboard focusability', () => {
@@ -144,7 +163,9 @@ describe('TaskSection', () => {
     const heading = screen.getByRole('heading', { name: 'Completed' });
     expect(heading.parentElement).toHaveTextContent('1');
     expect(screen.getByRole('listitem')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open TASK-7: Review the release notes' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open TASK-7: Review the release notes' })
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });

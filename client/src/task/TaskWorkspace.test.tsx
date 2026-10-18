@@ -181,7 +181,9 @@ describe('TaskWorkspace', () => {
     expect(screen.queryByText(/description/i)).not.toBeInTheDocument();
     expect(screen.getAllByRole('button')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Open TASK-1: Renew passport' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open TASK-2: Send signed agreement' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open TASK-2: Send signed agreement' })
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(listSpy).toHaveBeenCalledTimes(1);
@@ -309,18 +311,16 @@ describe('TaskWorkspace', () => {
 
   it('keeps the task list visible beside the selected private detail and wires panel actions', async () => {
     listSpy.mockResolvedValue(response([task(7, 'Selected task')]) as never);
-    const detailSpy = vi.spyOn(taskApi, 'get').mockResolvedValue(
-      {
-        data: {
-          ...task(7, 'Selected task'),
-          description: {
-            type: 'doc',
-            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Private details' }] }],
-          },
-          deletedAt: null,
-        } satisfies TaskDetail,
-      } as never
-    );
+    const detailSpy = vi.spyOn(taskApi, 'get').mockResolvedValue({
+      data: {
+        ...task(7, 'Selected task'),
+        description: {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Private details' }] }],
+        },
+        deletedAt: null,
+      } satisfies TaskDetail,
+    } as never);
     const onClose = vi.fn();
     const onOpenFullPage = vi.fn();
     const { Wrapper } = createWrapper();

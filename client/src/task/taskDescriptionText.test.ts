@@ -35,7 +35,10 @@ describe('getTaskDescriptionText', () => {
           {
             type: 'bulletList',
             content: [
-              { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'First' }] }] },
+              {
+                type: 'listItem',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'First' }] }],
+              },
               {
                 type: 'listItem',
                 content: [

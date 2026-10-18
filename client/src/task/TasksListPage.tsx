@@ -1,11 +1,12 @@
-import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
+import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { TaskWorkspace } from './TaskWorkspace';
 import { parseTaskSelection } from './taskNavigation';
 import { useTasksLayout } from './TasksRouteLayout';
 
 export function TasksListPage() {
-  const search = useSearch({ strict: false }) as Record<string, unknown>;
-  const selection = parseTaskSelection(search.task);
+  const location = useLocation();
+  const rawTaskId = new URLSearchParams(location.searchStr.replace(/^\?/, '')).get('task');
+  const selection = parseTaskSelection(rawTaskId ?? undefined);
   const navigate = useNavigate({ from: '/tasks/' });
   const router = useRouter();
   const { listRatio, setListRatio } = useTasksLayout();
@@ -25,7 +26,7 @@ export function TasksListPage() {
 
     void navigate({
       to: '/tasks',
-      search: { task: String(taskId) },
+      search: { task: taskId },
       state: { horizonTaskNavigation: marker },
       replace: selection.kind !== 'none',
     });

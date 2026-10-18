@@ -17,9 +17,7 @@ export function parseTaskSelection(raw: unknown): TaskSelection {
   }
 
   if (typeof raw === 'number') {
-    return Number.isSafeInteger(raw) && raw > 0
-      ? { kind: 'valid', id: raw }
-      : { kind: 'invalid' };
+    return Number.isSafeInteger(raw) && raw > 0 ? { kind: 'valid', id: raw } : { kind: 'invalid' };
   }
 
   if (typeof raw !== 'string' || !/^\d+$/.test(raw)) {

@@ -17,7 +17,11 @@ import { TasksRouteLayout } from './TasksRouteLayout';
 import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 
 vi.mock('@/user/hooks/useCurrentUser', () => ({
-  useCurrentUser: () => ({ data: { id: 1, email: 'user@example.com' }, isPending: false, isError: false }),
+  useCurrentUser: () => ({
+    data: { id: 1, email: 'user@example.com' },
+    isPending: false,
+    isError: false,
+  }),
 }));
 
 const task = (id: number, title: string): TaskSummary => ({
@@ -64,7 +68,10 @@ function renderTasks(initialEntry: string) {
     getParentRoute: () => tasksRoute,
     path: '/',
     validateSearch: (search: Record<string, unknown>) => ({
-      task: typeof search.task === 'string' ? search.task : undefined,
+      task:
+        typeof search.task === 'string' || typeof search.task === 'number'
+          ? search.task
+          : undefined,
     }),
     component: TasksListPage,
   });
@@ -91,14 +98,14 @@ describe('TasksListPage', () => {
     const { router } = renderTasks('/tasks');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-1: First task' }));
-    await waitFor(() => expect(router.state.location.search).toEqual({ task: '1' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 1 }));
     expect(router.state.location.state.horizonTaskNavigation).toEqual({
       kind: 'panel-from-list',
       taskId: 1,
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Open TASK-2: Second task' }));
-    await waitFor(() => expect(router.state.location.search).toEqual({ task: '2' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 2 }));
     expect(router.state.location.state.horizonTaskNavigation).toEqual({
       kind: 'panel-from-list',
       taskId: 2,
@@ -107,7 +114,7 @@ describe('TasksListPage', () => {
     await act(async () => router.history.back());
     await waitFor(() => expect(router.state.location.search).toEqual({}));
     await act(async () => router.history.forward());
-    await waitFor(() => expect(router.state.location.search).toEqual({ task: '2' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 2 }));
     expect(screen.getByRole('button', { name: 'Open TASK-2: Second task' })).toHaveAttribute(
       'aria-pressed',
       'true'
@@ -115,9 +122,11 @@ describe('TasksListPage', () => {
   });
 
   it('keeps a direct panel URL untrusted and avoids detail requests for malformed selection', async () => {
-    const listSpy = vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    const listSpy = vi
+      .spyOn(taskApi, 'list')
+      .mockResolvedValue(response([task(1, 'First task')]) as never);
     const detailSpy = vi.spyOn(taskApi, 'get');
-    const { router } = renderTasks('/tasks?task=1e3');
+    const { router } = renderTasks('/tasks?task=not-a-number');
 
     expect(await screen.findByRole('button', { name: 'Open TASK-1: First task' })).toHaveAttribute(
       'aria-pressed',

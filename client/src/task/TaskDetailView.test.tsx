@@ -54,7 +54,9 @@ describe('TaskDetailView', () => {
           ...task,
           description: {
             type: 'doc',
-            content: [{ type: 'paragraph', content: [{ type: 'text', text: '<script>alert(1)</script>' }] }],
+            content: [
+              { type: 'paragraph', content: [{ type: 'text', text: '<script>alert(1)</script>' }] },
+            ],
           },
         }}
       />
