@@ -1,7 +1,7 @@
 # Issue #19 — Task Detail Panel, Split Layout, and Canonical Page — Design
 
 **Date:** 2026-10-18  
-**Status:** Design approved in conversation; written-spec review pending  
+**Status:** Written specification approved by owner on 2026-10-18; implementation plan follows  
 **Owner:** Horizon  
 **Implementer:** Luna (after implementation-plan approval)  
 **Issue:** https://github.com/krishna916/horizon/issues/19
