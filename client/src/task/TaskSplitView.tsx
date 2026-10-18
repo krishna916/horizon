@@ -65,10 +65,27 @@ export function TaskSplitView({
       const left = workspaceRef.current?.getBoundingClientRect().left ?? 0;
       if (!innerWidth) return;
       const pixels = clamp(clientX - left, LIST_MIN_PX, innerWidth - DETAIL_MIN_PX);
+      const currentPixels = clamp(
+        (innerWidth * listRatio) / 100,
+        LIST_MIN_PX,
+        innerWidth - DETAIL_MIN_PX
+      );
+      if (pixels === currentPixels) return;
       onListRatioChange(toPercent(pixels, innerWidth));
     },
-    [innerWidth, onListRatioChange]
+    [innerWidth, listRatio, onListRatioChange]
   );
+
+  const cancelDrag = useCallback(() => {
+    const pointerId = dragPointerRef.current;
+    if (pointerId === null) return;
+    dragPointerRef.current = null;
+    try {
+      separatorRef.current?.releasePointerCapture(pointerId);
+    } catch {
+      // Pointer capture may already have been released by the browser.
+    }
+  }, []);
 
   useEffect(() => {
     const handleMove = (event: PointerEvent) => {
@@ -76,12 +93,7 @@ export function TaskSplitView({
     };
     const stopDrag = (event: PointerEvent) => {
       if (event.pointerId !== dragPointerRef.current) return;
-      dragPointerRef.current = null;
-      try {
-        separatorRef.current?.releasePointerCapture(event.pointerId);
-      } catch {
-        // Pointer capture may already have been released by the browser.
-      }
+      cancelDrag();
     };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', stopDrag);
@@ -90,8 +102,13 @@ export function TaskSplitView({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', stopDrag);
       window.removeEventListener('pointercancel', stopDrag);
+      cancelDrag();
     };
-  }, [updateFromPointer]);
+  }, [cancelDrag, updateFromPointer]);
+
+  useEffect(() => {
+    if (atOverlayWidth) cancelDrag();
+  }, [atOverlayWidth, cancelDrag]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (atOverlayWidth) return;
@@ -109,7 +126,9 @@ export function TaskSplitView({
     event.preventDefault();
     if (!innerWidth) return;
     const delta = event.key === 'ArrowLeft' ? -2 : 2;
-    const next = clamp(actualListRatio + delta, minimumListRatio, maximumListRatio);
+    const next = clamp(listRatio + delta, minimumListRatio, maximumListRatio);
+    const nextPixels = clamp((innerWidth * next) / 100, LIST_MIN_PX, innerWidth - DETAIL_MIN_PX);
+    if (nextPixels === listPixels) return;
     onListRatioChange(Number(next.toFixed(2)));
   };
 

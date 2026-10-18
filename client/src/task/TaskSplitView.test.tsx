@@ -107,4 +107,94 @@ describe('TaskSplitView', () => {
     act(() => TestResizeObserver.instances[0]!.resize(845));
     await waitFor(() => expect(separator).toHaveAttribute('aria-valuemin', '57'));
   });
+
+  it.each([
+    { requestedRatio: 60, key: 'ArrowRight' },
+    { requestedRatio: 67, key: 'ArrowLeft' },
+  ])(
+    'retains the requested $requestedRatio% split when keyboard input cannot move the constrained splitter',
+    async ({ requestedRatio, key }) => {
+      let ratio = requestedRatio;
+      const onListRatioChange = vi.fn((nextRatio: number) => {
+        ratio = nextRatio;
+      });
+      const renderSplit = () => (
+        <TaskSplitView
+          list={<p>Task list</p>}
+          detail={<p>Task details</p>}
+          isOpen
+          listRatio={ratio}
+          onListRatioChange={onListRatioChange}
+        />
+      );
+      const { rerender } = render(renderSplit());
+      act(() => TestResizeObserver.instances[0]!.resize(1024));
+      const initialList = await screen.findByTestId('task-list-pane');
+      const initialWidth = initialList.style.width;
+
+      act(() => TestResizeObserver.instances[0]!.resize(845));
+      const separator = await screen.findByRole('separator', {
+        name: 'Resize task list and details',
+      });
+      onListRatioChange.mockClear();
+      fireEvent.keyDown(separator, { key });
+      expect(onListRatioChange).not.toHaveBeenCalled();
+
+      act(() => TestResizeObserver.instances[0]!.resize(1024));
+      rerender(renderSplit());
+      expect(await screen.findByTestId('task-list-pane')).toHaveStyle({ width: initialWidth });
+      expect(ratio).toBe(requestedRatio);
+    }
+  );
+
+  it('cancels an active drag when the workspace enters overlay mode', async () => {
+    const onListRatioChange = vi.fn();
+    render(
+      <TaskSplitView
+        list={<p>Task list</p>}
+        detail={<p>Task details</p>}
+        isOpen
+        listRatio={60}
+        onListRatioChange={onListRatioChange}
+      />
+    );
+    act(() => TestResizeObserver.instances[0]!.resize(1024));
+    const separator = await screen.findByRole('separator', {
+      name: 'Resize task list and details',
+    });
+    fireEvent.pointerDown(separator, { pointerId: 4, clientX: 600 });
+    act(() => TestResizeObserver.instances[0]!.resize(844));
+    await screen.findByRole('dialog', { name: 'Task details' });
+    onListRatioChange.mockClear();
+    fireEvent.pointerMove(window, { pointerId: 4, clientX: 620 });
+    fireEvent.pointerUp(window, { pointerId: 4, clientX: 620 });
+    expect(onListRatioChange).not.toHaveBeenCalled();
+  });
+
+  it('ends pointer updates on cancellation and unmount', async () => {
+    const onListRatioChange = vi.fn();
+    const { unmount } = render(
+      <TaskSplitView
+        list={<p>Task list</p>}
+        detail={<p>Task details</p>}
+        isOpen
+        listRatio={60}
+        onListRatioChange={onListRatioChange}
+      />
+    );
+    act(() => TestResizeObserver.instances[0]!.resize(1024));
+    const separator = await screen.findByRole('separator', {
+      name: 'Resize task list and details',
+    });
+    fireEvent.pointerDown(separator, { pointerId: 5, clientX: 600 });
+    fireEvent.pointerCancel(window, { pointerId: 5 });
+    onListRatioChange.mockClear();
+    fireEvent.pointerMove(window, { pointerId: 5, clientX: 640 });
+    expect(onListRatioChange).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(separator, { pointerId: 6, clientX: 600 });
+    unmount();
+    fireEvent.pointerMove(window, { pointerId: 6, clientX: 640 });
+    expect(onListRatioChange).not.toHaveBeenCalled();
+  });
 });

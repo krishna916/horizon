@@ -115,6 +115,17 @@ test('selects tasks, supports history, opens the canonical page, and preserves t
   expect(detailWidth).toBeGreaterThanOrEqual(360);
   const retainedRatio = await separator.getAttribute('aria-valuenow');
 
+  await page.setViewportSize({ width: 1133, height: 720 });
+  await expect
+    .poll(async () => (await page.getByTestId('task-split-view').boundingBox())?.width)
+    .toBe(845);
+  await expect(page.getByRole('separator', { name: 'Resize task list and details' })).toBeVisible();
+  await page.getByRole('separator', { name: 'Resize task list and details' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowLeft');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(separator).toHaveAttribute('aria-valuenow', retainedRatio ?? '60');
+
   await page.getByRole('button', { name: 'Open full page' }).click();
   await expect(page).toHaveURL(/\/tasks\/8$/);
   await expect(page.getByRole('heading', { name: 'Task 8 detail' })).toBeVisible();
