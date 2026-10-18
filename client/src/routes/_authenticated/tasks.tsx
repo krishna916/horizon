@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { TaskWorkspace } from '@/task/TaskWorkspace';
+import { TasksRouteLayout } from '@/task/TasksRouteLayout';
 
 export const Route = createFileRoute('/_authenticated/tasks')({
-  component: TaskWorkspace,
+  component: TasksRouteLayout,
 });
