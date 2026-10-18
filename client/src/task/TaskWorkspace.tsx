@@ -10,16 +10,18 @@ export function TaskWorkspace() {
   const taskQuery = useTaskList(userId);
   const now = useLocalDay();
 
-  if (currentUser.isPending || currentUser.isError || !currentUser.data) {
+  if (currentUser.isPending || currentUser.isFetching || currentUser.isError || !currentUser.data) {
     return null;
   }
 
   const sections = taskQuery.data ? classifyTasks(taskQuery.data.items, now) : undefined;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-8 sm:px-8">
+    <div className="mx-auto w-full max-w-5xl px-6 py-9 sm:px-8">
       <header className="mb-9">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">All Tasks</h1>
+        <h1 className="text-5xl font-medium leading-[1.15] tracking-[-0.03em] text-foreground">
+          All Tasks
+        </h1>
         <p className="mt-2 text-base text-muted-foreground">
           Stay organized and clear the path ahead.
         </p>
