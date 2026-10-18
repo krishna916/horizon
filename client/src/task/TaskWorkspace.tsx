@@ -19,7 +19,7 @@ export function TaskWorkspace() {
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-9 sm:px-8">
       <header className="mb-9">
-        <h1 className="text-5xl font-medium leading-[1.15] tracking-[-0.03em] text-foreground">
+        <h1 className="!m-0 !text-5xl font-medium !leading-[1.15] !tracking-[-0.03em] text-foreground max-[1250px]:!text-[40px]">
           All Tasks
         </h1>
         <p className="mt-2 text-base text-muted-foreground">
