@@ -9,5 +9,6 @@ export function useTaskList(userId: number | undefined) {
       return response.data;
     },
     enabled: userId !== undefined,
+    refetchOnWindowFocus: false,
   });
 }
