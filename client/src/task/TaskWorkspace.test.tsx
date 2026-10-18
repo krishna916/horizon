@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { AxiosResponse } from 'axios';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,8 +30,7 @@ const task = (id: number, title: string, changes: Partial<TaskSummary> = {}): Ta
   ...changes,
 });
 
-const response = (items: TaskSummary[]) =>
-  ({ data: { items } }) as AxiosResponse<TaskListResponse>;
+const response = (items: TaskSummary[]) => ({ data: { items } }) as AxiosResponse<TaskListResponse>;
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -85,14 +84,21 @@ describe('TaskWorkspace', () => {
       inbox: true,
     });
     const completed = task(2, 'Send signed agreement', { completedAt: now.toISOString() });
-    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12).toISOString();
+    const yesterday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 1,
+      12
+    ).toISOString();
     const historical = task(3, 'Old completed task', { completedAt: yesterday });
     const archived = task(4, 'Archived task', { archivedAt: now.toISOString() });
     const archivedCompleted = task(5, 'Archived completed task', {
       completedAt: now.toISOString(),
       archivedAt: now.toISOString(),
     });
-    listSpy.mockResolvedValue(response([active, completed, historical, archived, archivedCompleted]) as never);
+    listSpy.mockResolvedValue(
+      response([active, completed, historical, archived, archivedCompleted]) as never
+    );
     const { Wrapper } = createWrapper();
 
     render(<TaskWorkspace />, { wrapper: Wrapper });
@@ -124,16 +130,19 @@ describe('TaskWorkspace', () => {
         }),
       ],
     ],
-  ] as Array<[string, TaskSummary[]]>)('shows Active empty state for %s and omits Completed', async (_case, items) => {
-    listSpy.mockResolvedValue(response(items) as never);
-    const { Wrapper } = createWrapper();
+  ] as Array<[string, TaskSummary[]]>)(
+    'shows Active empty state for %s and omits Completed',
+    async (_case, items) => {
+      listSpy.mockResolvedValue(response(items) as never);
+      const { Wrapper } = createWrapper();
 
-    render(<TaskWorkspace />, { wrapper: Wrapper });
+      render(<TaskWorkspace />, { wrapper: Wrapper });
 
-    expect(await screen.findByText('No active tasks.')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Active' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
-  });
+      expect(await screen.findByText('No active tasks.')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Active' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
+    }
+  );
 
   it('hides stale rows on request failure and retries successfully', async () => {
     listSpy

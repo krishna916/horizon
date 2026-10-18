@@ -31,7 +31,9 @@ export function TaskWorkspace() {
         </p>
       ) : taskQuery.isError ? (
         <div role="alert" className="flex flex-wrap items-center gap-3 py-8 text-sm">
-          <p className="text-muted-foreground">We couldn&apos;t load your tasks. Please try again.</p>
+          <p className="text-muted-foreground">
+            We couldn&apos;t load your tasks. Please try again.
+          </p>
           <button
             type="button"
             onClick={() => void taskQuery.refetch()}

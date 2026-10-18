@@ -53,9 +53,7 @@ describe('classifyTasks', () => {
   it('compares offset timestamps by browser-local calendar day when UTC dates differ', () => {
     const now = new Date(2026, 9, 18, 12);
     const completionTime =
-      now.getTimezoneOffset() > 0
-        ? new Date(2026, 9, 18, 23, 30)
-        : new Date(2026, 9, 18, 0, 10);
+      now.getTimezoneOffset() > 0 ? new Date(2026, 9, 18, 23, 30) : new Date(2026, 9, 18, 0, 10);
     const completed = summary(1, { completedAt: withLocalOffset(completionTime) });
 
     expect(new Date(completed.completedAt!).getUTCDate()).not.toBe(now.getUTCDate());

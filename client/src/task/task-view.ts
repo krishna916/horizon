@@ -36,8 +36,8 @@ export function classifyTasks(tasks: readonly TaskSummary[], now: Date): TaskSec
 }
 
 export function formatTaskDueDate(dueDate: string, now: Date): string {
-  const [year, month, day] = dueDate.split('-').map(Number);
-  const civilDate = new Date(year, month - 1, day, 12);
+  const [year, month, day] = dueDate.split('-');
+  const civilDate = new Date(Number(year), Number(month) - 1, Number(day), 12);
 
   if (isSameLocalDay(civilDate, now)) {
     return 'Today';

@@ -14,7 +14,10 @@ export function TaskSection({ title, tasks, now }: TaskSectionProps) {
   return (
     <section aria-labelledby={headingId} className="mt-8">
       <div className="mb-3 flex items-center gap-2">
-        <h2 id={headingId} className="text-sm font-semibold uppercase tracking-wide text-foreground">
+        <h2
+          id={headingId}
+          className="text-sm font-semibold uppercase tracking-wide text-foreground"
+        >
           {title}
         </h2>
         <span className="text-sm text-muted-foreground">{tasks.length}</span>

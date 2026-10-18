@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { AxiosResponse } from 'axios';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 import { apiClient } from '@/lib/api-client';
 import { taskApi } from './api';
 import type { TaskListResponse, TaskSummary } from './types';
@@ -21,8 +22,7 @@ const task = (id: number, title: string): TaskSummary => ({
   updatedAt: '2026-10-18T10:00:00Z',
 });
 
-const response = (items: TaskSummary[]) =>
-  ({ data: { items } }) as AxiosResponse<TaskListResponse>;
+const response = (items: TaskSummary[]) => ({ data: { items } }) as AxiosResponse<TaskListResponse>;
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -35,7 +35,7 @@ function createWrapper() {
 }
 
 describe('task list query', () => {
-  let getSpy: ReturnType<typeof vi.spyOn>;
+  let getSpy: MockInstance<typeof apiClient.get>;
 
   beforeEach(() => {
     getSpy = vi.spyOn(apiClient, 'get');
@@ -92,7 +92,9 @@ describe('task list query', () => {
       wrapper: Wrapper,
     });
 
-    await waitFor(() => expect(result.current.data?.items[0]?.title).toBe('Account one private task'));
+    await waitFor(() =>
+      expect(result.current.data?.items[0]?.title).toBe('Account one private task')
+    );
 
     rerender({ userId: 2 });
 
@@ -103,7 +105,9 @@ describe('task list query', () => {
       resolveSecondUser(response([task(2, 'Account two private task')]));
     });
 
-    await waitFor(() => expect(result.current.data?.items[0]?.title).toBe('Account two private task'));
+    await waitFor(() =>
+      expect(result.current.data?.items[0]?.title).toBe('Account two private task')
+    );
     expect(result.current.data?.items.map(({ title }) => title)).not.toContain(
       'Account one private task'
     );
@@ -117,9 +121,13 @@ describe('task list query', () => {
       wrapper: Wrapper,
     });
 
-    await waitFor(() => expect(result.current.data?.items[0]?.title).toBe('Account one private task'));
+    await waitFor(() =>
+      expect(result.current.data?.items[0]?.title).toBe('Account one private task')
+    );
     rerender({ userId: 2 });
-    await waitFor(() => expect(result.current.data?.items[0]?.title).toBe('Account one private task'));
+    await waitFor(() =>
+      expect(result.current.data?.items[0]?.title).toBe('Account one private task')
+    );
 
     rerender({ userId: 1 });
 

@@ -34,7 +34,9 @@ describe('TaskRow', () => {
 
     expect(title).toBeInTheDocument();
     expect(key.compareDocumentPosition(priority) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(priority.compareDocumentPosition(dueDate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      priority.compareDocumentPosition(dueDate) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
     expect(container.querySelectorAll('li')).toHaveLength(1);
     expect(row.querySelector('svg')).toBeInTheDocument();
     expect(row.querySelector('button, a, input, [role="button"]')).toBeNull();
@@ -51,11 +53,7 @@ describe('TaskRow', () => {
   ] as const)('labels %s priority as %s', (priority, label) => {
     render(
       <ul>
-        <TaskRow
-          task={task({ priority })}
-          now={new Date(2026, 9, 18, 12)}
-          completed={false}
-        />
+        <TaskRow task={task({ priority })} now={new Date(2026, 9, 18, 12)} completed={false} />
       </ul>
     );
 
@@ -101,13 +99,7 @@ describe('TaskRow', () => {
 
 describe('TaskSection', () => {
   it('renders a text heading and count with inert task rows', () => {
-    render(
-      <TaskSection
-        title="Completed"
-        tasks={[task()]}
-        now={new Date(2026, 9, 18, 12)}
-      />
-    );
+    render(<TaskSection title="Completed" tasks={[task()]} now={new Date(2026, 9, 18, 12)} />);
 
     const heading = screen.getByRole('heading', { name: 'Completed' });
     expect(heading.parentElement).toHaveTextContent('1');
