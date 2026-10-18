@@ -10,6 +10,7 @@ export const useCurrentUser = () => {
       return response.data;
     },
     retry: false,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 };
