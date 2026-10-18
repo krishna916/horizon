@@ -6,17 +6,23 @@ interface TaskOverlayProps {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly children: ReactNode;
+  readonly workspaceHost: HTMLElement;
 }
 
-export function TaskOverlay({ open, onClose, children }: TaskOverlayProps): React.JSX.Element {
+export function TaskOverlay({
+  open,
+  onClose,
+  children,
+  workspaceHost,
+}: TaskOverlayProps): React.JSX.Element {
   const openerRef = useRef<HTMLElement | null>(null);
 
   return (
     <Dialog.Root open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <Dialog.Portal>
+      <Dialog.Portal container={workspaceHost}>
         <Dialog.Overlay
           data-testid="task-overlay-backdrop"
-          className="fixed inset-0 z-50 bg-black/45"
+          className="absolute inset-0 z-40 bg-black/45"
         />
         <Dialog.Content
           aria-label="Task details"
@@ -34,7 +40,7 @@ export function TaskOverlay({ open, onClose, children }: TaskOverlayProps): Reac
             const canRestoreToOpener = opener?.isConnected && opener !== document.body;
             (canRestoreToOpener ? opener : fallback)?.focus();
           }}
-          className="fixed inset-y-0 right-0 z-50 flex max-h-dvh w-[min(640px,100vw)] max-w-full flex-col overflow-y-auto border-l border-border bg-background shadow-2xl outline-none"
+          className="absolute inset-y-0 right-0 z-50 flex h-full max-h-full w-[min(640px,100%)] max-w-full flex-col overflow-y-auto border-l border-border bg-background shadow-2xl outline-none"
         >
           <div className="flex min-h-14 shrink-0 items-center justify-between border-b border-border px-4">
             <Dialog.Title className="text-sm font-medium text-foreground">

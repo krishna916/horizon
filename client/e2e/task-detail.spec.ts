@@ -169,6 +169,32 @@ test('uses the modal drawer below 845px workspace width and closes by Escape, ba
   await page.getByRole('button', { name: 'Open TASK-7: First browser task' }).click();
   await expect(dialog).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(900);
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/tasks$/);
+
+  await page.setViewportSize({ width: 800, height: 720 });
+  await page.getByRole('button', { name: 'Open TASK-7: First browser task' }).click();
+  await expect(dialog).toBeVisible();
+  const workspace = page.getByTestId('task-split-view');
+  const workspaceBox = await workspace.boundingBox();
+  const dialogBox = await dialog.boundingBox();
+  const backdropBox = await page.getByTestId('task-overlay-backdrop').boundingBox();
+  if (!workspaceBox || !dialogBox || !backdropBox) throw new Error('Overlay geometry unavailable');
+  expect(dialogBox.x).toBeGreaterThanOrEqual(workspaceBox.x);
+  expect(dialogBox.y).toBeGreaterThanOrEqual(workspaceBox.y);
+  expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(workspaceBox.x + workspaceBox.width);
+  expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(workspaceBox.y + workspaceBox.height);
+  expect(backdropBox.x).toBeGreaterThanOrEqual(workspaceBox.x);
+  expect(backdropBox.y).toBeGreaterThanOrEqual(workspaceBox.y);
+  expect(backdropBox.x + backdropBox.width).toBeLessThanOrEqual(
+    workspaceBox.x + workspaceBox.width
+  );
+  expect(backdropBox.y + backdropBox.height).toBeLessThanOrEqual(
+    workspaceBox.y + workspaceBox.height
+  );
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(800);
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/tasks$/);
 });
 
 test('deep loads the panel and canonical page, and distinguishes private missing details from retryable failures', async ({

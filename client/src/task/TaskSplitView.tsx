@@ -32,7 +32,13 @@ export function TaskSplitView({
   const workspaceRef = useRef<HTMLDivElement>(null);
   const separatorRef = useRef<HTMLDivElement>(null);
   const dragPointerRef = useRef<number | null>(null);
+  const [workspaceHost, setWorkspaceHost] = useState<HTMLDivElement | null>(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(0);
+
+  const setWorkspaceRoot = useCallback((element: HTMLDivElement | null) => {
+    workspaceRef.current = element;
+    setWorkspaceHost(element);
+  }, []);
 
   useEffect(() => {
     const workspace = workspaceRef.current;
@@ -110,25 +116,27 @@ export function TaskSplitView({
   if (atOverlayWidth) {
     return (
       <div
-        ref={workspaceRef}
+        ref={setWorkspaceRoot}
         data-testid="task-split-view"
         data-layout="overlay"
         className="relative flex h-full min-h-0 w-full"
       >
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{list}</div>
-        <TaskOverlay open={isOpen} onClose={onCloseOverlay}>
-          {detail}
-        </TaskOverlay>
+        {workspaceHost && (
+          <TaskOverlay open={isOpen} onClose={onCloseOverlay} workspaceHost={workspaceHost}>
+            {detail}
+          </TaskOverlay>
+        )}
       </div>
     );
   }
 
   return (
     <div
-      ref={workspaceRef}
+      ref={setWorkspaceRoot}
       data-testid="task-split-view"
       data-layout="split"
-      className="flex h-full min-h-0 w-full overflow-hidden"
+      className="relative flex h-full min-h-0 w-full overflow-hidden"
     >
       <div
         data-testid="task-list-pane"
