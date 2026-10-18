@@ -4,7 +4,7 @@ import type { AxiosResponse } from 'axios';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
-import type { TaskListResponse, TaskSummary } from './types';
+import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 import { TaskWorkspace } from './TaskWorkspace';
 
 const { mockUseCurrentUser } = vi.hoisted(() => ({ mockUseCurrentUser: vi.fn() }));
@@ -305,5 +305,41 @@ describe('TaskWorkspace', () => {
     vi.setSystemTime(new Date(2026, 9, 21, 9));
     act(() => document.dispatchEvent(new Event('visibilitychange')));
     expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the task list visible beside the selected private detail and wires panel actions', async () => {
+    listSpy.mockResolvedValue(response([task(7, 'Selected task')]) as never);
+    const detailSpy = vi.spyOn(taskApi, 'get').mockResolvedValue(
+      {
+        data: {
+          ...task(7, 'Selected task'),
+          description: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Private details' }] }],
+          },
+          deletedAt: null,
+        } satisfies TaskDetail,
+      } as never
+    );
+    const onClose = vi.fn();
+    const onOpenFullPage = vi.fn();
+    const { Wrapper } = createWrapper();
+
+    render(
+      <TaskWorkspace
+        selection={{ kind: 'valid', id: 7 }}
+        onClosePanel={onClose}
+        onOpenFullPage={onOpenFullPage}
+      />,
+      { wrapper: Wrapper }
+    );
+
+    expect(await screen.findByText('Selected task')).toBeInTheDocument();
+    expect(await screen.findByText('Private details')).toBeInTheDocument();
+    expect(detailSpy).toHaveBeenCalledWith(7);
+    fireEvent.click(screen.getByRole('button', { name: 'Open full page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close task details' }));
+    expect(onOpenFullPage).toHaveBeenCalledWith(7);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

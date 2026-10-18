@@ -16,5 +16,6 @@ export function useTaskDetail(userId: number | undefined, taskId: number | null)
     },
     enabled: validUserId && validTaskId,
     refetchOnWindowFocus: false,
+    retry: false,
   });
 }

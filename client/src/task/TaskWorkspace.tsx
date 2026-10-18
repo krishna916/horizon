@@ -4,6 +4,7 @@ import { useLocalDay } from './useLocalDay';
 import { TaskSection } from './TaskSection';
 import { useTaskList } from './useTaskList';
 import type { TaskSelection } from './taskNavigation';
+import { TaskDetailSurface } from './TaskDetailSurface';
 
 interface TaskWorkspaceProps {
   readonly selection?: TaskSelection;
@@ -15,6 +16,8 @@ interface TaskWorkspaceProps {
 export function TaskWorkspace({
   selection = { kind: 'none' },
   onSelectTask = () => {},
+  onClosePanel,
+  onOpenFullPage,
 }: TaskWorkspaceProps = {}) {
   const currentUser = useCurrentUser();
   const userId = currentUser.isPending || currentUser.isError ? undefined : currentUser.data?.id;
@@ -99,6 +102,20 @@ export function TaskWorkspace({
       </header>
 
       {workspaceContent}
+      {selection.kind !== 'none' && (
+        <div className="mt-8 h-[min(70vh,720px)] min-h-[360px]">
+          <TaskDetailSurface
+            taskId={selection.kind === 'valid' ? selection.id : null}
+            surface="panel"
+            onClose={onClosePanel}
+            onOpenFullPage={
+              selection.kind === 'valid' && onOpenFullPage
+                ? () => onOpenFullPage(selection.id)
+                : undefined
+            }
+          />
+        </div>
+      )}
     </div>
   );
 }

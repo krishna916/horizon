@@ -142,4 +142,23 @@ describe('task detail query', () => {
 
     expect(result.current.data?.title).toBe('Selected task eight');
   });
+
+  it('does not retry a known not-found response', async () => {
+    getSpy.mockRejectedValue(
+      Object.assign(new Error('not found'), {
+        isAxiosError: true,
+        response: { status: 404 },
+      })
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+    });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    const { result } = renderHook(() => useTaskDetail(1, 7), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(getSpy).toHaveBeenCalledTimes(1);
+  });
 });
