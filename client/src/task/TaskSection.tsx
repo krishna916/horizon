@@ -2,9 +2,9 @@ import { TaskRow } from './TaskRow';
 import type { TaskSummary } from './types';
 
 interface TaskSectionProps {
-  title: 'Active' | 'Completed';
-  tasks: readonly TaskSummary[];
-  now: Date;
+  readonly title: 'Active' | 'Completed';
+  readonly tasks: readonly TaskSummary[];
+  readonly now: Date;
 }
 
 export function TaskSection({ title, tasks, now }: TaskSectionProps) {
