@@ -22,8 +22,8 @@ export function TaskRow({ task, now, completed }: TaskRowProps) {
         <p
           className={
             completed
-              ? 'truncate text-base text-muted-foreground line-through'
-              : 'truncate text-base text-foreground'
+              ? 'break-words text-base text-muted-foreground line-through'
+              : 'break-words text-base text-foreground'
           }
         >
           {task.title}
