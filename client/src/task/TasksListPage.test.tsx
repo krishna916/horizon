@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
 import { TasksListPage } from './TasksListPage';
 import { TasksRouteLayout } from './TasksRouteLayout';
-import type { TaskListResponse, TaskSummary } from './types';
+import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 
 vi.mock('@/user/hooks/useCurrentUser', () => ({
   useCurrentUser: () => ({ data: { id: 1, email: 'user@example.com' }, isPending: false, isError: false }),
@@ -34,6 +34,23 @@ const task = (id: number, title: string): TaskSummary => ({
 });
 
 const response = (items: TaskSummary[]) => ({ data: { items } });
+const detailResponse = (id: number): AxiosResponse<TaskDetail> =>
+  ({
+    data: {
+      id,
+      key: `TASK-${id}`,
+      title: `Task ${id}`,
+      priority: null,
+      dueDate: null,
+      inbox: false,
+      completedAt: null,
+      archivedAt: null,
+      createdAt: '2026-10-18T10:00:00Z',
+      updatedAt: '2026-10-18T10:00:00Z',
+      description: null,
+      deletedAt: null,
+    },
+  }) as AxiosResponse<TaskDetail>;
 
 function renderTasks(initialEntry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -70,6 +87,7 @@ describe('TasksListPage', () => {
     vi.spyOn(taskApi, 'list').mockResolvedValue(
       response([task(1, 'First task'), task(2, 'Second task')]) as AxiosResponse<TaskListResponse>
     );
+    vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
     const { router } = renderTasks('/tasks');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-1: First task' }));

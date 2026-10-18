@@ -45,11 +45,20 @@ export function TasksListPage() {
     });
   }
 
+  function openFullPage(taskId: number) {
+    void navigate({
+      to: '/tasks/$id',
+      params: { id: String(taskId) },
+      state: { horizonTaskNavigation: { kind: 'page-from-panel', taskId } },
+    });
+  }
+
   return (
     <TaskWorkspace
       selection={selection}
       onSelectTask={selectTask}
       onClosePanel={closePanel}
+      onOpenFullPage={openFullPage}
       listRatio={listRatio}
       onListRatioChange={setListRatio}
     />
