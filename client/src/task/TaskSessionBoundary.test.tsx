@@ -72,9 +72,11 @@ describe('TaskWorkspace session boundary', () => {
 
     act(() => focusManager.setFocused(false));
     sharedSessionUserId = 2;
+    expect(screen.getByText('Account one private task')).toBeInTheDocument();
     act(() => focusManager.setFocused(true));
 
     await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Verifying session…')).toBeInTheDocument();
     expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
     expect(taskListSpy).toHaveBeenCalledTimes(1);
 
@@ -85,5 +87,26 @@ describe('TaskWorkspace session boundary', () => {
     expect(await screen.findByText('Account two private task')).toBeInTheDocument();
     expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
     expect(taskListSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps private tasks hidden and explains when shared-session verification fails', async () => {
+    const currentUserSpy = vi.spyOn(userApi, 'getCurrentUser');
+    const taskListSpy = vi.spyOn(taskApi, 'list');
+    currentUserSpy
+      .mockResolvedValueOnce(response({ id: 1, email: 'user-1@example.com' }))
+      .mockRejectedValueOnce(new Error('session expired'));
+    taskListSpy.mockResolvedValue(
+      response({ items: [task(1, 'Account one private task')] }) as AxiosResponse<TaskListResponse>
+    );
+
+    render(<TaskWorkspace />, { wrapper: createWrapper() });
+    expect(await screen.findByText('Account one private task')).toBeInTheDocument();
+
+    act(() => focusManager.setFocused(false));
+    act(() => focusManager.setFocused(true));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't verify your session/i);
+    expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
+    expect(taskListSpy).toHaveBeenCalledTimes(1);
   });
 });
