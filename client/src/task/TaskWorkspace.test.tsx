@@ -83,6 +83,65 @@ describe('TaskWorkspace', () => {
     expect(screen.queryByText(/TASK-/)).not.toBeInTheDocument();
   });
 
+  it('shows a loading state while the initial session is being checked', () => {
+    mockUseCurrentUser.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isFetching: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    const { Wrapper } = createWrapper();
+
+    render(<TaskWorkspace />, { wrapper: Wrapper });
+
+    expect(screen.getByRole('heading', { name: 'All Tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Loading your Tasks workspace…');
+    expect(listSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText(/TASK-/)).not.toBeInTheDocument();
+  });
+
+  it('shows a session-verification state instead of cached tasks during revalidation', async () => {
+    listSpy.mockResolvedValue(response([task(1, 'Cached private task')]) as never);
+    const { Wrapper } = createWrapper();
+    const view = render(<TaskWorkspace />, { wrapper: Wrapper });
+
+    expect(await screen.findByText('Cached private task')).toBeInTheDocument();
+    mockUseCurrentUser.mockReturnValue({
+      data: { id: 1, email: 'user-1@example.com' },
+      isPending: false,
+      isFetching: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    view.rerender(<TaskWorkspace />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Verifying session…');
+    expect(screen.queryByText('Cached private task')).not.toBeInTheDocument();
+    expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expose cached tasks when session verification fails', () => {
+    const refetch = vi.fn();
+    mockUseCurrentUser.mockReturnValue({
+      data: { id: 1, email: 'user-1@example.com' },
+      isPending: false,
+      isFetching: false,
+      isError: true,
+      refetch,
+    });
+    const { Wrapper, queryClient } = createWrapper();
+    queryClient.setQueryData(['tasks', 1], { items: [task(1, 'Stale private task')] });
+
+    render(<TaskWorkspace />, { wrapper: Wrapper });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn't verify your session/i);
+    expect(screen.queryByText('Stale private task')).not.toBeInTheDocument();
+    expect(listSpy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
   it('renders persisted active and today-completed tasks while hiding archived and historical tasks', async () => {
     const now = new Date();
     const active = task(1, 'Renew passport', {
@@ -202,18 +261,18 @@ describe('TaskWorkspace', () => {
   });
 
   it.each([
-    ['pending', { data: undefined, isPending: true, isError: false }],
-    ['error', { data: undefined, isPending: false, isError: true }],
-    ['missing user', { data: undefined, isPending: false, isError: false }],
-  ])('does not request or render tasks while current user is %s', (_state, authState) => {
+    ['pending', { data: undefined, isPending: true, isFetching: true, isError: false }],
+    ['error', { data: undefined, isPending: false, isFetching: false, isError: true }],
+    ['missing user', { data: undefined, isPending: false, isFetching: false, isError: false }],
+  ])('does not request or render task rows while current user is %s', (_state, authState) => {
     mockUseCurrentUser.mockReturnValue(authState);
     const { Wrapper } = createWrapper();
 
     render(<TaskWorkspace />, { wrapper: Wrapper });
 
     expect(listSpy).not.toHaveBeenCalled();
-    expect(screen.queryByText('All Tasks')).not.toBeInTheDocument();
     expect(screen.queryByText(/TASK-/)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'All Tasks' })).toBeInTheDocument();
   });
 
   it('regroups cached tasks at midnight and after tab resume without another API request', async () => {
