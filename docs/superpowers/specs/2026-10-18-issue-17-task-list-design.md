@@ -1,6 +1,6 @@
 # Issue #17 — Persisted Tasks List Design Specification
 
-**Status:** Design approved in conversation on 2026-10-18; written specification awaiting owner review. No implementation authorized yet.
+**Status:** Written design specification approved by owner on 2026-10-18; approved for implementation planning, not yet for product-code changes.
 **Issue:** https://github.com/krishna916/horizon/issues/17
 **Epic:** https://github.com/krishna916/horizon/issues/2
 **Prerequisite:** https://github.com/krishna916/horizon/issues/16 (completed)
@@ -117,4 +117,4 @@ Run actual `npm run test`, `npm run typecheck`, `npm run lint`, `npm run format:
 
 ## Owner review gate
 
-This is a written **design specification**, not the task-by-task Luna implementation plan. Once the owner reviews and explicitly approves it, invoke `superpowers:writing-plans` to author a test-first implementation plan with exact files, checks and task-sized review gates. Do not implement product code or merge changes based on this document alone.
+The owner approved this written design specification on 2026-10-18. The implementation plan is recorded at `docs/superpowers/plans/2026-10-18-issue-17-task-list-implementation.md` for separate review. Do not implement product code or merge changes until that plan is reviewed and the execution method is confirmed.
