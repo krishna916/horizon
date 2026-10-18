@@ -48,10 +48,18 @@ describe('TaskSplitView', () => {
     expect(screen.getByRole('separator', { name: 'Resize task list and details' })).toHaveAttribute('aria-orientation', 'vertical');
   });
 
-  it('reports the overlay threshold below 845px and preserves the requested ratio', async () => {
-    render(<TaskSplitView list={<p>Task list</p>} detail={<p>Task details</p>} isOpen listRatio={60} onListRatioChange={vi.fn()} />);
+  it('uses the overlay below 845px and returns to the retained split ratio at 845px', async () => {
+    const onListRatioChange = vi.fn();
+    render(<TaskSplitView list={<p>Task list</p>} detail={<p>Task details</p>} isOpen listRatio={60} onListRatioChange={onListRatioChange} />);
     act(() => TestResizeObserver.instances[0]!.resize(844));
     expect(await screen.findByTestId('task-split-view')).toHaveAttribute('data-layout', 'overlay');
+    expect(await screen.findByRole('dialog', { name: 'Task details' })).toBeInTheDocument();
+    expect(screen.queryByRole('separator')).not.toBeInTheDocument();
+    expect(screen.getByText('Task list')).toBeInTheDocument();
+    expect(onListRatioChange).not.toHaveBeenCalled();
+    act(() => TestResizeObserver.instances[0]!.resize(845));
+    expect(await screen.findByRole('separator', { name: 'Resize task list and details' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Task details' })).not.toBeInTheDocument();
   });
 
   it('supports keyboard and workspace-relative pointer resizing within minimum widths', async () => {

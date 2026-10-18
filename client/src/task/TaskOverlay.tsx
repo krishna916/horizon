@@ -1,0 +1,53 @@
+import * as Dialog from '@radix-ui/react-dialog';
+import type { ReactNode } from 'react';
+import { useRef } from 'react';
+
+interface TaskOverlayProps {
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly children: ReactNode;
+}
+
+export function TaskOverlay({ open, onClose, children }: TaskOverlayProps): React.JSX.Element {
+  const openerRef = useRef<HTMLElement | null>(null);
+
+  return (
+    <Dialog.Root open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay
+          data-testid="task-overlay-backdrop"
+          className="fixed inset-0 z-50 bg-black/45"
+        />
+        <Dialog.Content
+          aria-label="Task details"
+          aria-describedby={undefined}
+          onOpenAutoFocus={() => {
+            openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const opener = openerRef.current;
+            const fallback = document.querySelector<HTMLElement>('[data-task-list-heading]') ?? document.querySelector<HTMLElement>('h1');
+            const canRestoreToOpener = opener?.isConnected && opener !== document.body;
+            (canRestoreToOpener ? opener : fallback)?.focus();
+          }}
+          className="fixed inset-y-0 right-0 z-50 flex max-h-dvh w-[min(640px,100vw)] max-w-full flex-col overflow-y-auto border-l border-border bg-background shadow-2xl outline-none"
+        >
+          <div className="flex min-h-14 shrink-0 items-center justify-between border-b border-border px-4">
+            <Dialog.Title className="text-sm font-medium text-foreground">Task details</Dialog.Title>
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                aria-label="Close task details"
+                className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Close
+              </button>
+            </Dialog.Close>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
