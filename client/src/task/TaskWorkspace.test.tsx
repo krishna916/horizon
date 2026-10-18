@@ -69,7 +69,12 @@ describe('TaskWorkspace', () => {
 
     render(<TaskWorkspace />, { wrapper: Wrapper });
 
-    expect(screen.getByRole('heading', { name: 'All Tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'All Tasks' })).toHaveClass(
+      'text-5xl',
+      'font-medium',
+      'leading-[1.15]',
+      'tracking-[-0.03em]'
+    );
     expect(screen.getByText('Stay organized and clear the path ahead.')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(/loading/i);
     expect(screen.queryByText('No active tasks.')).not.toBeInTheDocument();
