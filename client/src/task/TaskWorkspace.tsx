@@ -5,12 +5,15 @@ import { TaskSection } from './TaskSection';
 import { useTaskList } from './useTaskList';
 import type { TaskSelection } from './taskNavigation';
 import { TaskDetailSurface } from './TaskDetailSurface';
+import { TaskSplitView } from './TaskSplitView';
 
 interface TaskWorkspaceProps {
   readonly selection?: TaskSelection;
   readonly onSelectTask?: (id: number) => void;
   readonly onClosePanel?: () => void;
   readonly onOpenFullPage?: (id: number) => void;
+  readonly listRatio?: number;
+  readonly onListRatioChange?: (ratio: number) => void;
 }
 
 export function TaskWorkspace({
@@ -18,6 +21,8 @@ export function TaskWorkspace({
   onSelectTask = () => {},
   onClosePanel,
   onOpenFullPage,
+  listRatio = 60,
+  onListRatioChange = () => {},
 }: TaskWorkspaceProps = {}) {
   const currentUser = useCurrentUser();
   const userId = currentUser.isPending || currentUser.isError ? undefined : currentUser.data?.id;
@@ -90,8 +95,7 @@ export function TaskWorkspace({
     );
   }
 
-  return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-9 sm:px-8">
+  const taskHeader = (
       <header className="mb-9">
         <h1 className="!m-0 !text-5xl font-medium !leading-[1.15] !tracking-[-0.03em] text-foreground max-[1250px]:!text-[40px]">
           All Tasks
@@ -100,22 +104,42 @@ export function TaskWorkspace({
           Stay organized and clear the path ahead.
         </p>
       </header>
+  );
 
+  if (selection.kind !== 'none') {
+    return (
+      <TaskSplitView
+        list={
+          <div className="w-full px-6 py-9 sm:px-8">
+            {taskHeader}
+            {workspaceContent}
+          </div>
+        }
+        detail={
+          <div className="h-full min-h-[360px] py-9">
+            <TaskDetailSurface
+              taskId={selection.kind === 'valid' ? selection.id : null}
+              surface="panel"
+              onClose={onClosePanel}
+              onOpenFullPage={
+                selection.kind === 'valid' && onOpenFullPage
+                  ? () => onOpenFullPage(selection.id)
+                  : undefined
+              }
+            />
+          </div>
+        }
+        isOpen
+        listRatio={listRatio}
+        onListRatioChange={onListRatioChange}
+      />
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-5xl px-6 py-9 sm:px-8">
+      {taskHeader}
       {workspaceContent}
-      {selection.kind !== 'none' && (
-        <div className="mt-8 h-[min(70vh,720px)] min-h-[360px]">
-          <TaskDetailSurface
-            taskId={selection.kind === 'valid' ? selection.id : null}
-            surface="panel"
-            onClose={onClosePanel}
-            onOpenFullPage={
-              selection.kind === 'valid' && onOpenFullPage
-                ? () => onOpenFullPage(selection.id)
-                : undefined
-            }
-          />
-        </div>
-      )}
     </div>
   );
 }

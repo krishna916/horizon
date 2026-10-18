@@ -1,12 +1,14 @@
 import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import { TaskWorkspace } from './TaskWorkspace';
 import { parseTaskSelection } from './taskNavigation';
+import { useTasksLayout } from './TasksRouteLayout';
 
 export function TasksListPage() {
   const search = useSearch({ strict: false }) as Record<string, unknown>;
   const selection = parseTaskSelection(search.task);
   const navigate = useNavigate({ from: '/tasks/' });
   const router = useRouter();
+  const { listRatio, setListRatio } = useTasksLayout();
   const currentMarker = router.state.location.state.horizonTaskNavigation;
   const hasTrustedListOrigin =
     selection.kind === 'valid' &&
@@ -48,6 +50,8 @@ export function TasksListPage() {
       selection={selection}
       onSelectTask={selectTask}
       onClosePanel={closePanel}
+      listRatio={listRatio}
+      onListRatioChange={setListRatio}
     />
   );
 }
