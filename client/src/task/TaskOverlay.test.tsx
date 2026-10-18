@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TaskOverlay } from './TaskOverlay';
 
@@ -16,6 +16,32 @@ describe('TaskOverlay', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Task details' });
     expect(workspace).toContainElement(dialog);
     expect(workspace).toContainElement(screen.getByTestId('task-overlay-backdrop'));
+    workspace.remove();
+  });
+
+  it('keeps the task header and Close control in the single visible detail header', async () => {
+    const workspace = document.createElement('div');
+    document.body.append(workspace);
+    render(
+      <TaskOverlay open onClose={vi.fn()} workspaceHost={workspace}>
+        <header>
+          <p>TASK-7</p>
+          <button type="button" aria-label="Open full page">
+            Open full page
+          </button>
+          <button type="button" aria-label="Close task details">
+            Close
+          </button>
+        </header>
+      </TaskOverlay>
+    );
+
+    const dialog = await screen.findByRole('dialog', { name: 'Task details' });
+    expect(screen.getByText('TASK-7')).toBeVisible();
+    expect(dialog.querySelectorAll('header')).toHaveLength(1);
+    expect(within(dialog).getByRole('button', { name: 'Close task details' })).toBeVisible();
+    expect(dialog.querySelectorAll('button[aria-label="Close task details"]')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Task details' })).toHaveClass('sr-only');
     workspace.remove();
   });
 
@@ -57,7 +83,9 @@ describe('TaskOverlay', () => {
           All Tasks
         </h1>
         <TaskOverlay open onClose={onClose} workspaceHost={workspace}>
-          <p>Details content</p>
+          <button type="button" aria-label="Close task details" onClick={onClose}>
+            Close
+          </button>
         </TaskOverlay>
       </>
     );

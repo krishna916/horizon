@@ -42,20 +42,7 @@ export function TaskOverlay({
           }}
           className="absolute inset-y-0 right-0 z-50 flex h-full max-h-full w-[min(640px,100%)] max-w-full flex-col overflow-y-auto border-l border-border bg-background shadow-2xl outline-none"
         >
-          <div className="flex min-h-14 shrink-0 items-center justify-between border-b border-border px-4">
-            <Dialog.Title className="text-sm font-medium text-foreground">
-              Task details
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                aria-label="Close task details"
-                className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Close
-              </button>
-            </Dialog.Close>
-          </div>
+          <Dialog.Title className="sr-only">Task details</Dialog.Title>
           <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         </Dialog.Content>
       </Dialog.Portal>

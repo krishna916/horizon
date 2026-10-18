@@ -145,6 +145,9 @@ test('uses the modal drawer below 845px workspace width and closes by Escape, ba
   const dialog = page.getByRole('dialog', { name: 'Task details' });
   await expect(dialog).toBeVisible();
   await expect(page.getByRole('separator')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Close task details' })).toHaveCount(1);
+  await expect(dialog.getByText('TASK-7')).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Task details' })).toHaveClass(/sr-only/);
   const scrollRegion = dialog.locator('div.overflow-y-auto').last();
   const initialScrollTop = await scrollRegion.evaluate((element) => element.scrollTop);
   await scrollRegion.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
@@ -153,7 +156,7 @@ test('uses the modal drawer below 845px workspace width and closes by Escape, ba
     .toBeGreaterThan(initialScrollTop);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1100);
   await scrollRegion.evaluate((element) => element.scrollTo({ top: 0 }));
-  await dialog.getByRole('button', { name: 'Close task details' }).first().focus();
+  await dialog.getByRole('button', { name: 'Close task details' }).focus();
   await page.keyboard.press('Tab');
   expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press('Escape');
@@ -173,7 +176,7 @@ test('uses the modal drawer below 845px workspace width and closes by Escape, ba
   await page.getByRole('button', { name: 'Open TASK-7: First browser task' }).click();
   await expect(dialog).toBeVisible();
   await expect(page).toHaveURL(/\/tasks\?task=7$/);
-  await dialog.getByRole('button', { name: 'Close task details' }).first().click();
+  await dialog.getByRole('button', { name: 'Close task details' }).click();
   await expect(page).toHaveURL(/\/tasks$/);
 
   await page.setViewportSize({ width: 900, height: 720 });
