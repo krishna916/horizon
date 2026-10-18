@@ -3,8 +3,19 @@ import { classifyTasks } from './task-view';
 import { useLocalDay } from './useLocalDay';
 import { TaskSection } from './TaskSection';
 import { useTaskList } from './useTaskList';
+import type { TaskSelection } from './taskNavigation';
 
-export function TaskWorkspace() {
+interface TaskWorkspaceProps {
+  readonly selection?: TaskSelection;
+  readonly onSelectTask?: (id: number) => void;
+  readonly onClosePanel?: () => void;
+  readonly onOpenFullPage?: (id: number) => void;
+}
+
+export function TaskWorkspace({
+  selection = { kind: 'none' },
+  onSelectTask = () => {},
+}: TaskWorkspaceProps = {}) {
   const currentUser = useCurrentUser();
   const userId = currentUser.isPending || currentUser.isError ? undefined : currentUser.data?.id;
   const taskQuery = useTaskList(userId);
@@ -56,9 +67,21 @@ export function TaskWorkspace() {
   } else if (sections) {
     workspaceContent = (
       <>
-        <TaskSection title="Active" tasks={sections.active} now={now} />
+        <TaskSection
+          title="Active"
+          tasks={sections.active}
+          now={now}
+          onOpen={onSelectTask}
+          selectedTaskId={selection.kind === 'valid' ? selection.id : null}
+        />
         {sections.completed.length > 0 && (
-          <TaskSection title="Completed" tasks={sections.completed} now={now} />
+          <TaskSection
+            title="Completed"
+            tasks={sections.completed}
+            now={now}
+            onOpen={onSelectTask}
+            selectedTaskId={selection.kind === 'valid' ? selection.id : null}
+          />
         )}
       </>
     );

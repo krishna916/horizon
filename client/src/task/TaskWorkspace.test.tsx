@@ -179,7 +179,9 @@ describe('TaskWorkspace', () => {
     expect(screen.queryByText('Archived task')).not.toBeInTheDocument();
     expect(screen.queryByText('Archived completed task')).not.toBeInTheDocument();
     expect(screen.queryByText(/description/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Open TASK-1: Renew passport' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open TASK-2: Send signed agreement' })).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(listSpy).toHaveBeenCalledTimes(1);
