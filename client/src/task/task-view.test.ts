@@ -51,13 +51,23 @@ describe('classifyTasks', () => {
   });
 
   it('compares offset timestamps by browser-local calendar day when UTC dates differ', () => {
-    const now = new Date(2026, 9, 18, 12);
-    const completionTime =
-      now.getTimezoneOffset() > 0 ? new Date(2026, 9, 18, 23, 30) : new Date(2026, 9, 18, 0, 10);
-    const completed = summary(1, { completedAt: withLocalOffset(completionTime) });
+    const originalTimeZone = process.env.TZ;
+    process.env.TZ = 'Asia/Kolkata';
 
-    expect(new Date(completed.completedAt!).getUTCDate()).not.toBe(now.getUTCDate());
-    expect(classifyTasks([completed], now).completed).toEqual([completed]);
+    try {
+      const now = new Date(2026, 9, 18, 12);
+      const completionTime = new Date(2026, 9, 18, 0, 10);
+      const completed = summary(1, { completedAt: withLocalOffset(completionTime) });
+
+      expect(new Date(completed.completedAt!).getUTCDate()).not.toBe(now.getUTCDate());
+      expect(classifyTasks([completed], now).completed).toEqual([completed]);
+    } finally {
+      if (originalTimeZone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = originalTimeZone;
+      }
+    }
   });
 
   it('ignores invalid completion timestamps and does not mutate or reorder the input', () => {
