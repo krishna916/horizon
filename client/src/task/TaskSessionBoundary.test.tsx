@@ -1,0 +1,89 @@
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import type { AxiosResponse } from 'axios';
+import type { ReactNode } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { taskApi } from './api';
+import { TaskWorkspace } from './TaskWorkspace';
+import type { TaskListResponse, TaskSummary } from './types';
+import { userApi } from '@/user/api';
+import type { CurrentUserResponse } from '@/user/types';
+
+const response = <T,>(data: T) => ({ data }) as AxiosResponse<T>;
+
+const task = (id: number, title: string): TaskSummary => ({
+  id,
+  key: `TASK-${id}`,
+  title,
+  priority: null,
+  dueDate: null,
+  inbox: false,
+  completedAt: null,
+  archivedAt: null,
+  createdAt: '2026-10-18T10:00:00Z',
+  updatedAt: '2026-10-18T10:00:00Z',
+});
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  function Wrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  }
+
+  return Wrapper;
+}
+
+describe('TaskWorkspace session boundary', () => {
+  afterEach(() => {
+    cleanup();
+    focusManager.setFocused(undefined);
+    vi.restoreAllMocks();
+  });
+
+  it('hides cached tasks while revalidating a shared session changed in another tab', async () => {
+    let resolveCurrentUser!: (result: AxiosResponse<CurrentUserResponse>) => void;
+    let sharedSessionUserId = 1;
+    const currentUserSpy = vi.spyOn(userApi, 'getCurrentUser');
+    const taskListSpy = vi.spyOn(taskApi, 'list');
+    currentUserSpy
+      .mockResolvedValueOnce(response({ id: 1, email: 'user-1@example.com' }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCurrentUser = resolve;
+          }) as Promise<AxiosResponse<CurrentUserResponse>>
+      );
+    taskListSpy.mockImplementation(
+      async () =>
+        response({
+          items: [
+            sharedSessionUserId === 1
+              ? task(1, 'Account one private task')
+              : task(2, 'Account two private task'),
+          ],
+        }) as AxiosResponse<TaskListResponse>
+    );
+
+    render(<TaskWorkspace />, { wrapper: createWrapper() });
+    expect(await screen.findByText('Account one private task')).toBeInTheDocument();
+
+    act(() => focusManager.setFocused(false));
+    sharedSessionUserId = 2;
+    act(() => focusManager.setFocused(true));
+
+    await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
+    expect(taskListSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCurrentUser(response({ id: 2, email: 'user-2@example.com' }));
+    });
+
+    expect(await screen.findByText('Account two private task')).toBeInTheDocument();
+    expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
+    expect(taskListSpy).toHaveBeenCalledTimes(2);
+  });
+});
