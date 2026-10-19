@@ -5,6 +5,7 @@ import { useRef } from 'react';
 interface TaskOverlayProps {
   readonly open: boolean;
   readonly onClose: () => void;
+  readonly ariaLabel?: string;
   readonly children: ReactNode;
   readonly workspaceHost: HTMLElement;
 }
@@ -12,6 +13,7 @@ interface TaskOverlayProps {
 export function TaskOverlay({
   open,
   onClose,
+  ariaLabel = 'Task details',
   children,
   workspaceHost,
 }: TaskOverlayProps): React.JSX.Element {
@@ -25,7 +27,7 @@ export function TaskOverlay({
           className="absolute inset-0 z-40 bg-black/45"
         />
         <Dialog.Content
-          aria-label="Task details"
+          aria-label={ariaLabel}
           aria-describedby={undefined}
           onOpenAutoFocus={() => {
             openerRef.current =
@@ -42,7 +44,7 @@ export function TaskOverlay({
           }}
           className="absolute inset-y-0 right-0 z-50 flex h-full max-h-full w-[min(640px,100%)] max-w-full flex-col overflow-y-auto border-l border-border bg-background shadow-2xl outline-none"
         >
-          <Dialog.Title className="sr-only">Task details</Dialog.Title>
+          <Dialog.Title className="sr-only">{ariaLabel}</Dialog.Title>
           <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         </Dialog.Content>
       </Dialog.Portal>

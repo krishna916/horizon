@@ -66,7 +66,7 @@ describe('TasksRouteLayout', () => {
     expect(await screen.findByText('Other workspace')).toBeInTheDocument();
 
     await act(async () => {
-      await router.navigate({ to: '/tasks', search: { task: undefined } });
+      await router.navigate({ to: '/tasks', search: { task: undefined, create: undefined } });
     });
     await waitFor(() => expect(screen.getByText('List ratio: 60')).toBeInTheDocument());
   });

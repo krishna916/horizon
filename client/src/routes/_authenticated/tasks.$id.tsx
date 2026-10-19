@@ -24,7 +24,7 @@ function TaskDetailRoute() {
 
     void navigate({
       to: '/tasks',
-      search: { task: undefined },
+      search: { task: undefined, create: undefined },
       replace: true,
       state: { horizonTaskNavigation: undefined },
     });

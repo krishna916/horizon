@@ -5,6 +5,7 @@ export const Route = createFileRoute('/_authenticated/tasks/')({
   validateSearch: (search: Record<string, unknown>) => ({
     task:
       typeof search.task === 'string' || typeof search.task === 'number' ? search.task : undefined,
+    create: search.create === true || search.create === 'true' ? true : undefined,
   }),
   component: TasksListPage,
 });
