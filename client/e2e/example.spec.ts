@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('has heading', async ({ page }) => {
+test('shows the personalized home heading', async ({ page }) => {
   // Mock the users/me API call to return a mock authenticated user
   await page.route('**/api/v1/users/me', async (route) => {
     await route.fulfill({
@@ -11,7 +11,12 @@ test('has heading', async ({ page }) => {
   });
 
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /Welcome to Horizon/i, level: 1 })).toBeVisible();
+  await expect(
+    page.getByRole('heading', {
+      name: /Good (morning|afternoon|evening), smoke-test/i,
+      level: 1,
+    })
+  ).toBeVisible();
 });
 
 test('successful registration smoke test', async ({ page }) => {

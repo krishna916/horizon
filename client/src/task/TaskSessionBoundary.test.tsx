@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
 import { TaskWorkspace } from './TaskWorkspace';
-import type { TaskListResponse, TaskSummary } from './types';
+import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 import { userApi } from '@/user/api';
 import type { CurrentUserResponse } from '@/user/types';
 
@@ -22,6 +22,15 @@ const task = (id: number, title: string): TaskSummary => ({
   archivedAt: null,
   createdAt: '2026-10-18T10:00:00Z',
   updatedAt: '2026-10-18T10:00:00Z',
+});
+
+const taskDetail = (id: number, title: string): TaskDetail => ({
+  ...task(id, title),
+  description: {
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: title }] }],
+  },
+  deletedAt: null,
 });
 
 function createWrapper() {
@@ -48,6 +57,15 @@ describe('TaskWorkspace session boundary', () => {
     let sharedSessionUserId = 1;
     const currentUserSpy = vi.spyOn(userApi, 'getCurrentUser');
     const taskListSpy = vi.spyOn(taskApi, 'list');
+    const taskDetailSpy = vi.spyOn(taskApi, 'get').mockImplementation(async () => {
+      if (sharedSessionUserId === 1) {
+        return response(taskDetail(1, 'Account one private detail')) as AxiosResponse<TaskDetail>;
+      }
+      throw Object.assign(new Error('not found'), {
+        isAxiosError: true,
+        response: { status: 404 },
+      });
+    });
     currentUserSpy
       .mockResolvedValueOnce(response({ id: 1, email: 'user-1@example.com' }))
       .mockImplementationOnce(
@@ -67,8 +85,11 @@ describe('TaskWorkspace session boundary', () => {
         }) as AxiosResponse<TaskListResponse>
     );
 
-    render(<TaskWorkspace />, { wrapper: createWrapper() });
+    render(<TaskWorkspace selection={{ kind: 'valid', id: 1 }} />, { wrapper: createWrapper() });
     expect(await screen.findByText('Account one private task')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Account one private detail' })
+    ).toBeInTheDocument();
 
     act(() => focusManager.setFocused(false));
     sharedSessionUserId = 2;
@@ -76,8 +97,11 @@ describe('TaskWorkspace session boundary', () => {
     act(() => focusManager.setFocused(true));
 
     await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText('Verifying session…')).toBeInTheDocument();
+    expect(await screen.findAllByText('Verifying session…')).toHaveLength(2);
     expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Account one private detail' })
+    ).not.toBeInTheDocument();
     expect(taskListSpy).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -87,11 +111,19 @@ describe('TaskWorkspace session boundary', () => {
     expect(await screen.findByText('Account two private task')).toBeInTheDocument();
     expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
     expect(taskListSpy).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/task is unavailable/i);
+    expect(
+      screen.queryByRole('heading', { name: 'Account one private detail' })
+    ).not.toBeInTheDocument();
+    expect(taskDetailSpy).toHaveBeenCalledTimes(2);
   });
 
   it('keeps private tasks hidden and explains when shared-session verification fails', async () => {
     const currentUserSpy = vi.spyOn(userApi, 'getCurrentUser');
     const taskListSpy = vi.spyOn(taskApi, 'list');
+    vi.spyOn(taskApi, 'get').mockResolvedValue(
+      response(taskDetail(1, 'Account one private detail')) as AxiosResponse<TaskDetail>
+    );
     currentUserSpy
       .mockResolvedValueOnce(response({ id: 1, email: 'user-1@example.com' }))
       .mockRejectedValueOnce(new Error('session expired'));
@@ -99,14 +131,23 @@ describe('TaskWorkspace session boundary', () => {
       response({ items: [task(1, 'Account one private task')] }) as AxiosResponse<TaskListResponse>
     );
 
-    render(<TaskWorkspace />, { wrapper: createWrapper() });
+    render(<TaskWorkspace selection={{ kind: 'valid', id: 1 }} />, { wrapper: createWrapper() });
     expect(await screen.findByText('Account one private task')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Account one private detail' })
+    ).toBeInTheDocument();
 
     act(() => focusManager.setFocused(false));
     act(() => focusManager.setFocused(true));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't verify your session/i);
+    const alerts = await screen.findAllByRole('alert');
+    expect(
+      alerts.some((alert) => /couldn't verify your session/i.test(alert.textContent ?? ''))
+    ).toBe(true);
     expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Account one private detail' })
+    ).not.toBeInTheDocument();
     expect(taskListSpy).toHaveBeenCalledTimes(1);
   });
 });

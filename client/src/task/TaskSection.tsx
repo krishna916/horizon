@@ -5,9 +5,11 @@ interface TaskSectionProps {
   readonly title: 'Active' | 'Completed';
   readonly tasks: readonly TaskSummary[];
   readonly now: Date;
+  readonly onOpen: (taskId: number) => void;
+  readonly selectedTaskId: number | null;
 }
 
-export function TaskSection({ title, tasks, now }: TaskSectionProps) {
+export function TaskSection({ title, tasks, now, onOpen, selectedTaskId }: TaskSectionProps) {
   const completed = title === 'Completed';
   const headingId = `task-section-${title.toLowerCase()}`;
 
@@ -25,7 +27,14 @@ export function TaskSection({ title, tasks, now }: TaskSectionProps) {
       {tasks.length > 0 ? (
         <ul className="overflow-hidden rounded-lg border border-border">
           {tasks.map((task) => (
-            <TaskRow key={task.id} task={task} now={now} completed={completed} />
+            <TaskRow
+              key={task.id}
+              task={task}
+              now={now}
+              completed={completed}
+              onOpen={onOpen}
+              selected={task.id === selectedTaskId}
+            />
           ))}
         </ul>
       ) : (

@@ -20,7 +20,7 @@ export function AppHeader() {
       case '/settings':
         return 'Settings';
       default:
-        return 'Horizon';
+        return pathname.startsWith('/tasks/') ? 'Tasks' : 'Horizon';
     }
   };
 

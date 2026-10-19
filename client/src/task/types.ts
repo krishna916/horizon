@@ -13,6 +13,11 @@ export interface TaskSummary {
   updatedAt: string;
 }
 
+export interface TaskDetail extends TaskSummary {
+  description: Record<string, unknown> | null;
+  deletedAt: string | null;
+}
+
 export interface TaskListResponse {
   items: TaskSummary[];
 }

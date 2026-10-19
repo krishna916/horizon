@@ -4,6 +4,8 @@ import { vi, describe, it, expect } from 'vitest';
 import { AppSidebar } from './AppSidebar';
 import { AppHeader } from './AppHeader';
 
+let mockPathname = '/tasks';
+
 // Mock the hooks
 vi.mock('@/user/hooks/useCurrentUser', () => ({
   useCurrentUser: () => ({
@@ -40,7 +42,7 @@ vi.mock('@tanstack/react-router', () => ({
   },
   useNavigate: () => vi.fn(),
   useLocation: () => ({
-    pathname: '/tasks',
+    pathname: mockPathname,
   }),
 }));
 
@@ -65,6 +67,7 @@ describe('Layout Components', () => {
   });
 
   it('renders Header with title, search input and actions', () => {
+    mockPathname = '/tasks';
     render(<AppHeader />);
 
     // Check dynamic title from location.pathname ('/tasks' maps to 'Tasks')
@@ -76,5 +79,17 @@ describe('Layout Components', () => {
     // Check action buttons
     expect(screen.getByRole('button', { name: /Notifications/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Help/i })).toBeInTheDocument();
+  });
+
+  it.each(['/tasks/7', '/tasks/7/'])('recognizes task detail route %s as Tasks', (pathname) => {
+    mockPathname = pathname;
+    render(<AppHeader />);
+    expect(screen.getByRole('heading', { name: 'Tasks' })).toBeInTheDocument();
+  });
+
+  it('does not classify /tasks-extra as Tasks', () => {
+    mockPathname = '/tasks-extra';
+    render(<AppHeader />);
+    expect(screen.getByRole('heading', { name: 'Horizon' })).toBeInTheDocument();
   });
 });
