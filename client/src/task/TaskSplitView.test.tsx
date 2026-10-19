@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskSplitView } from './TaskSplitView';
 
@@ -30,6 +31,19 @@ class TestPointerEvent extends MouseEvent {
     super(type, init);
     this.pointerId = init.pointerId ?? 1;
   }
+}
+
+function ControlledTaskSplitView({ initialRatio = 60 }: { initialRatio?: number }) {
+  const [ratio, setRatio] = useState(initialRatio);
+  return (
+    <TaskSplitView
+      list={<p>Task list</p>}
+      detail={<p>Task details</p>}
+      isOpen
+      listRatio={ratio}
+      onListRatioChange={setRatio}
+    />
+  );
 }
 
 describe('TaskSplitView', () => {
@@ -107,6 +121,60 @@ describe('TaskSplitView', () => {
     act(() => TestResizeObserver.instances[0]!.resize(845));
     await waitFor(() => expect(separator).toHaveAttribute('aria-valuemin', '57'));
   });
+
+  it('keeps a continuous drag active across controlled ratio updates', async () => {
+    render(<ControlledTaskSplitView />);
+    act(() => TestResizeObserver.instances[0]!.resize(1024));
+    const list = await screen.findByTestId('task-list-pane');
+    const separator = await screen.findByRole('separator', {
+      name: 'Resize task list and details',
+    });
+
+    fireEvent.pointerDown(separator, { pointerId: 11, clientX: 600 });
+    for (const position of [550, 580, 630]) {
+      fireEvent.pointerMove(window, { pointerId: 11, clientX: position });
+      expect(Number.parseFloat(list.style.width)).toBeCloseTo(position, 1);
+    }
+
+    fireEvent.pointerUp(window, { pointerId: 11 });
+    fireEvent.pointerMove(window, { pointerId: 11, clientX: 640 });
+    expect(Number.parseFloat(list.style.width)).toBeCloseTo(630, 1);
+  });
+
+  it.each([
+    { requestedRatio: 75, key: 'ArrowLeft', expectedRatio: 62.67, direction: 'left' },
+    { requestedRatio: 40, key: 'ArrowRight', expectedRatio: 49.11, direction: 'right' },
+  ])(
+    'moves $direction from the visible split when the requested $requestedRatio% ratio is constrained',
+    async ({ requestedRatio, key, expectedRatio, direction }) => {
+      const onListRatioChange = vi.fn();
+      render(
+        <TaskSplitView
+          list={<p>Task list</p>}
+          detail={<p>Task details</p>}
+          isOpen
+          listRatio={requestedRatio}
+          onListRatioChange={onListRatioChange}
+        />
+      );
+      act(() => TestResizeObserver.instances[0]!.resize(1024));
+      const list = await screen.findByTestId('task-list-pane');
+      const initialWidth = Number.parseFloat(list.style.width);
+      const separator = await screen.findByRole('separator', {
+        name: 'Resize task list and details',
+      });
+
+      fireEvent.keyDown(separator, { key });
+
+      expect(onListRatioChange).toHaveBeenCalledTimes(1);
+      expect(onListRatioChange).toHaveBeenCalledWith(expectedRatio);
+      if (direction === 'left') {
+        expect(expectedRatio).toBeLessThan((initialWidth / 1019) * 100);
+      } else {
+        expect(expectedRatio).toBeGreaterThan((initialWidth / 1019) * 100);
+      }
+    }
+  );
 
   it.each([
     { requestedRatio: 60, key: 'ArrowRight' },

@@ -101,10 +101,21 @@ test('selects tasks, supports history, opens the canonical page, and preserves t
   const afterKeyboard = await separator.boundingBox();
   if (!afterKeyboard) throw new Error('Task splitter disappeared after keyboard resize');
   expect(afterKeyboard.x).toBeGreaterThan(initial.x);
-  await page.mouse.move(afterKeyboard.x + 2, 400);
+  await page.mouse.move(afterKeyboard.x - 2, 400);
   await page.mouse.down();
-  await page.mouse.move(afterKeyboard.x + 42, 400);
+  let previousDragX = afterKeyboard.x;
+  for (const offset of [15, 30, 45]) {
+    await page.mouse.move(afterKeyboard.x - offset, 400);
+    const duringDrag = await separator.boundingBox();
+    if (!duringDrag) throw new Error('Task splitter disappeared during pointer drag');
+    expect(duringDrag.x).toBeLessThan(previousDragX);
+    previousDragX = duringDrag.x;
+  }
   await page.mouse.up();
+  const afterPointerUp = await separator.boundingBox();
+  if (!afterPointerUp) throw new Error('Task splitter disappeared after pointer release');
+  await page.mouse.move(afterKeyboard.x - 70, 400);
+  expect((await separator.boundingBox())?.x).toBe(afterPointerUp.x);
   const listWidth = await page
     .getByTestId('task-list-pane')
     .evaluate((element) => element.getBoundingClientRect().width);
