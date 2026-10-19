@@ -1,5 +1,6 @@
 package com.krishnamurti.horizon.task.web;
 
+import com.krishnamurti.horizon.task.application.TaskCreationConflictException;
 import com.krishnamurti.horizon.task.application.TaskNotFoundException;
 import com.krishnamurti.horizon.task.domain.InvalidTaskException;
 import java.net.URI;
@@ -23,6 +24,16 @@ public class TaskExceptionHandler {
         ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
         detail.setTitle("Task Not Found");
         detail.setDetail("The requested task was not found.");
+        detail.setInstance(URI.create("/api/v1/tasks"));
+        return detail;
+    }
+
+    @ExceptionHandler(TaskCreationConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ProblemDetail handleTaskCreationConflict(TaskCreationConflictException exception) {
+        ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        detail.setTitle("Task Creation Conflict");
+        detail.setDetail("The task creation request cannot be replayed.");
         detail.setInstance(URI.create("/api/v1/tasks"));
         return detail;
     }
