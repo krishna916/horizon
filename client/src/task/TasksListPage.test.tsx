@@ -180,6 +180,7 @@ describe('TasksListPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close create task' }));
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     expect(router.state.location.search).toEqual({ create: true });
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Unsaved draft');
 

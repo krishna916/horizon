@@ -91,12 +91,37 @@ export function TaskCreateForm({
   const submitting = useRef(false);
   const cancelled = useRef(false);
   const completed = useRef(false);
-  currentUserId.current = userId;
-  onDirtyChangeRef.current = onDirtyChange;
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    currentUserId.current = userId;
+  }, [userId]);
+
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange;
+  }, [onDirtyChange]);
 
   useEffect(() => {
     onDirtyChangeRef.current(form.formState.isDirty);
   }, [form.formState.isDirty]);
+
+  useEffect(() => {
+    titleInputRef.current?.focus();
+  }, []);
+
+  const reportDirtyFromCurrentValues = () => {
+    const values = form.getValues();
+    onDirtyChangeRef.current(
+      values.title !== '' ||
+        values.description !== '' ||
+        values.priority !== '' ||
+        values.dueDate !== ''
+    );
+  };
+  const titleField = form.register('title');
+  const descriptionField = form.register('description');
+  const priorityField = form.register('priority');
+  const dueDateField = form.register('dueDate');
 
   const reportFailure = (error: unknown, snapshot: TaskCreateRecovery) => {
     const errors = fieldErrors(error);
@@ -174,12 +199,13 @@ export function TaskCreateForm({
   const fieldsDisabled = isSubmitting || recovery !== null;
   const fieldError = (name: keyof TaskCreateInput) => form.formState.errors[name]?.message;
 
+  const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void form.handleSubmit(onSubmit)(event);
+  };
+
   return (
-    <form
-      onSubmit={form.handleSubmit(onSubmit)}
-      noValidate
-      className="flex h-full min-h-0 flex-col"
-    >
+    <form onSubmit={handleFormSubmit} noValidate className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-6">
         <div className="space-y-2">
           <label htmlFor="task-create-title" className="text-sm font-medium text-foreground">
@@ -187,12 +213,19 @@ export function TaskCreateForm({
           </label>
           <Input
             id="task-create-title"
-            autoFocus
             maxLength={255}
             aria-invalid={Boolean(fieldError('title'))}
             aria-describedby={fieldError('title') ? 'task-create-title-error' : undefined}
             disabled={fieldsDisabled}
-            {...form.register('title')}
+            {...titleField}
+            ref={(element) => {
+              titleField.ref(element);
+              titleInputRef.current = element;
+            }}
+            onChange={(event) => {
+              void titleField.onChange(event);
+              reportDirtyFromCurrentValues();
+            }}
           />
           {fieldError('title') && (
             <p id="task-create-title-error" className="text-sm text-destructive">
@@ -214,7 +247,11 @@ export function TaskCreateForm({
             }
             disabled={fieldsDisabled}
             className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-            {...form.register('description')}
+            {...descriptionField}
+            onChange={(event) => {
+              void descriptionField.onChange(event);
+              reportDirtyFromCurrentValues();
+            }}
           />
           {fieldError('description') && (
             <p id="task-create-description-error" className="text-sm text-destructive">
@@ -233,7 +270,11 @@ export function TaskCreateForm({
             aria-describedby={fieldError('priority') ? 'task-create-priority-error' : undefined}
             disabled={fieldsDisabled}
             className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-            {...form.register('priority')}
+            {...priorityField}
+            onChange={(event) => {
+              void priorityField.onChange(event);
+              reportDirtyFromCurrentValues();
+            }}
           >
             <option value="">No priority</option>
             <option value="CRITICAL">Critical</option>
@@ -258,7 +299,11 @@ export function TaskCreateForm({
             aria-invalid={Boolean(fieldError('dueDate'))}
             aria-describedby={fieldError('dueDate') ? 'task-create-due-date-error' : undefined}
             disabled={fieldsDisabled}
-            {...form.register('dueDate')}
+            {...dueDateField}
+            onChange={(event) => {
+              void dueDateField.onChange(event);
+              reportDirtyFromCurrentValues();
+            }}
           />
           {fieldError('dueDate') && (
             <p id="task-create-due-date-error" className="text-sm text-destructive">

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { taskApi } from './api';
 import type { CreateTaskPayload, TaskDetail, TaskListResponse, TaskSummary } from './types';
 
@@ -17,7 +17,9 @@ function toSummary(task: TaskDetail): TaskSummary {
 export function useCreateTask(userId: number) {
   const queryClient = useQueryClient();
   const currentUserId = useRef(userId);
-  currentUserId.current = userId;
+  useEffect(() => {
+    currentUserId.current = userId;
+  }, [userId]);
 
   const mutation = useMutation({
     mutationFn: async ({ payload, requestKey }: CreateTaskVariables) => {

@@ -1,5 +1,6 @@
 import { useBlocker, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '@/components/ui/button';
 import { TaskWorkspace } from './TaskWorkspace';
 import { parseTaskSelection } from './taskNavigation';
@@ -15,7 +16,7 @@ export function TasksListPage() {
   const router = useRouter();
   const { listRatio, setListRatio } = useTasksLayout();
   const currentMarker = router.state.location.state.horizonTaskNavigation;
-  const [isCreationDirty, setIsCreationDirty] = useState(false);
+  const creationDirty = useRef(false);
   const skipBlocker = useRef(false);
   const hasTrustedListOrigin =
     selection.kind === 'valid' &&
@@ -24,8 +25,8 @@ export function TasksListPage() {
   const hasTrustedCreateOrigin =
     selection.kind === 'create' && currentMarker?.kind === 'creation-from-list';
   const blocker = useBlocker({
-    shouldBlockFn: () => isCreationDirty && !skipBlocker.current,
-    enableBeforeUnload: isCreationDirty,
+    shouldBlockFn: () => creationDirty.current && !skipBlocker.current,
+    enableBeforeUnload: () => creationDirty.current,
     withResolver: true,
   });
 
@@ -69,7 +70,7 @@ export function TasksListPage() {
   }
 
   function closeCreate() {
-    if (hasTrustedCreateOrigin && !isCreationDirty) {
+    if (hasTrustedCreateOrigin && !creationDirty.current) {
       router.history.back();
       return;
     }
@@ -108,7 +109,7 @@ export function TasksListPage() {
   }
 
   function cancelCreate() {
-    setIsCreationDirty(false);
+    creationDirty.current = false;
     void navigateWithoutGuard(async () => closeCreate());
   }
 
@@ -116,7 +117,7 @@ export function TasksListPage() {
     const marker = hasTrustedCreateOrigin
       ? { kind: 'panel-from-list' as const, taskId: task.id }
       : undefined;
-    setIsCreationDirty(false);
+    creationDirty.current = false;
     void navigateWithoutGuard(() =>
       navigate({
         to: '/tasks',
@@ -127,6 +128,11 @@ export function TasksListPage() {
     );
   }
 
+  function discardAndProceed() {
+    creationDirty.current = false;
+    if (blocker.status === 'blocked') blocker.proceed();
+  }
+
   return (
     <>
       <TaskWorkspace
@@ -135,38 +141,50 @@ export function TasksListPage() {
         onOpenCreate={openCreate}
         onClosePanel={closePanel}
         onOpenFullPage={openFullPage}
-        onCreationDirtyChange={(dirty) => setIsCreationDirty(dirty)}
+        onCreationDirtyChange={(dirty) => {
+          creationDirty.current = dirty;
+        }}
         onCancelCreate={cancelCreate}
         onCreated={completeCreate}
         listRatio={listRatio}
         onListRatioChange={setListRatio}
       />
-      {blocker.status === 'blocked' && (
-        <div className="fixed inset-0 z-[100] grid place-items-center bg-black/45 p-4">
-          <div
+      <Dialog.Root open={blocker.status === 'blocked'}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[100] bg-black/45" />
+          <Dialog.Content
             role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="task-create-discard-title"
             aria-describedby="task-create-discard-description"
-            className="w-full max-w-sm rounded-lg border border-border bg-background p-6 shadow-xl"
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+              if (blocker.status === 'blocked') blocker.reset();
+            }}
+            className="fixed left-1/2 top-1/2 z-[101] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-6 shadow-xl outline-none"
           >
-            <h2 id="task-create-discard-title" className="text-base font-semibold text-foreground">
+            <Dialog.Title className="text-base font-semibold text-foreground">
               Discard draft?
-            </h2>
-            <p id="task-create-discard-description" className="mt-2 text-sm text-muted-foreground">
+            </Dialog.Title>
+            <Dialog.Description
+              id="task-create-discard-description"
+              className="mt-2 text-sm text-muted-foreground"
+            >
               Your task draft has unsaved changes.
-            </p>
+            </Dialog.Description>
             <div className="mt-6 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => blocker.reset()}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => blocker.status === 'blocked' && blocker.reset()}
+              >
                 Keep editing
               </Button>
-              <Button type="button" variant="destructive" onClick={() => blocker.proceed()}>
+              <Button type="button" variant="destructive" onClick={discardAndProceed}>
                 Discard draft
               </Button>
             </div>
-          </div>
-        </div>
-      )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </>
   );
 }
