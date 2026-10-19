@@ -86,15 +86,21 @@ export function TaskCreateForm({
   const [recovery, setRecovery] = useState<TaskCreateRecovery | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const currentUserId = useRef(userId);
+  const currentUserId = useRef<number | undefined>(userId);
   const onDirtyChangeRef = useRef(onDirtyChange);
   const submitting = useRef(false);
   const cancelled = useRef(false);
   const completed = useRef(false);
+  const mounted = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    mounted.current = true;
     currentUserId.current = userId;
+    return () => {
+      mounted.current = false;
+      currentUserId.current = undefined;
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -158,16 +164,18 @@ export function TaskCreateForm({
     setFormError(null);
     try {
       const task = await createTask(snapshot.payload, snapshot.requestKey);
-      if (!cancelled.current && currentUserId.current === snapshot.ownerId) {
+      if (mounted.current && !cancelled.current && currentUserId.current === snapshot.ownerId) {
         completed.current = true;
         setRecovery(null);
         onCreated(task);
       }
     } catch (error) {
-      reportFailure(error, snapshot);
+      if (mounted.current && currentUserId.current === snapshot.ownerId) {
+        reportFailure(error, snapshot);
+      }
     } finally {
       submitting.current = false;
-      setIsSubmitting(false);
+      if (mounted.current) setIsSubmitting(false);
     }
   };
 

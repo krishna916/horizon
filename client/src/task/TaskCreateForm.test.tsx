@@ -226,4 +226,22 @@ describe('TaskCreateForm', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(createTask).not.toHaveBeenCalled();
   });
+
+  it('does not complete a create after the form unmounts during submission', async () => {
+    let resolveCreate!: (task: TaskDetail) => void;
+    createTask.mockImplementationOnce(() => new Promise((resolve) => (resolveCreate = resolve)));
+    const { onCreated, unmount } = renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Write a release note' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+
+    unmount();
+    await act(async () => {
+      resolveCreate(createdTask);
+    });
+
+    expect(onCreated).not.toHaveBeenCalled();
+  });
 });

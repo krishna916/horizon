@@ -41,6 +41,7 @@ vi.mock('@tanstack/react-router', () => ({
     );
   },
   useNavigate: () => vi.fn(),
+  useRouter: () => ({ state: { location: { pathname: mockPathname } } }),
   useLocation: () => ({
     pathname: mockPathname,
   }),

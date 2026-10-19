@@ -233,3 +233,51 @@ test('guards Escape and backdrop dismissal in the narrow overlay, while explicit
   await expect(page).toHaveURL(/\/tasks$/);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 });
+
+test('keeps a dirty draft when sign out is canceled and logs out after discard', async ({
+  page,
+}) => {
+  let logoutRequests = 0;
+  await installStatefulTaskApi(page);
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    logoutRequests += 1;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto('/tasks');
+  await page.getByRole('button', { name: 'Add a task to Active…' }).click();
+  const title = page.getByRole('textbox', { name: 'Title' });
+  await title.fill('Keep this draft if I stay signed in');
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  const confirmation = page.getByRole('alertdialog');
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(title).toHaveValue('Keep this draft if I stay signed in');
+  expect(logoutRequests).toBe(0);
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Discard draft' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => logoutRequests).toBe(1);
+});
+
+test('returns to the previous route and shows an error when sign out fails', async ({ page }) => {
+  let logoutRequests = 0;
+  await installStatefulTaskApi(page);
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    logoutRequests += 1;
+    await route.fulfill({ status: 500, contentType: 'application/problem+json', body: '{}' });
+  });
+  await page.goto('/tasks');
+  await page.getByRole('button', { name: 'Add a task to Active…' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill('Discard before logout');
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Discard draft' }).click();
+
+  await expect.poll(() => logoutRequests).toBe(1);
+  await expect(page).toHaveURL(/\/tasks\?create=true$/);
+  await expect(page.getByRole('region', { name: 'Create task' })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveText('Sign out failed. Please try again.');
+});

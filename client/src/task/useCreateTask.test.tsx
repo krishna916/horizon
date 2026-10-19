@@ -127,4 +127,27 @@ describe('useCreateTask', () => {
     expect(queryClient.getQueryData(['tasks', 2, 'detail', 8])).toBeUndefined();
     expect(queryClient.getQueryData<TaskListResponse>(['tasks', 2])).toBeUndefined();
   });
+
+  it('does not reconcile a late response after the creation view unmounts', async () => {
+    let resolveRequest!: (response: AxiosResponse<TaskDetail>) => void;
+    vi.spyOn(apiClient, 'post').mockImplementation(
+      () => new Promise((resolve) => (resolveRequest = resolve)) as never
+    );
+    const { Wrapper, queryClient } = createWrapper();
+    const { result, unmount } = renderHook(() => useCreateTask(1), { wrapper: Wrapper });
+
+    let pending!: Promise<TaskDetail>;
+    act(() => {
+      pending = result.current.createTask({ title: 'Created task' }, 'request-uuid');
+    });
+    await waitFor(() => expect(resolveRequest).toBeTypeOf('function'));
+    unmount();
+    await act(async () => {
+      resolveRequest({ data: detail(8) } as AxiosResponse<TaskDetail>);
+      await pending;
+    });
+
+    expect(queryClient.getQueryData(['tasks', 1, 'detail', 8])).toBeUndefined();
+    expect(queryClient.getQueryData<TaskListResponse>(['tasks', 1])).toBeUndefined();
+  });
 });

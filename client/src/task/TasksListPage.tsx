@@ -6,6 +6,7 @@ import { TaskWorkspace } from './TaskWorkspace';
 import { parseTaskSelection } from './taskNavigation';
 import { useTasksLayout } from './TasksRouteLayout';
 import type { TaskDetail } from './types';
+import { cancelPendingLogoutNavigations } from '@/user/logoutNavigation';
 
 export function TasksListPage() {
   const location = useLocation();
@@ -133,6 +134,11 @@ export function TasksListPage() {
     if (blocker.status === 'blocked') blocker.proceed();
   }
 
+  function keepEditing() {
+    cancelPendingLogoutNavigations();
+    if (blocker.status === 'blocked') blocker.reset();
+  }
+
   return (
     <>
       <TaskWorkspace
@@ -157,7 +163,7 @@ export function TasksListPage() {
             aria-describedby="task-create-discard-description"
             onEscapeKeyDown={(event) => {
               event.preventDefault();
-              if (blocker.status === 'blocked') blocker.reset();
+              keepEditing();
             }}
             className="fixed left-1/2 top-1/2 z-[101] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-6 shadow-xl outline-none"
           >
@@ -171,11 +177,7 @@ export function TasksListPage() {
               Your task draft has unsaved changes.
             </Dialog.Description>
             <div className="mt-6 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => blocker.status === 'blocked' && blocker.reset()}
-              >
+              <Button type="button" variant="outline" onClick={keepEditing}>
                 Keep editing
               </Button>
               <Button type="button" variant="destructive" onClick={discardAndProceed}>

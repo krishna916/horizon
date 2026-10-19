@@ -16,9 +16,12 @@ function toSummary(task: TaskDetail): TaskSummary {
 
 export function useCreateTask(userId: number) {
   const queryClient = useQueryClient();
-  const currentUserId = useRef(userId);
+  const currentUserId = useRef<number | undefined>(userId);
   useEffect(() => {
     currentUserId.current = userId;
+    return () => {
+      currentUserId.current = undefined;
+    };
   }, [userId]);
 
   const mutation = useMutation({
