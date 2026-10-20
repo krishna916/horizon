@@ -69,15 +69,12 @@ describe('useCreateTask', () => {
     const listSpy = vi
       .spyOn(taskApi, 'list')
       .mockResolvedValueOnce({ data: { items: [summary(3)] } } as never)
-      .mockImplementationOnce(
-        () => new Promise((resolve) => (finishRefetch = resolve)) as never
-      );
+      .mockImplementationOnce(() => new Promise((resolve) => (finishRefetch = resolve)) as never);
     vi.spyOn(apiClient, 'post').mockResolvedValue({ data: detail(41) } as never);
     const { Wrapper, queryClient } = createWrapper();
-    const { result } = renderHook(
-      () => ({ creation: useCreateTask(1), list: useTaskList(1) }),
-      { wrapper: Wrapper }
-    );
+    const { result } = renderHook(() => ({ creation: useCreateTask(1), list: useTaskList(1) }), {
+      wrapper: Wrapper,
+    });
 
     try {
       await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
@@ -94,8 +91,9 @@ describe('useCreateTask', () => {
 
       await expect(creation).resolves.toEqual(detail(41));
       expect(queryClient.getQueryData(['tasks', 1, 'detail', 41])).toEqual(detail(41));
-      expect(queryClient.getQueryData<TaskListResponse>(['tasks', 1])?.items.map(({ id }) => id))
-        .toEqual([41, 3]);
+      expect(
+        queryClient.getQueryData<TaskListResponse>(['tasks', 1])?.items.map(({ id }) => id)
+      ).toEqual([41, 3]);
     } finally {
       finishRefetch?.({ data: { items: [summary(3)] } });
     }
@@ -108,10 +106,9 @@ describe('useCreateTask', () => {
       .mockRejectedValueOnce(new Error('list refresh failed'));
     vi.spyOn(apiClient, 'post').mockResolvedValue({ data: detail(41) } as never);
     const { Wrapper, queryClient } = createWrapper();
-    const { result } = renderHook(
-      () => ({ creation: useCreateTask(1), list: useTaskList(1) }),
-      { wrapper: Wrapper }
-    );
+    const { result } = renderHook(() => ({ creation: useCreateTask(1), list: useTaskList(1) }), {
+      wrapper: Wrapper,
+    });
 
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
     const created = await result.current.creation.createTask(

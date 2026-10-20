@@ -30,6 +30,7 @@ function renderForm(props: Partial<React.ComponentProps<typeof TaskCreateForm>> 
       userId={1}
       onCreated={onCreated}
       onDirtyChange={onDirtyChange}
+      onSubmittingChange={vi.fn()}
       onCancel={onCancel}
       {...props}
     />
@@ -212,6 +213,71 @@ describe('TaskCreateForm', () => {
       resolveCreate(createdTask);
       await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
     });
+  });
+
+  it('disables Cancel for the pending POST and reports the pending interval', async () => {
+    let resolveCreate!: (task: TaskDetail) => void;
+    createTask.mockImplementationOnce(() => new Promise((resolve) => (resolveCreate = resolve)));
+    const onSubmittingChange = vi.fn();
+    const { onCancel } = renderForm({ onSubmittingChange });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'A submitted task' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+    expect(onSubmittingChange).toHaveBeenLastCalledWith(true);
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(cancel).toBeDisabled();
+    fireEvent.click(cancel);
+    expect(onCancel).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveCreate(createdTask);
+      await waitFor(() => expect(onSubmittingChange).toHaveBeenLastCalledWith(false));
+    });
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('does not release the current owner navigation lock when an old owner request settles', async () => {
+    let resolveFirst!: (task: TaskDetail) => void;
+    let resolveSecond!: (task: TaskDetail) => void;
+    createTask
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve)));
+    const onSubmittingChange = vi.fn();
+    const renderForUser = (userId: number) => (
+      <TaskCreateForm
+        key={userId}
+        userId={userId}
+        onCreated={vi.fn()}
+        onDirtyChange={vi.fn()}
+        onSubmittingChange={onSubmittingChange}
+        onCancel={vi.fn()}
+      />
+    );
+    const view = render(renderForUser(1));
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'User one task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+
+    view.rerender(renderForUser(2));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'User two task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(2));
+    expect(onSubmittingChange.mock.calls).toEqual([[true], [true]]);
+
+    await act(async () => resolveFirst(createdTask));
+
+    expect(onSubmittingChange.mock.calls).toEqual([[true], [true]]);
+
+    await act(async () => resolveSecond(createdTask));
+    expect(onSubmittingChange.mock.calls).toEqual([[true], [true], [false]]);
   });
 
   it('calls Cancel immediately for a dirty form', async () => {

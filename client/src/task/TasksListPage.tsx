@@ -1,5 +1,5 @@
 import { useBlocker, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '@/components/ui/button';
 import { TaskWorkspace } from './TaskWorkspace';
@@ -10,26 +10,60 @@ import { cancelPendingLogoutNavigations } from '@/user/logoutNavigation';
 
 export function TasksListPage() {
   const location = useLocation();
-  const search = new URLSearchParams(location.searchStr.replace(/^\?/, ''));
-  const rawTaskId = search.get('task');
-  const selection = parseTaskSelection(rawTaskId ?? undefined, search.get('create') === 'true');
   const navigate = useNavigate({ from: '/tasks/' });
   const router = useRouter();
   const { listRatio, setListRatio } = useTasksLayout();
-  const currentMarker = router.state.location.state.horizonTaskNavigation;
   const creationDirty = useRef(false);
+  const creationSubmitting = useRef(false);
+  const [isCreationSubmitting, setIsCreationSubmitting] = useState(false);
+  const [retainCreateDuringHistoryRestore, setRetainCreateDuringHistoryRestore] = useState(false);
   const skipBlocker = useRef(false);
+  const blocker = useBlocker({
+    shouldBlockFn: () =>
+      !skipBlocker.current && (creationSubmitting.current || creationDirty.current),
+    enableBeforeUnload: () => creationSubmitting.current || creationDirty.current,
+    withResolver: true,
+  });
+
+  const search = new URLSearchParams(location.searchStr.replace(/^\?/, ''));
+  const rawTaskId = search.get('task');
+  const locationSelection = parseTaskSelection(
+    rawTaskId ?? undefined,
+    search.get('create') === 'true'
+  );
+  const blockedCreateTraversal =
+    blocker.status === 'blocked' &&
+    isCreationSubmitting &&
+    (blocker.action === 'BACK' || blocker.action === 'FORWARD') &&
+    blocker.current !== undefined &&
+    'create' in blocker.current.search &&
+    blocker.current.search.create === true;
+  const selection =
+    retainCreateDuringHistoryRestore || blockedCreateTraversal
+      ? ({ kind: 'create' } as const)
+      : locationSelection;
+  const currentMarker = router.state.location.state.horizonTaskNavigation;
   const hasTrustedListOrigin =
     selection.kind === 'valid' &&
     currentMarker?.kind === 'panel-from-list' &&
     currentMarker.taskId === selection.id;
   const hasTrustedCreateOrigin =
     selection.kind === 'create' && currentMarker?.kind === 'creation-from-list';
-  const blocker = useBlocker({
-    shouldBlockFn: () => creationDirty.current && !skipBlocker.current,
-    enableBeforeUnload: () => creationDirty.current,
-    withResolver: true,
-  });
+
+  useEffect(() => {
+    if (retainCreateDuringHistoryRestore && locationSelection.kind === 'create') {
+      const restoreTimer = window.setTimeout(() => {
+        setRetainCreateDuringHistoryRestore(false);
+      }, 0);
+      return () => window.clearTimeout(restoreTimer);
+    }
+  }, [locationSelection.kind, retainCreateDuringHistoryRestore]);
+
+  function setCreationSubmitting(pending: boolean) {
+    creationSubmitting.current = pending;
+    setIsCreationSubmitting(pending);
+    if (!pending && blocker.status === 'blocked') blocker.reset();
+  }
 
   async function navigateWithoutGuard(action: () => void | Promise<unknown>) {
     skipBlocker.current = true;
@@ -110,6 +144,7 @@ export function TasksListPage() {
   }
 
   function cancelCreate() {
+    if (creationSubmitting.current) return;
     creationDirty.current = false;
     void navigateWithoutGuard(async () => closeCreate());
   }
@@ -119,6 +154,10 @@ export function TasksListPage() {
       ? { kind: 'panel-from-list' as const, taskId: task.id }
       : undefined;
     creationDirty.current = false;
+    creationSubmitting.current = false;
+    setRetainCreateDuringHistoryRestore(false);
+    setIsCreationSubmitting(false);
+    if (blocker.status === 'blocked') blocker.reset();
     void navigateWithoutGuard(() =>
       navigate({
         to: '/tasks',
@@ -131,12 +170,18 @@ export function TasksListPage() {
 
   function discardAndProceed() {
     creationDirty.current = false;
+    setRetainCreateDuringHistoryRestore(false);
     if (blocker.status === 'blocked') blocker.proceed();
   }
 
   function keepEditing() {
     cancelPendingLogoutNavigations();
-    if (blocker.status === 'blocked') blocker.reset();
+    if (blocker.status === 'blocked') {
+      if (blocker.action === 'BACK' || blocker.action === 'FORWARD') {
+        setRetainCreateDuringHistoryRestore(true);
+      }
+      blocker.reset();
+    }
   }
 
   return (
@@ -150,6 +195,7 @@ export function TasksListPage() {
         onCreationDirtyChange={(dirty) => {
           creationDirty.current = dirty;
         }}
+        onCreationSubmittingChange={setCreationSubmitting}
         onCancelCreate={cancelCreate}
         onCreated={completeCreate}
         listRatio={listRatio}
@@ -168,21 +214,31 @@ export function TasksListPage() {
             className="fixed left-1/2 top-1/2 z-[101] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-6 shadow-xl outline-none"
           >
             <Dialog.Title className="text-base font-semibold text-foreground">
-              Discard draft?
+              {isCreationSubmitting ? 'Creating task…' : 'Discard draft?'}
             </Dialog.Title>
             <Dialog.Description
               id="task-create-discard-description"
               className="mt-2 text-sm text-muted-foreground"
             >
-              Your task draft has unsaved changes.
+              {isCreationSubmitting
+                ? 'Your task is being saved. Stay here while the request finishes.'
+                : 'Your task draft has unsaved changes.'}
             </Dialog.Description>
             <div className="mt-6 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={keepEditing}>
-                Keep editing
-              </Button>
-              <Button type="button" variant="destructive" onClick={discardAndProceed}>
-                Discard draft
-              </Button>
+              {isCreationSubmitting ? (
+                <Button type="button" variant="outline" onClick={keepEditing}>
+                  Stay here
+                </Button>
+              ) : (
+                <>
+                  <Button type="button" variant="outline" onClick={keepEditing}>
+                    Keep editing
+                  </Button>
+                  <Button type="button" variant="destructive" onClick={discardAndProceed}>
+                    Discard draft
+                  </Button>
+                </>
+              )}
             </div>
           </Dialog.Content>
         </Dialog.Portal>

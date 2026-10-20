@@ -33,6 +33,7 @@ interface TaskCreateFormProps {
   readonly userId: number;
   readonly onCreated: (task: TaskDetail) => void;
   readonly onDirtyChange: (dirty: boolean) => void;
+  readonly onSubmittingChange: (pending: boolean) => void;
   readonly onCancel: () => void;
 }
 
@@ -76,6 +77,7 @@ export function TaskCreateForm({
   userId,
   onCreated,
   onDirtyChange,
+  onSubmittingChange,
   onCancel,
 }: TaskCreateFormProps): React.JSX.Element {
   const { createTask } = useCreateTask(userId);
@@ -161,6 +163,7 @@ export function TaskCreateForm({
     }
     submitting.current = true;
     setIsSubmitting(true);
+    onSubmittingChange(true);
     setFormError(null);
     try {
       const task = await createTask(snapshot.payload, snapshot.requestKey);
@@ -175,7 +178,10 @@ export function TaskCreateForm({
       }
     } finally {
       submitting.current = false;
-      if (mounted.current) setIsSubmitting(false);
+      if (mounted.current && currentUserId.current === snapshot.ownerId) {
+        onSubmittingChange(false);
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -199,6 +205,7 @@ export function TaskCreateForm({
   };
 
   const cancel = () => {
+    if (submitting.current) return;
     cancelled.current = true;
     onDirtyChange(false);
     onCancel();
@@ -331,7 +338,7 @@ export function TaskCreateForm({
       </div>
 
       <footer className="flex shrink-0 justify-end gap-2 border-t border-border px-6 py-4">
-        <Button type="button" variant="outline" onClick={cancel}>
+        <Button type="button" variant="outline" onClick={cancel} disabled={isSubmitting}>
           Cancel
         </Button>
         {recovery ? (
