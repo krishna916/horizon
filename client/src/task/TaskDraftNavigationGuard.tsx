@@ -210,7 +210,11 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
                   ? 'Could not save this field. Your draft is still here. Try saving again.'
                   : 'Your task draft has unsaved changes.'}
             </Dialog.Description>
-            <div className="mt-6 flex justify-end gap-2">
+            <div
+              role="group"
+              aria-label="Draft actions"
+              className="mt-6 flex flex-wrap justify-end gap-2"
+            >
               {isPending ? (
                 <Button type="button" variant="outline" onClick={keepEditing}>
                   Stay here

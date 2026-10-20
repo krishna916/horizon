@@ -364,6 +364,7 @@ describe('TasksListPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open TASK-2: Second task' }));
 
     await screen.findByRole('alertdialog');
+    expect(screen.getByRole('group', { name: 'Draft actions' })).toHaveClass('flex-wrap');
     expect(router.state.location.search).toEqual({ task: 1 });
     expect(screen.getByLabelText('Title')).toHaveValue('Renamed first task');
     expect(screen.getByRole('button', { name: 'Save and continue' })).toBeVisible();
