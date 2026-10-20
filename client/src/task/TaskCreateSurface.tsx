@@ -8,6 +8,7 @@ interface TaskCreateSurfaceProps {
   readonly userId: number;
   readonly onCreated: (task: TaskDetail) => void;
   readonly onDirtyChange: (dirty: boolean) => void;
+  readonly onSubmittingChange: (pending: boolean) => void;
   readonly onCancel: () => void;
   readonly onDismiss: () => void;
 }
@@ -16,6 +17,7 @@ export function TaskCreateSurface({
   userId,
   onCreated,
   onDirtyChange,
+  onSubmittingChange,
   onCancel,
   onDismiss,
 }: TaskCreateSurfaceProps): React.JSX.Element {
@@ -38,6 +40,7 @@ export function TaskCreateSurface({
           userId={userId}
           onCreated={onCreated}
           onDirtyChange={onDirtyChange}
+          onSubmittingChange={onSubmittingChange}
           onCancel={onCancel}
         />
       </div>

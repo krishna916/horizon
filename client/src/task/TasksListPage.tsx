@@ -16,7 +16,7 @@ export function TasksListPage() {
   const creationDirty = useRef(false);
   const creationSubmitting = useRef(false);
   const [isCreationSubmitting, setIsCreationSubmitting] = useState(false);
-  const [retainCreateDuringHistoryRestore, setRetainCreateDuringHistoryRestore] = useState(false);
+  const retainCreateDuringHistoryRestore = useRef(false);
   const skipBlocker = useRef(false);
   const blocker = useBlocker({
     shouldBlockFn: () =>
@@ -33,13 +33,13 @@ export function TasksListPage() {
   );
   const blockedCreateTraversal =
     blocker.status === 'blocked' &&
-    isCreationSubmitting &&
+    creationSubmitting.current &&
     (blocker.action === 'BACK' || blocker.action === 'FORWARD') &&
     blocker.current !== undefined &&
     'create' in blocker.current.search &&
     blocker.current.search.create === true;
   const selection =
-    retainCreateDuringHistoryRestore || blockedCreateTraversal
+    retainCreateDuringHistoryRestore.current || blockedCreateTraversal
       ? ({ kind: 'create' } as const)
       : locationSelection;
   const currentMarker = router.state.location.state.horizonTaskNavigation;
@@ -51,13 +51,10 @@ export function TasksListPage() {
     selection.kind === 'create' && currentMarker?.kind === 'creation-from-list';
 
   useEffect(() => {
-    if (retainCreateDuringHistoryRestore && locationSelection.kind === 'create') {
-      const restoreTimer = window.setTimeout(() => {
-        setRetainCreateDuringHistoryRestore(false);
-      }, 0);
-      return () => window.clearTimeout(restoreTimer);
+    if (retainCreateDuringHistoryRestore.current && locationSelection.kind === 'create') {
+      retainCreateDuringHistoryRestore.current = false;
     }
-  }, [locationSelection.kind, retainCreateDuringHistoryRestore]);
+  }, [locationSelection.kind]);
 
   function setCreationSubmitting(pending: boolean) {
     creationSubmitting.current = pending;
@@ -155,7 +152,7 @@ export function TasksListPage() {
       : undefined;
     creationDirty.current = false;
     creationSubmitting.current = false;
-    setRetainCreateDuringHistoryRestore(false);
+    retainCreateDuringHistoryRestore.current = false;
     setIsCreationSubmitting(false);
     if (blocker.status === 'blocked') blocker.reset();
     void navigateWithoutGuard(() =>
@@ -170,7 +167,7 @@ export function TasksListPage() {
 
   function discardAndProceed() {
     creationDirty.current = false;
-    setRetainCreateDuringHistoryRestore(false);
+    retainCreateDuringHistoryRestore.current = false;
     if (blocker.status === 'blocked') blocker.proceed();
   }
 
@@ -178,7 +175,7 @@ export function TasksListPage() {
     cancelPendingLogoutNavigations();
     if (blocker.status === 'blocked') {
       if (blocker.action === 'BACK' || blocker.action === 'FORWARD') {
-        setRetainCreateDuringHistoryRestore(true);
+        retainCreateDuringHistoryRestore.current = true;
       }
       blocker.reset();
     }

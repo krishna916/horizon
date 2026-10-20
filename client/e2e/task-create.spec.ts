@@ -51,12 +51,15 @@ async function installStatefulTaskApi(
   {
     initialTasks = [],
     failFirstPost = false,
-  }: { initialTasks?: TaskSummary[]; failFirstPost?: boolean } = {}
+    holdFirstPost = false,
+  }: { initialTasks?: TaskSummary[]; failFirstPost?: boolean; holdFirstPost?: boolean } = {}
 ) {
   const items = [...initialTasks];
   const details = new Map(initialTasks.map((task) => [task.id, detail(task)]));
   const requests: Array<{ payload: CreatePayload; requestKey: string; body: string }> = [];
   const creationsByRequestKey = new Map<string, TaskDetail>();
+  let releasePost!: () => void;
+  const firstPostGate = new Promise<void>((resolve) => (releasePost = resolve));
   await page.route('**/api/v1/users/me', (route) =>
     route.fulfill({
       status: 200,
@@ -93,6 +96,8 @@ async function installStatefulTaskApi(
       });
       return;
     }
+
+    if (holdFirstPost && requests.length === 1) await firstPostGate;
 
     const id = 41;
     const createdSummary = summary(id, payload.title, {
@@ -131,7 +136,7 @@ async function installStatefulTaskApi(
       body: JSON.stringify(task),
     });
   });
-  return { items, requests };
+  return { items, requests, releasePost: () => releasePost() };
 }
 
 test('creates one Active task and replaces the create entry with its detail panel', async ({
@@ -198,6 +203,79 @@ test('retries an ambiguous create with the frozen payload and request key', asyn
   expect(fixture.items[0]).toMatchObject({ id: 41, key: 'TASK-41' });
 });
 
+test('blocks browser Back while the create POST is pending and opens detail after success', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const fixture = await installStatefulTaskApi(page, {
+    initialTasks: [summary(7, 'Review the plan')],
+    holdFirstPost: true,
+  });
+  await page.goto('/tasks');
+  await page.getByRole('button', { name: 'Add a task to Activeâ€¦' }).click();
+  const title = page.getByRole('textbox', { name: 'Title' });
+  await title.fill('Wait for the create response');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect.poll(() => fixture.requests).toHaveLength(1);
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+
+  const pendingDialog = page.getByRole('alertdialog');
+  const expectPendingBlock = async () => {
+    await expect(pendingDialog).toBeVisible();
+    await expect(pendingDialog).toContainText('Creating taskâ€¦');
+    await expect(pendingDialog.getByRole('button', { name: 'Stay here' })).toBeVisible();
+    await expect(pendingDialog.getByRole('button', { name: 'Discard draft' })).toHaveCount(0);
+  };
+
+  await page.goBack();
+  await expectPendingBlock();
+  await pendingDialog.getByRole('button', { name: 'Stay here' }).click();
+  await expect(page).toHaveURL(/\/tasks\?create=true$/);
+  await expect(title).toHaveValue('Wait for the create response');
+
+  fixture.releasePost();
+  await expect(page).toHaveURL(/\/tasks\?task=41$/);
+  await expect(page.getByRole('heading', { name: 'Wait for the create response' })).toBeVisible();
+});
+
+test('blocks X, Escape, and backdrop dismissal while the create POST is pending', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 720 });
+  const fixture = await installStatefulTaskApi(page, { holdFirstPost: true });
+  await page.goto('/tasks');
+  await page.getByRole('button', { name: 'Add a task to Activeâ€¦' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill('Keep the pending panel open');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect.poll(() => fixture.requests).toHaveLength(1);
+
+  const pendingDialog = page.getByRole('alertdialog');
+  const assertPendingBlock = async () => {
+    await expect(pendingDialog).toBeVisible();
+    await expect(pendingDialog).toContainText('Creating taskâ€¦');
+    await expect(pendingDialog.getByRole('button', { name: 'Discard draft' })).toHaveCount(0);
+  };
+  const stay = async () => {
+    await pendingDialog.getByRole('button', { name: 'Stay here' }).click();
+    await expect(pendingDialog).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Create task' })).toBeVisible();
+  };
+
+  await page.getByRole('button', { name: 'Close create task' }).click();
+  await assertPendingBlock();
+  await stay();
+  await page.keyboard.press('Escape');
+  await assertPendingBlock();
+  await stay();
+  await page.getByTestId('task-overlay-backdrop').click({ position: { x: 8, y: 8 } });
+  await assertPendingBlock();
+  await stay();
+
+  fixture.releasePost();
+  await expect(page).toHaveURL(/\/tasks\?task=41$/);
+  await expect(page.getByRole('heading', { name: 'Keep the pending panel open' })).toBeVisible();
+});
+
 test('keeps a dirty draft on Back, then follows the chosen discard destination', async ({
   page,
 }) => {
@@ -230,57 +308,73 @@ test('guards Escape and backdrop dismissal in the narrow overlay, while explicit
   await page.getByRole('button', { name: 'Add a task to Activeâ€¦' }).click();
   const dialog = page.getByRole('dialog', { name: 'Create task' });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('textbox', { name: 'Title' }:Ó›h‘éì¶»§q«^uÈXÝ]™x )‰ÈJK˜ÛXÚÊ
-NÂˆ]ØZ]^XÝ
-YÙJKÒ]™UT“
-×Ý\ÚÜ×ØÜ™X]O]YIÊNÂˆ]ØZ]^XÝ
-YÙK™Ù]žT›ÛJ	ÙX[ÙÉËÈ˜[YNˆ	ÐÜ™X]H\ÚÉÈJJKÐ™Uš\ÚX›J
-NÂˆ]ØZ]YÙK™Ù]žT›ÛJ	Ý^›Þ	ËÈ˜[YNˆ	Õ]IÈJK™š[
-	ÐØ[˜Ù[[[YYX][IÊNÂˆ]ØZ]YÙK™Ù]žT›ÛJ	Ø]Û‰ËÈ˜[YNˆ	ÐØ[˜Ù[	ÈJK˜ÛXÚÊ
-NÂˆ]ØZ]^XÝ
-YÙJKÒ]™UT“
-×Ý\ÚÜÉÊNÂˆ]ØZ]^XÝ
-YÙK™Ù]žT›ÛJ	Ø[\X[ÙÉÊJKÒ]™PÛÝ[
-
-NÂŸJNÂ‚\Ý
-	ÚÙY\ÈH\H˜YÚ[ˆÚYÛˆÝ]\ÈØ[˜Ù[Y[™ÙÜÈÝ]Y\ˆ\ØØ\™	Ë\Þ[˜È
-ÂˆYÙKŸJHOˆÂˆ]ÙÛÝ]™\]Y\ÝÈHÂˆ]ØZ][œÝ[Ý]Y[\ÚÐ\JYÙJNÂˆ]ØZ]YÙKœ›Ý]J	ÊŠ‹Ø\KÝŒKØ]]ÛÙÛÝ]	Ë\Þ[˜È
-›Ý]JHOˆÂˆÙÛÝ]™\]Y\ÝÈ
-ÏHNÂˆ]ØZ]›Ý]K™[š[
-ÈÝ]\ÎˆŒJNÂˆJNÂˆ]ØZ]YÙK™ÛÝÊ	ËÝ\ÚÜÉÊNÂˆ]ØZ]YÙK™Ù]žT›ÛJ	Ø]Û‰ËÈ˜[YNˆ	ÐYH\ÚÈÈXÝ]™x )‰ÈJK˜ÛXÚÊ
-NÂˆÛÛœÝ]HHYÙK™Ù]žT›ÛJ	Ý^›Þ	ËÈ˜[YNˆ	Õ]IÈJNÂˆ]ØZ]]K™š[
-	ÒÙY\\È˜YYˆHÝ^HÚYÛ™Y[‰ÊNÂ‚ˆ]ØZ]YÙK™Ù]žT›ÛJ	Ø]Û‰ËÈ˜[YNˆ	ÔÚYÛˆÝ]	ÈJK˜ÛXÚÊ
-NÂˆÛÛœÝÛÛ™š\›X][ÛˆHYÙK™Ù]žT›ÛJ	Ø[\X[ÙÉÊNÂˆ]ØZ]^XÝ
-ÛÛ™š\›X][ÛŠKÐ™Uš\ÚX›J
-NÂˆ]ØZ]ÛÛ™š\›X][Û‹™Ù]žT›ÛJ	Ø]Û‰ËÈ˜[YNˆ	ÒÙY\Y][™ÉÈJK˜ÛXÚÊ
-NÂˆ]ØZ]^XÝ
-]JKÒ]™U˜[YJ	ÒÙY\\È˜YYˆHÝ^HÚYÛ™Y[‰ÊNÂˆ^XÝ
-ÙÛÝ]™\]Y\ÝÊKÐ™J
-NÂ‚ˆ]ØZ]YÙK™Ù]žT›ÛJ	Ø]Û‰ËÈ˜[YNˆ	ÔÚYÛˆÝ]	ÈJK˜ÛXÚÊ
-NÂˆ]ØZ]^XÝ
-ÛÛ™š\›X][ÛŠKÐ™Uš\ÚX›J
-NÂˆ]ØZ]ÛÛ™š\›X][Û‹™Ù]žT›ÛJ	Ø]Û‰ËÈ˜[YNˆ	Ñ\ØØ\™˜Y	ÈJK˜ÛXÚÊ
-NÂˆ]ØZ]^XÝ
-YÙJKÒ]™UT“
-×ÛÙÚ[‰ÊNÂˆ]ØZ]^XÝœÛ
+  await dialog.getByRole('textbox', { name: 'Title' }).fill('Keep or discard this draft');
 
+  await page.keyboard.press('Escape');
+  const confirmation = page.getByRole('alertdialog');
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(dialog).toBeVisible();
+  await page.getByTestId('task-overlay-backdrop').click({ position: { x: 8, y: 8 } });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Discard draft' }).click();
+  await expect(page).toHaveURL(/\/tasks$/);
+  await expect(confirmation).toHaveCount(0);
+  await expect(dialog).toHaveCount(0);
 
-HOˆÙÛÝ]™\]Y\ÝÊKÐ™JJNÂŸJNÂ‚\Ý
-	Ü™]\›œÈÈH™]š[Ý\È›Ý]H[™ÚÝÜÈ[ˆ\œ›ÜˆÚ[ˆÚYÛˆÝ]˜Z[ÉË\Þ[˜È
-ÈYÙHJHOˆÂˆ]ÙÛÝ]™\]Y\ÝÈHÂˆ]ØZ][œÝ[Ý]Y[\ÚÐ\JYÙJNÂˆ]ØZ]YÙKœ›Ý]J	ÊŠ‹Ø\KÝŒKØ]]ÛÙÛÝ]	Ë\Þ[˜È
-›Ý]JHOˆÂˆÙÛÝ]™\]Y\ÝÈ
-ÏHNÂˆ]ØZ]›Ý]K™[š[
-ÈÝ]\ÎˆLÛÛ[\Nˆ	Ø\XØ][Û‹Ü›Ø›[JÚœÛÛ‰Ë›ÙNˆ	ÞßIÈJNÂˆJNÂˆ]ØZ]YÙK™ÛÝÊ	ËÝ\ÚÜÉÊNÂˆ]ØZ]YÙK™Ù]žT›ÛJ	Ø]Û‰ËÈ˜[YNˆ	ÐYH\ÚÈÈXÝ]™x )‰ÈJK˜ÛXÚÊ
-NÂˆ]ØZ]YÙK™Ù]žT›ÛJ	Ý^›Þ	ËÈ˜[YNˆ	Õ]IÈJK™š[
-	Ñ\ØØ\™™Y›Ü™HÙÛÝ]	ÊNÂ‚ˆ]ØZ]YÙK™Ù]žT›ÛJ	Ø]Û‰ËÈ˜[YNˆ	ÔÚYÛˆÝ]	ÈJK˜ÛXÚÊ
-NÂˆ]ØZ]YÙK™Ù]žT›ÛJ	Ø[\X[ÙÉÊK™Ù]žT›ÛJ	Ø]Û‰ËÈ˜[YNˆ	Ñ\ØØ\™˜Y	ÈJK˜ÛXÚÊ
-NÂ‚ˆ]ØZ]^XÝœÛ
+  await page.getByRole('button', { name: 'Add a task to Activeâ€¦' }).click();
+  await expect(page).toHaveURL(/\/tasks\?create=true$/);
+  await expect(page.getByRole('dialog', { name: 'Create task' })).toBeVisible();
+  await page.getByRole('textbox', { name: 'Title' }).fill('Cancel immediately');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page).toHaveURL(/\/tasks$/);
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+});
 
+test('keeps a dirty draft when sign out is canceled and logs out after discard', async ({
+  page,
+}) => {
+  let logoutRequests = 0;
+  await installStatefulTaskApi(page);
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    logoutRequests += 1;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto('/tasks');
+  await page.getByRole('button', { name: 'Add a task to Activeâ€¦' }).click();
+  const title = page.getByRole('textbox', { name: 'Title' });
+  await title.fill('Keep this draft if I stay signed in');
 
-HOˆÙÛÝ]™\]Y\ÝÊKÐ™JJNÂˆ]ØZ]^XÝ
-YÙJKÒ]™UT“
-×Ý\ÚÜ×ØÜ™X]O]YIÊNÂˆ]ØZ]^XÝ
-YÙK™Ù]žT›ÛJ	Ü™YÚ[Û‰ËÈ˜[YNˆ	ÐÜ™X]H\ÚÉÈJJKÐ™Uš\ÚX›J
-NÂˆ]ØZ]^XÝ
-YÙK™Ù]žT›ÛJ	Ø[\	ÊJKÒ]™U^
-	ÔÚYÛˆÝ]˜Z[YˆX\ÙHžHYØZ[‹‰ÊNÂŸJNÂ
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  const confirmation = page.getByRole('alertdialog');
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(title).toHaveValue('Keep this draft if I stay signed in');
+  expect(logoutRequests).toBe(0);
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Discard draft' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => logoutRequests).toBe(1);
+});
+
+test('returns to the previous route and shows an error when sign out fails', async ({ page }) => {
+  let logoutRequests = 0;
+  await installStatefulTaskApi(page);
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    logoutRequests += 1;
+    await route.fulfill({ status: 500, contentType: 'application/problem+json', body: '{}' });
+  });
+  await page.goto('/tasks');
+  await page.getByRole('button', { name: 'Add a task to Activeâ€¦' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill('Discard before logout');
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Discard draft' }).click();
+
+  await expect.poll(() => logoutRequests).toBe(1);
+  await expect(page).toHaveURL(/\/tasks\?create=true$/);
+  await expect(page.getByRole('region', { name: 'Create task' })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveText('Sign out failed. Please try again.');
+});

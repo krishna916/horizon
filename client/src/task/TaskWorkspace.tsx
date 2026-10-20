@@ -19,6 +19,7 @@ interface TaskWorkspaceProps {
   readonly onClosePanel?: () => void;
   readonly onOpenFullPage?: (id: number) => void;
   readonly onCreationDirtyChange?: (dirty: boolean) => void;
+  readonly onCreationSubmittingChange?: (pending: boolean) => void;
   readonly onCancelCreate?: () => void;
   readonly onCreated?: (task: TaskDetail) => void;
   readonly listRatio?: number;
@@ -32,6 +33,7 @@ export function TaskWorkspace({
   onClosePanel,
   onOpenFullPage,
   onCreationDirtyChange = () => {},
+  onCreationSubmittingChange = () => {},
   onCancelCreate = () => {},
   onCreated = () => {},
   listRatio = 60,
@@ -45,7 +47,10 @@ export function TaskWorkspace({
 
   useLayoutEffect(() => {
     if (currentUser.isError) {
-      if (verifiedUserId.current !== undefined) onCreationDirtyChange(false);
+      if (verifiedUserId.current !== undefined) {
+        onCreationDirtyChange(false);
+        onCreationSubmittingChange(false);
+      }
       verifiedUserId.current = undefined;
       return;
     }
@@ -54,9 +59,17 @@ export function TaskWorkspace({
 
     if (verifiedUserId.current !== undefined && verifiedUserId.current !== userId) {
       onCreationDirtyChange(false);
+      onCreationSubmittingChange(false);
     }
     verifiedUserId.current = userId;
-  }, [currentUser.isError, currentUser.isFetching, currentUser.isPending, onCreationDirtyChange, userId]);
+  }, [
+    currentUser.isError,
+    currentUser.isFetching,
+    currentUser.isPending,
+    onCreationDirtyChange,
+    onCreationSubmittingChange,
+    userId,
+  ]);
 
   const sections = taskQuery.data ? classifyTasks(taskQuery.data.items, now) : undefined;
   let workspaceContent;
@@ -155,6 +168,7 @@ export function TaskWorkspace({
                 userId={userId}
                 onCreated={onCreated}
                 onDirtyChange={onCreationDirtyChange}
+                onSubmittingChange={onCreationSubmittingChange}
                 onCancel={onCancelCreate}
                 onDismiss={onClosePanel ?? (() => {})}
               />
@@ -162,9 +176,7 @@ export function TaskWorkspace({
             {currentUser.isFetching && (
               <TaskPanelShell ariaLabel="Create task">
                 <div className="flex h-full items-center px-6">
-                  <output className="text-sm text-muted-foreground">
-                    Verifying your session…
-                  </output>
+                  <output className="text-sm text-muted-foreground">Verifying your session…</output>
                 </div>
               </TaskPanelShell>
             )}

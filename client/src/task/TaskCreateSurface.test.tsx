@@ -14,6 +14,7 @@ describe('TaskCreateSurface', () => {
         userId={1}
         onCreated={vi.fn()}
         onDirtyChange={vi.fn()}
+        onSubmittingChange={vi.fn()}
         onCancel={onCancel}
         onDismiss={onDismiss}
       />

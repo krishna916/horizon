@@ -190,6 +190,56 @@ describe('TasksListPage', () => {
     expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument();
   });
 
+  it('blocks task navigation during a create POST and restores the dirty guard after failure', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'First task'), task(2, 'Second task')]) as never
+    );
+    let rejectCreate!: (error: Error) => void;
+    let resolveRetry!: (response: AxiosResponse<TaskDetail>) => void;
+    const createSpy = vi
+      .spyOn(taskApi, 'create')
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => (rejectCreate = reject)))
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveRetry = resolve)));
+    vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+    const { router } = renderTasks('/tasks');
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a task to Active…' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ create: true }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Pending task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(taskApi.create).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-2: Second task' }));
+    const pendingDialog = await screen.findByRole('alertdialog');
+    expect(pendingDialog).toHaveTextContent('Creating task…');
+    expect(pendingDialog).toHaveTextContent('Stay here');
+    expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
+    expect(router.state.location.search).toEqual({ create: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stay here' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    await act(async () => rejectCreate(new Error('socket closed')));
+    expect(await screen.findByRole('button', { name: 'Retry creation' })).toBeInTheDocument();
+    expect(router.state.location.search).toEqual({ create: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open TASK-2: Second task' }));
+    expect(await screen.findByRole('button', { name: 'Discard draft' })).toBeInTheDocument();
+    expect(router.state.location.search).toEqual({ create: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry creation' }));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Open TASK-2: Second task' }));
+    const retryDialog = await screen.findByRole('alertdialog');
+    expect(retryDialog).toHaveTextContent('Creating task…');
+    expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Stay here' }));
+    await act(async () => resolveRetry(detailResponse(41)));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 41 }));
+    expect(await screen.findByRole('heading', { name: 'Task 41' })).toBeInTheDocument();
+  });
+
   it('explicit Cancel discards immediately without showing the guard', async () => {
     vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
     const { router } = renderTasks('/tasks');

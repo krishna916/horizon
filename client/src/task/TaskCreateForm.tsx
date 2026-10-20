@@ -178,10 +178,8 @@ export function TaskCreateForm({
       }
     } finally {
       submitting.current = false;
-      if (mounted.current && currentUserId.current === snapshot.ownerId) {
-        onSubmittingChange(false);
-        setIsSubmitting(false);
-      }
+      onSubmittingChange(false);
+      if (mounted.current) setIsSubmitting(false);
     }
   };
 
