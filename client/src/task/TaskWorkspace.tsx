@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { classifyTasks } from './task-view';
 import { useLocalDay } from './useLocalDay';
@@ -6,12 +7,21 @@ import { useTaskList } from './useTaskList';
 import type { TaskSelection } from './taskNavigation';
 import { TaskDetailSurface } from './TaskDetailSurface';
 import { TaskSplitView } from './TaskSplitView';
+import { TaskCreateSurface } from './TaskCreateSurface';
+import { TaskPanelShell } from './TaskPanelShell';
+import { Button } from '@/components/ui/button';
+import type { TaskDetail } from './types';
 
 interface TaskWorkspaceProps {
   readonly selection?: TaskSelection;
   readonly onSelectTask?: (id: number) => void;
+  readonly onOpenCreate?: () => void;
   readonly onClosePanel?: () => void;
   readonly onOpenFullPage?: (id: number) => void;
+  readonly onCreationDirtyChange?: (dirty: boolean) => void;
+  readonly onCreationSubmittingChange?: (pending: boolean) => void;
+  readonly onCancelCreate?: () => void;
+  readonly onCreated?: (task: TaskDetail) => void;
   readonly listRatio?: number;
   readonly onListRatioChange?: (ratio: number) => void;
 }
@@ -19,15 +29,47 @@ interface TaskWorkspaceProps {
 export function TaskWorkspace({
   selection = { kind: 'none' },
   onSelectTask = () => {},
+  onOpenCreate = () => {},
   onClosePanel,
   onOpenFullPage,
+  onCreationDirtyChange = () => {},
+  onCreationSubmittingChange = () => {},
+  onCancelCreate = () => {},
+  onCreated = () => {},
   listRatio = 60,
   onListRatioChange = () => {},
 }: TaskWorkspaceProps = {}) {
   const currentUser = useCurrentUser();
   const userId = currentUser.isPending || currentUser.isError ? undefined : currentUser.data?.id;
+  const verifiedUserId = useRef<number | undefined>(undefined);
   const taskQuery = useTaskList(userId);
   const now = useLocalDay();
+
+  useLayoutEffect(() => {
+    if (currentUser.isError) {
+      if (verifiedUserId.current !== undefined) {
+        onCreationDirtyChange(false);
+        onCreationSubmittingChange(false);
+      }
+      verifiedUserId.current = undefined;
+      return;
+    }
+
+    if (currentUser.isPending || currentUser.isFetching || userId === undefined) return;
+
+    if (verifiedUserId.current !== undefined && verifiedUserId.current !== userId) {
+      onCreationDirtyChange(false);
+      onCreationSubmittingChange(false);
+    }
+    verifiedUserId.current = userId;
+  }, [
+    currentUser.isError,
+    currentUser.isFetching,
+    currentUser.isPending,
+    onCreationDirtyChange,
+    onCreationSubmittingChange,
+    userId,
+  ]);
 
   const sections = taskQuery.data ? classifyTasks(taskQuery.data.items, now) : undefined;
   let workspaceContent;
@@ -96,21 +138,69 @@ export function TaskWorkspace({
   }
 
   const taskHeader = (
-    <header className="mb-9">
-      <h1
-        data-task-list-heading
-        tabIndex={-1}
-        className="!m-0 !text-5xl font-medium !leading-[1.15] !tracking-[-0.03em] text-foreground max-[1250px]:!text-[40px]"
-      >
-        All Tasks
-      </h1>
-      <p className="mt-2 text-base text-muted-foreground">
-        Stay organized and clear the path ahead.
-      </p>
+    <header className="mb-9 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h1
+          data-task-list-heading
+          tabIndex={-1}
+          className="!m-0 !text-5xl font-medium !leading-[1.15] !tracking-[-0.03em] text-foreground max-[1250px]:!text-[40px]"
+        >
+          All Tasks
+        </h1>
+        <p className="mt-2 text-base text-muted-foreground">
+          Stay organized and clear the path ahead.
+        </p>
+      </div>
+      <Button type="button" onClick={onOpenCreate}>
+        Add a task to Active…
+      </Button>
     </header>
   );
 
   if (selection.kind !== 'none') {
+    const taskPanel =
+      selection.kind === 'create' ? (
+        userId !== undefined ? (
+          <>
+            <div hidden={currentUser.isFetching}>
+              <TaskCreateSurface
+                key={userId}
+                userId={userId}
+                onCreated={onCreated}
+                onDirtyChange={onCreationDirtyChange}
+                onSubmittingChange={onCreationSubmittingChange}
+                onCancel={onCancelCreate}
+                onDismiss={onClosePanel ?? (() => {})}
+              />
+            </div>
+            {currentUser.isFetching && (
+              <TaskPanelShell ariaLabel="Create task">
+                <div className="flex h-full items-center px-6">
+                  <output className="text-sm text-muted-foreground">Verifying your session…</output>
+                </div>
+              </TaskPanelShell>
+            )}
+          </>
+        ) : (
+          <TaskPanelShell ariaLabel="Create task">
+            <div className="flex h-full items-center px-6">
+              <output className="text-sm text-muted-foreground">Verifying your session…</output>
+            </div>
+          </TaskPanelShell>
+        )
+      ) : (
+        <TaskDetailSurface
+          taskId={selection.kind === 'valid' ? selection.id : null}
+          surface="panel"
+          onClose={onClosePanel}
+          onOpenFullPage={
+            selection.kind === 'valid' && onOpenFullPage
+              ? () => onOpenFullPage(selection.id)
+              : undefined
+          }
+        />
+      );
+
     return (
       <TaskSplitView
         list={
@@ -119,24 +209,12 @@ export function TaskWorkspace({
             {workspaceContent}
           </div>
         }
-        detail={
-          <div className="h-full min-h-[360px] py-9">
-            <TaskDetailSurface
-              taskId={selection.kind === 'valid' ? selection.id : null}
-              surface="panel"
-              onClose={onClosePanel}
-              onOpenFullPage={
-                selection.kind === 'valid' && onOpenFullPage
-                  ? () => onOpenFullPage(selection.id)
-                  : undefined
-              }
-            />
-          </div>
-        }
+        detail={<div className="h-full min-h-[360px] py-9">{taskPanel}</div>}
         isOpen
         listRatio={listRatio}
         onListRatioChange={onListRatioChange}
         onCloseOverlay={onClosePanel}
+        overlayLabel={selection.kind === 'create' ? 'Create task' : 'Task details'}
       />
     );
   }

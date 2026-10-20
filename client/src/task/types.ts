@@ -21,3 +21,10 @@ export interface TaskDetail extends TaskSummary {
 export interface TaskListResponse {
   items: TaskSummary[];
 }
+
+export interface CreateTaskPayload {
+  title: string;
+  description?: Record<string, unknown> | null;
+  priority?: TaskPriority | null;
+  dueDate?: string | null;
+}

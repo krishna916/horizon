@@ -81,6 +81,161 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void keyedCreateReplayReturnsSameTaskAndLocation() throws Exception {
+        String requestKey = UUID.randomUUID().toString();
+        String body = "{\"title\":\"Keyed create\"}";
+        MvcResult first =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", requestKey)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.key").value("TASK-1"))
+                        .andExpect(jsonPath("$.inbox").value(false))
+                        .andReturn();
+        MvcResult replay =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", requestKey)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.key").value("TASK-1"))
+                        .andExpect(jsonPath("$.inbox").value(false))
+                        .andReturn();
+        Long firstId =
+                JsonPath.parse(first.getResponse().getContentAsString()).read("$.id", Long.class);
+        Long replayId =
+                JsonPath.parse(replay.getResponse().getContentAsString()).read("$.id", Long.class);
+
+        assertThat(replayId).isEqualTo(firstId);
+        assertThat(replay.getResponse().getHeader("Location"))
+                .isEqualTo(first.getResponse().getHeader("Location"));
+        assertThat(taskIdCountForTitle("Keyed create")).isEqualTo(1L);
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT last_allocated FROM task_key_counter WHERE user_id ="
+                                        + " (SELECT id FROM users WHERE email = ?)",
+                                Long.class,
+                                ownerEmail))
+                .isEqualTo(1L);
+    }
+
+    @Test
+    void reusedKeyWithDifferentBodyReturnsProblemConflict() throws Exception {
+        String requestKey = UUID.randomUUID().toString();
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", requestKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Original request\"}"))
+                .andExpect(status().isCreated());
+
+        MvcResult conflict =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", requestKey)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content("{\"title\":\"Changed request\"}"))
+                        .andExpect(status().isConflict())
+                        .andExpect(jsonPath("$.status").value(409))
+                        .andReturn();
+
+        assertThat(conflict.getResponse().getContentType()).contains("application/problem+json");
+        assertThat(taskIdCountForTitle("Original request")).isEqualTo(1L);
+        assertThat(taskIdCountForTitle("Changed request")).isZero();
+    }
+
+    @Test
+    void sameRequestKeyIsIndependentAcrossOwners() throws Exception {
+        String requestKey = UUID.randomUUID().toString();
+        MvcResult first =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", requestKey)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content("{\"title\":\"Owner one\"}"))
+                        .andExpect(status().isCreated())
+                        .andReturn();
+        String otherEmail = UUID.randomUUID() + "@example.com";
+        userCommandService.register(otherEmail, PASSWORD);
+        Cookie otherCookie = login(otherEmail);
+        MvcResult second =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(otherCookie)
+                                        .header("Idempotency-Key", requestKey)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content("{\"title\":\"Owner two\"}"))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.key").value("TASK-1"))
+                        .andReturn();
+
+        Long firstId =
+                JsonPath.parse(first.getResponse().getContentAsString()).read("$.id", Long.class);
+        Long secondId =
+                JsonPath.parse(second.getResponse().getContentAsString()).read("$.id", Long.class);
+        assertThat(secondId).isNotEqualTo(firstId);
+    }
+
+    @Test
+    void invalidIdempotencyKeysReturn400WithoutCreatingTasks() throws Exception {
+        for (String requestKey : new String[] {"", "not-a-uuid"}) {
+            MvcResult result =
+                    mockMvc.perform(
+                                    post("/api/v1/tasks")
+                                            .cookie(ownerCookie)
+                                            .header("Idempotency-Key", requestKey)
+                                            .contentType(MediaType.APPLICATION_JSON)
+                                            .content("{\"title\":\"Invalid key\"}"))
+                            .andExpect(status().isBadRequest())
+                            .andReturn();
+            assertThat(
+                            JsonPath.parse(result.getResponse().getContentAsString())
+                                    .read("$.title", String.class))
+                    .isEqualTo("Validation Failed");
+        }
+        assertThat(taskIdCountForTitle("Invalid key")).isZero();
+    }
+
+    @Test
+    void replayAfterSoftDeleteConflictsWithoutCreatingAnotherTask() throws Exception {
+        String requestKey = UUID.randomUUID().toString();
+        String body = "{\"title\":\"Deleted keyed create\"}";
+        MvcResult created =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", requestKey)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isCreated())
+                        .andReturn();
+        Long taskId =
+                JsonPath.parse(created.getResponse().getContentAsString()).read("$.id", Long.class);
+        jdbcTemplate.update(
+                "UPDATE task SET deleted_at = ? WHERE id = ?",
+                OffsetDateTime.now(ZoneOffset.UTC),
+                taskId);
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", requestKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                .andExpect(status().isConflict());
+
+        assertThat(taskIdCountForTitle("Deleted keyed create")).isEqualTo(1L);
+    }
+
+    @Test
     void optionalFieldsRoundTripInDetail() throws Exception {
         mockMvc.perform(
                         post("/api/v1/tasks")

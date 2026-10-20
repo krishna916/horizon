@@ -1,21 +1,39 @@
-import { Link, useNavigate, useLocation } from '@tanstack/react-router';
+import { Link, useNavigate, useLocation, useRouter } from '@tanstack/react-router';
 import { Home, Calendar, Inbox, CheckCircle, FileText, Settings, Plus, LogOut } from 'lucide-react';
+import { useState } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { useLogoutUser } from '@/user/hooks/useLogoutUser';
+import {
+  beginLogoutNavigation,
+  consumeLogoutFailure,
+  isCurrentLogoutNavigation,
+  saveLogoutFailure,
+} from '@/user/logoutNavigation';
 import { cn } from '@/lib/utils';
 
 export function AppSidebar() {
   const { data: user } = useCurrentUser();
   const logoutMutation = useLogoutUser();
   const navigate = useNavigate();
+  const router = useRouter();
   const location = useLocation();
+  const [logoutError, setLogoutError] = useState(consumeLogoutFailure);
 
   const handleLogout = async () => {
+    const logoutNavigation = beginLogoutNavigation();
+    setLogoutError(null);
     try {
-      await logoutMutation.mutateAsync();
-      navigate({ to: '/login' });
+      await navigate({ to: '/login' });
+      if (!isCurrentLogoutNavigation(logoutNavigation)) return;
+      if (router.state.location.pathname !== '/login') return;
+      try {
+        await logoutMutation.mutateAsync();
+      } catch (_error) {
+        saveLogoutFailure();
+        router.history.back();
+      }
     } catch (_error) {
-      // Handled by mutation state
+      // Navigation errors leave the current route in place.
     }
   };
 
@@ -77,6 +95,11 @@ export function AppSidebar() {
 
       {/* Footer Section */}
       <div className="px-3 py-4 border-t border-sidebar-border mt-auto">
+        {logoutError && (
+          <p role="alert" className="mb-2 px-2 text-xs text-destructive">
+            {logoutError}
+          </p>
+        )}
         <Link
           to="/settings"
           className={cn(

@@ -15,6 +15,7 @@ interface TaskSplitViewProps {
   readonly listRatio: number;
   readonly onListRatioChange: (ratio: number) => void;
   readonly onCloseOverlay?: () => void;
+  readonly overlayLabel?: string;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
@@ -28,6 +29,7 @@ export function TaskSplitView({
   listRatio,
   onListRatioChange,
   onCloseOverlay = () => {},
+  overlayLabel = 'Task details',
 }: TaskSplitViewProps): React.JSX.Element {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const separatorRef = useRef<HTMLDivElement>(null);
@@ -149,7 +151,12 @@ export function TaskSplitView({
       >
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{list}</div>
         {workspaceHost && (
-          <TaskOverlay open={isOpen} onClose={onCloseOverlay} workspaceHost={workspaceHost}>
+          <TaskOverlay
+            open={isOpen}
+            onClose={onCloseOverlay}
+            ariaLabel={overlayLabel}
+            workspaceHost={workspaceHost}
+          >
             {detail}
           </TaskOverlay>
         )}

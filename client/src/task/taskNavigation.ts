@@ -1,9 +1,12 @@
-export type TaskSelection = { kind: 'none' } | { kind: 'valid'; id: number } | { kind: 'invalid' };
+export type TaskSelection =
+  { kind: 'none' } | { kind: 'create' } | { kind: 'valid'; id: number } | { kind: 'invalid' };
 
-export type HorizonTaskNavigationState = {
-  kind: 'panel-from-list' | 'page-from-panel';
-  taskId: number;
-};
+export type HorizonTaskNavigationState =
+  | {
+      kind: 'panel-from-list' | 'page-from-panel';
+      taskId: number;
+    }
+  | { kind: 'creation-from-list' };
 
 declare module '@tanstack/react-router' {
   interface HistoryState {
@@ -11,7 +14,10 @@ declare module '@tanstack/react-router' {
   }
 }
 
-export function parseTaskSelection(raw: unknown): TaskSelection {
+export function parseTaskSelection(raw: unknown, create?: unknown): TaskSelection {
+  if ((raw === undefined || raw === null) && create === true) {
+    return { kind: 'create' };
+  }
   if (raw === undefined || raw === null) {
     return { kind: 'none' };
   }
