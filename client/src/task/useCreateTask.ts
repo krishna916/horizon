@@ -30,7 +30,7 @@ export function useCreateTask(userId: number) {
       return response.data;
     },
     retry: false,
-    onSuccess: async (task, variables) => {
+    onSuccess: (task, variables) => {
       if (currentUserId.current !== variables.ownerId) {
         return;
       }
@@ -44,7 +44,7 @@ export function useCreateTask(userId: number) {
             }
           : current
       );
-      await queryClient.invalidateQueries({ queryKey: listKey, exact: true });
+      void queryClient.invalidateQueries({ queryKey: listKey, exact: true });
     },
   });
 

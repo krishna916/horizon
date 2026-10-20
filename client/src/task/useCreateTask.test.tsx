@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/api-client';
 import { taskApi } from './api';
 import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 import { useCreateTask } from './useCreateTask';
+import { useTaskList } from './useTaskList';
 
 const detail = (id: number): TaskDetail => ({
   id,
@@ -63,6 +64,68 @@ describe('task creation API', () => {
 });
 
 describe('useCreateTask', () => {
+  it('resolves creation while the invalidated list refetch is still pending', async () => {
+    let finishRefetch!: (response: { data: TaskListResponse }) => void;
+    const listSpy = vi
+      .spyOn(taskApi, 'list')
+      .mockResolvedValueOnce({ data: { items: [summary(3)] } } as never)
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (finishRefetch = resolve)) as never
+      );
+    vi.spyOn(apiClient, 'post').mockResolvedValue({ data: detail(41) } as never);
+    const { Wrapper, queryClient } = createWrapper();
+    const { result } = renderHook(
+      () => ({ creation: useCreateTask(1), list: useTaskList(1) }),
+      { wrapper: Wrapper }
+    );
+
+    try {
+      await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
+      let creationResolved = false;
+      const creation = result.current.creation
+        .createTask({ title: 'Created task' }, 'request-uuid')
+        .then((task) => {
+          creationResolved = true;
+          return task;
+        });
+
+      await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(creationResolved).toBe(true));
+
+      await expect(creation).resolves.toEqual(detail(41));
+      expect(queryClient.getQueryData(['tasks', 1, 'detail', 41])).toEqual(detail(41));
+      expect(queryClient.getQueryData<TaskListResponse>(['tasks', 1])?.items.map(({ id }) => id))
+        .toEqual([41, 3]);
+    } finally {
+      finishRefetch?.({ data: { items: [summary(3)] } });
+    }
+  });
+
+  it('keeps a successful POST successful when its list refetch errors', async () => {
+    const listSpy = vi
+      .spyOn(taskApi, 'list')
+      .mockResolvedValueOnce({ data: { items: [summary(3)] } } as never)
+      .mockRejectedValueOnce(new Error('list refresh failed'));
+    vi.spyOn(apiClient, 'post').mockResolvedValue({ data: detail(41) } as never);
+    const { Wrapper, queryClient } = createWrapper();
+    const { result } = renderHook(
+      () => ({ creation: useCreateTask(1), list: useTaskList(1) }),
+      { wrapper: Wrapper }
+    );
+
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
+    const created = await result.current.creation.createTask(
+      { title: 'Created task' },
+      'request-uuid'
+    );
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+
+    expect(created).toEqual(detail(41));
+    expect(queryClient.getQueryData(['tasks', 1, 'detail', 41])).toEqual(detail(41));
+    expect(result.current.creation.isError).toBe(false);
+    expect(result.current.list.isError).toBe(true);
+  });
+
   it('updates only the matching user cache, reconciles one summary and invalidates the list', async () => {
     const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: detail(8) } as never);
     const { Wrapper, queryClient } = createWrapper();
