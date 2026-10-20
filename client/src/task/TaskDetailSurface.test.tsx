@@ -96,8 +96,8 @@ describe('TaskDetailSurface', () => {
     expect(onOpenFullPage).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(
-      screen.queryByRole('button', { name: /archive|restore|delete|edit/i })
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Task title: Review the release notes' })
+    ).toBeVisible();
   });
 
   it('shows the same generic unavailable state for 404 and never leaves the prior task visible', async () => {
@@ -118,6 +118,7 @@ describe('TaskDetailSurface', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/task is unavailable/i);
     expect(screen.queryByText('Private previous task')).not.toBeInTheDocument();
     expect(screen.queryByText('TASK-7')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Task title:/ })).not.toBeInTheDocument();
   });
 
   it('offers retry for transient errors and refetches the selected detail', async () => {
@@ -167,6 +168,7 @@ describe('TaskDetailSurface', () => {
 
     expect(screen.getByText('Verifying session…')).toBeInTheDocument();
     expect(screen.queryByText('Cached private task')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Task title:/ })).not.toBeInTheDocument();
   });
 
   it('does not expose one user cache when the same task is selected under another account', async () => {
@@ -182,5 +184,106 @@ describe('TaskDetailSurface', () => {
 
     expect(screen.getByText('Loading task details…')).toBeInTheDocument();
     expect(screen.queryByText('Account one private task')).not.toBeInTheDocument();
+  });
+
+  it.each(['panel', 'page'] as const)(
+    'supports title, priority, and due-date editing in the %s surface',
+    async (surface) => {
+      getSpy.mockResolvedValue(response(detail(7, 'Review the release notes')) as never);
+      const updateSpy = vi.spyOn(taskApi, 'update').mockImplementation(
+        async (id, patch) =>
+          ({
+            data: { ...detail(id, 'Review the release notes'), ...patch },
+          }) as never
+      );
+      const { Wrapper } = createWrapper();
+      render(<TaskDetailSurface taskId={7} surface={surface} />, { wrapper: Wrapper });
+
+      fireEvent.doubleClick(
+        await screen.findByRole('button', { name: 'Task title: Review the release notes' })
+      );
+      fireEvent.change(screen.getByLabelText('Title'), {
+        target: { value: 'Updated release notes' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByRole('button', { name: 'Task title: Updated release notes' });
+
+      fireEvent.doubleClick(screen.getByRole('button', { name: 'Priority: High' }));
+      fireEvent.change(screen.getByLabelText('Priority'), { target: { value: 'LOW' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await screen.findByRole('button', { name: 'Priority: Low' });
+
+      fireEvent.doubleClick(screen.getByRole('button', { name: /Due date:/ }));
+      fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-27' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(3));
+      expect(updateSpy).toHaveBeenNthCalledWith(1, 7, { title: 'Updated release notes' });
+      expect(updateSpy).toHaveBeenNthCalledWith(2, 7, { priority: 'LOW' });
+      expect(updateSpy).toHaveBeenNthCalledWith(3, 7, { dueDate: '2026-10-27' });
+    }
+  );
+
+  it('edits completed and archived tasks and discards a draft when switching task identity', async () => {
+    getSpy.mockImplementation(
+      async (id) =>
+        ({
+          data: {
+            ...detail(id, `Task ${id}`),
+            completedAt: id === 7 ? '2026-10-19T10:00:00Z' : null,
+            archivedAt: id === 7 ? '2026-10-19T11:00:00Z' : null,
+          },
+        }) as never
+    );
+    const updateSpy = vi
+      .spyOn(taskApi, 'update')
+      .mockResolvedValue({ data: detail(7, 'Task 7') } as never);
+    const { Wrapper } = createWrapper();
+    const view = render(<TaskDetailSurface taskId={7} surface="page" />, { wrapper: Wrapper });
+
+    fireEvent.doubleClick(await screen.findByRole('button', { name: 'Task title: Task 7' }));
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Updated completed task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(updateSpy).toHaveBeenCalledWith(7, { title: 'Updated completed task' })
+    );
+
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Task title: Task 7' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Old draft' } });
+    view.rerender(<TaskDetailSurface taskId={8} surface="page" />);
+
+    expect(await screen.findByRole('button', { name: 'Task title: Task 8' })).toBeVisible();
+    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
+  });
+
+  it('preserves a dirty field draft while the current owner is being reverified', async () => {
+    getSpy.mockResolvedValue(response(detail(7, 'Draft survives revalidation')) as never);
+    const { Wrapper } = createWrapper();
+    const view = render(<TaskDetailSurface taskId={7} surface="panel" />, { wrapper: Wrapper });
+    fireEvent.doubleClick(
+      await screen.findByRole('button', { name: 'Task title: Draft survives revalidation' })
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Unsaved same-owner draft' },
+    });
+
+    mockUseCurrentUser.mockReturnValue({
+      data: { id: 1, email: 'user-1@example.com' },
+      isPending: false,
+      isFetching: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    view.rerender(<TaskDetailSurface taskId={7} surface="panel" />);
+
+    expect(screen.getByText('Verifying session…')).toBeVisible();
+    expect(view.container.querySelector<HTMLInputElement>('input[aria-label="Title"]')?.value).toBe(
+      'Unsaved same-owner draft'
+    );
+
+    authenticateAs(1);
+    view.rerender(<TaskDetailSurface taskId={7} surface="panel" />);
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Unsaved same-owner draft');
   });
 });

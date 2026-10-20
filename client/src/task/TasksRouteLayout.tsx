@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Outlet } from '@tanstack/react-router';
 import { createContext, useContext, useState } from 'react';
+import { TaskDraftNavigationGuard } from './TaskDraftNavigationGuard';
 
 interface TasksLayoutState {
   listRatio: number;
@@ -13,11 +14,13 @@ export function TasksRouteLayout() {
   const [listRatio, setListRatio] = useState(60);
 
   return (
-    <TasksLayoutContext.Provider value={{ listRatio, setListRatio }}>
-      <div className="h-full min-h-0 w-full">
-        <Outlet />
-      </div>
-    </TasksLayoutContext.Provider>
+    <TaskDraftNavigationGuard>
+      <TasksLayoutContext.Provider value={{ listRatio, setListRatio }}>
+        <div className="h-full min-h-0 w-full">
+          <Outlet />
+        </div>
+      </TasksLayoutContext.Provider>
+    </TaskDraftNavigationGuard>
   );
 }
 
