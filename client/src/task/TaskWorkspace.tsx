@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { classifyTasks } from './task-view';
 import { useLocalDay } from './useLocalDay';
@@ -38,8 +39,24 @@ export function TaskWorkspace({
 }: TaskWorkspaceProps = {}) {
   const currentUser = useCurrentUser();
   const userId = currentUser.isPending || currentUser.isError ? undefined : currentUser.data?.id;
+  const verifiedUserId = useRef<number | undefined>(undefined);
   const taskQuery = useTaskList(userId);
   const now = useLocalDay();
+
+  useLayoutEffect(() => {
+    if (currentUser.isError) {
+      if (verifiedUserId.current !== undefined) onCreationDirtyChange(false);
+      verifiedUserId.current = undefined;
+      return;
+    }
+
+    if (currentUser.isPending || currentUser.isFetching || userId === undefined) return;
+
+    if (verifiedUserId.current !== undefined && verifiedUserId.current !== userId) {
+      onCreationDirtyChange(false);
+    }
+    verifiedUserId.current = userId;
+  }, [currentUser.isError, currentUser.isFetching, currentUser.isPending, onCreationDirtyChange, userId]);
 
   const sections = taskQuery.data ? classifyTasks(taskQuery.data.items, now) : undefined;
   let workspaceContent;
@@ -131,13 +148,27 @@ export function TaskWorkspace({
     const taskPanel =
       selection.kind === 'create' ? (
         userId !== undefined ? (
-          <TaskCreateSurface
-            userId={userId}
-            onCreated={onCreated}
-            onDirtyChange={onCreationDirtyChange}
-            onCancel={onCancelCreate}
-            onDismiss={onClosePanel ?? (() => {})}
-          />
+          <>
+            <div hidden={currentUser.isFetching}>
+              <TaskCreateSurface
+                key={userId}
+                userId={userId}
+                onCreated={onCreated}
+                onDirtyChange={onCreationDirtyChange}
+                onCancel={onCancelCreate}
+                onDismiss={onClosePanel ?? (() => {})}
+              />
+            </div>
+            {currentUser.isFetching && (
+              <TaskPanelShell ariaLabel="Create task">
+                <div className="flex h-full items-center px-6">
+                  <output className="text-sm text-muted-foreground">
+                    Verifying your session…
+                  </output>
+                </div>
+              </TaskPanelShell>
+            )}
+          </>
         ) : (
           <TaskPanelShell ariaLabel="Create task">
             <div className="flex h-full items-center px-6">

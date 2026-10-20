@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AxiosResponse } from 'axios';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,6 +31,12 @@ const task = (id: number, title: string, changes: Partial<TaskSummary> = {}): Ta
 });
 
 const response = (items: TaskSummary[]) => ({ data: { items } }) as AxiosResponse<TaskListResponse>;
+
+const detail = (id: number, title: string): TaskDetail => ({
+  ...task(id, title),
+  description: null,
+  deletedAt: null,
+});
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -119,6 +125,116 @@ describe('TaskWorkspace', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Verifying session…');
     expect(screen.queryByText('Cached private task')).not.toBeInTheDocument();
     expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the create draft while the same account is being revalidated and restores it afterward', async () => {
+    listSpy.mockResolvedValue(response([]));
+    const { Wrapper } = createWrapper();
+    const onDirtyChange = vi.fn();
+    const view = render(
+      <TaskWorkspace selection={{ kind: 'create' }} onCreationDirtyChange={onDirtyChange} />,
+      { wrapper: Wrapper }
+    );
+
+    const title = await screen.findByRole('textbox', { name: 'Title' });
+    fireEvent.change(title, { target: { value: 'Private same-user draft' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Description (optional)' }), {
+      target: { value: 'Keep this through session verification.' },
+    });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+    mockUseCurrentUser.mockReturnValue({
+      data: { id: 1, email: 'user-1@example.com' },
+      isPending: false,
+      isFetching: true,
+      isError: false,
+    });
+    view.rerender(
+      <TaskWorkspace selection={{ kind: 'create' }} onCreationDirtyChange={onDirtyChange} />
+    );
+
+    expect(screen.getByText('Verifying your session…')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Private same-user draft')).not.toBeInTheDocument();
+
+    authenticateAs(1);
+    view.rerender(
+      <TaskWorkspace selection={{ kind: 'create' }} onCreationDirtyChange={onDirtyChange} />
+    );
+
+    expect(await screen.findByRole('textbox', { name: 'Title' })).toHaveValue(
+      'Private same-user draft'
+    );
+    expect(screen.getByRole('textbox', { name: 'Description (optional)' })).toHaveValue(
+      'Keep this through session verification.'
+    );
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('resets drafts on account change and ignores an old account create response', async () => {
+    listSpy.mockResolvedValue(response([]));
+    const createSpy = vi.spyOn(taskApi, 'create');
+    let resolveAccountOneCreate!: (result: AxiosResponse<TaskDetail>) => void;
+    createSpy
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveAccountOneCreate = resolve;
+          }) as Promise<AxiosResponse<TaskDetail>>
+      )
+      .mockResolvedValueOnce({ data: detail(12, 'Account two task') } as AxiosResponse<TaskDetail>);
+    const { Wrapper, queryClient } = createWrapper();
+    const onCreated = vi.fn();
+    const onDirtyChange = vi.fn();
+    const view = render(
+      <TaskWorkspace
+        selection={{ kind: 'create' }}
+        onCreated={onCreated}
+        onCreationDirtyChange={onDirtyChange}
+      />,
+      { wrapper: Wrapper }
+    );
+
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Account one private draft' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
+    const accountOneRequestKey = createSpy.mock.calls[0]?.[1];
+
+    authenticateAs(2);
+    view.rerender(
+      <TaskWorkspace
+        selection={{ kind: 'create' }}
+        onCreated={onCreated}
+        onCreationDirtyChange={onDirtyChange}
+      />
+    );
+
+    expect(await screen.findByRole('textbox', { name: 'Title' })).toHaveValue('');
+    expect(screen.queryByText('Account one private draft')).not.toBeInTheDocument();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Account two task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(2));
+    const accountTwoRequestKey = createSpy.mock.calls[1]?.[1];
+    expect(accountTwoRequestKey).not.toBe(accountOneRequestKey);
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      resolveAccountOneCreate(
+        { data: detail(11, 'Account one private draft') } as AxiosResponse<TaskDetail>
+      );
+    });
+
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(['tasks', 1, 'detail', 11])).toBeUndefined();
+    expect(queryClient.getQueryData(['tasks', 2, 'detail', 12])).toMatchObject({
+      id: 12,
+      title: 'Account two task',
+    });
   });
 
   it('does not expose cached tasks when session verification fails', () => {
