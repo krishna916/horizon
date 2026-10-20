@@ -327,11 +327,44 @@ test('keeps a dirty draft on Back, then follows the chosen discard destination',
   await expect(page).toHaveURL(/\/tasks\?create=true$/);
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Unsaved task draft');
 
-  await page.getByRole('button', { name: 'Open TASK-7: Review the plan' }).click();
+  await page.goBack();
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole('button', { name: 'Discard draft' }).click();
-  await expect(page).toHaveURL(/\/tasks\?task=7$/);
-  await expect(page.getByRole('heading', { name: 'Review the plan' })).toBeVisible();
+  await expect(page).toHaveURL(/\/tasks$/);
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveCount(0);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/tasks\?create=true$/);
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('');
+});
+
+test('keeps a dirty direct-create draft on Forward and discards to that destination once', async ({
+  page,
+}) => {
+  await installStatefulTaskApi(page);
+  await page.goto('/tasks?create=true');
+  await page.getByRole('link', { name: 'Notes' }).click();
+  await expect(page).toHaveURL(/\/notes$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/tasks\?create=true$/);
+  const title = page.getByRole('textbox', { name: 'Title' });
+  await title.fill('Forward navigation draft');
+
+  await page.goForward();
+  const confirmation = page.getByRole('alertdialog');
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(page).toHaveURL(/\/tasks\?create=true$/);
+  await expect(title).toHaveValue('Forward navigation draft');
+
+  await page.goForward();
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Discard draft' }).click();
+  await expect(page).toHaveURL(/\/notes$/);
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Notes' })).toBeVisible();
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/tasks\?create=true$/);
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('');
 });
 
 test('guards Escape and backdrop dismissal in the narrow overlay, while explicit Cancel discards', async ({

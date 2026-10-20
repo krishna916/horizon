@@ -52,9 +52,20 @@ export function TaskDetailView({ task, userId }: TaskDetailViewProps) {
 
   return (
     <div className="space-y-6 px-6 py-7">
-      <h1>
-        <TaskFieldEditor field="title" value={task.title} {...editorProps} />
-      </h1>
+      {edit.activeField === 'title' ? (
+        <div
+          role="heading"
+          aria-level={1}
+          aria-label={task.title}
+          className="mt-[32px] mb-[32px] max-[1024px]:mt-[20px] max-[1024px]:mb-[20px] font-[family-name:var(--heading)] tracking-[-1.68px]"
+        >
+          <TaskFieldEditor field="title" value={task.title} {...editorProps} />
+        </div>
+      ) : (
+        <h1>
+          <TaskFieldEditor field="title" value={task.title} {...editorProps} />
+        </h1>
+      )}
       {description && (
         <p className="break-words whitespace-pre-wrap text-base leading-7 text-muted-foreground">
           {description}

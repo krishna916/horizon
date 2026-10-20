@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import type { TaskPriority } from './types';
 import type { TaskFieldName } from './useTaskFieldEdit';
 import { formatTaskDueDate } from './task-view';
@@ -62,11 +62,38 @@ export function TaskFieldEditor({
   const label = fieldLabel(field);
   const isEditing = activeField === field;
   const inputRef = useRef<HTMLInputElement>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
   const selectRef = useRef<HTMLSelectElement>(null);
   useEffect(() => {
     if (!isEditing) return;
-    (field === 'priority' ? selectRef.current : inputRef.current)?.focus();
+    (field === 'priority'
+      ? selectRef.current
+      : field === 'title'
+        ? titleRef.current
+        : inputRef.current
+    )?.focus();
   }, [field, isEditing]);
+  useLayoutEffect(() => {
+    if (field !== 'title' || !isEditing || !titleRef.current) return;
+    const textarea = titleRef.current;
+    const resize = () => {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    };
+    resize();
+
+    const container = textarea.parentElement;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+    let previousWidth = container.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const width = container.getBoundingClientRect().width;
+      if (width === previousWidth) return;
+      previousWidth = width;
+      resize();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [draft, field, isEditing]);
 
   if (!isEditing) {
     const content = readValue(field, value);
@@ -78,7 +105,7 @@ export function TaskFieldEditor({
         onKeyDown={(event) => handleReadKeyDown(event, () => onActivate(field))}
         className={
           field === 'title'
-            ? 'w-full break-words text-left text-2xl font-semibold leading-tight text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+            ? 'w-full break-words whitespace-pre-wrap text-left text-2xl font-semibold leading-tight text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
             : 'rounded-sm text-left text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
         }
       >
@@ -108,6 +135,19 @@ export function TaskFieldEditor({
             </option>
           ))}
         </select>
+      ) : field === 'title' ? (
+        <textarea
+          ref={titleRef}
+          aria-label={label}
+          aria-invalid={error !== null}
+          aria-describedby={error ? errorId : undefined}
+          disabled={pending}
+          maxLength={255}
+          rows={1}
+          value={draft}
+          onChange={(event) => onDraftChange(event.currentTarget.value)}
+          className="block w-full break-words border-0 bg-transparent p-0 text-left text-2xl leading-tight text-foreground font-semibold resize-none overflow-hidden focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
       ) : (
         <input
           ref={inputRef}
@@ -115,7 +155,6 @@ export function TaskFieldEditor({
           aria-invalid={error !== null}
           aria-describedby={error ? errorId : undefined}
           disabled={pending}
-          maxLength={field === 'title' ? 255 : undefined}
           type={field === 'dueDate' ? 'date' : 'text'}
           value={draft}
           onChange={(event) => onDraftChange(event.currentTarget.value)}

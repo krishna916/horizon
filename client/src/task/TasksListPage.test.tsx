@@ -120,10 +120,17 @@ function renderTasks(initialEntry: string, probe = false) {
       </>
     ),
   });
-  const routeTree = rootRoute.addChildren([tasksRoute.addChildren([tasksIndexRoute])]);
+  const notesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/notes',
+    component: () => <p>Notes workspace</p>,
+  });
+  const routeTree = rootRoute.addChildren([tasksRoute.addChildren([tasksIndexRoute]), notesRoute]);
   const router = createRouter({
     routeTree,
-    history: createMemoryHistory({ initialEntries: [initialEntry] }),
+    history: createMemoryHistory({
+      initialEntries: [initialEntry],
+    }),
   });
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
@@ -377,6 +384,59 @@ describe('TasksListPage', () => {
     await waitFor(() => expect(router.state.location.search).toEqual({ task: 2 }));
     expect(await screen.findByRole('button', { name: 'Open TASK-1: First task' })).toBeVisible();
   });
+
+  it.each(['task switch', 'panel close', 'sidebar route'] as const)(
+    'continues the original %s destination once after a deferred field save',
+    async (destination) => {
+      vi.spyOn(taskApi, 'list').mockResolvedValue(
+        response([task(1, 'First task'), task(2, 'Second task')]) as never
+      );
+      vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+      let resolveUpdate!: () => void;
+      const updateSpy = vi.spyOn(taskApi, 'update').mockImplementation(
+        (id, patch) =>
+          new Promise((resolve) => {
+            resolveUpdate = () =>
+              resolve({
+                ...detailResponse(id),
+                data: { ...detailResponse(id).data, ...patch },
+              });
+          })
+      );
+      const { router } = renderTasks('/tasks?task=1');
+      const initialHistoryLength = router.history.length;
+      fireEvent.doubleClick(await screen.findByRole('button', { name: 'Task title: Task 1' }));
+      fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Saved title' } });
+
+      if (destination === 'task switch') {
+        fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-2: Second task' }));
+      } else if (destination === 'panel close') {
+        fireEvent.click(screen.getByRole('button', { name: 'Close task details' }));
+      } else if (destination === 'sidebar route') {
+        act(() => {
+          void router.navigate({ to: '/notes' });
+        });
+      }
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Save and continue' }));
+      expect(await screen.findByRole('alertdialog')).toHaveTextContent('Saving field…');
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+      await act(async () => resolveUpdate());
+
+      if (destination === 'task switch') {
+        await waitFor(() => expect(router.state.location.search).toEqual({ task: 2 }));
+      } else if (destination === 'panel close') {
+        await waitFor(() => expect(router.state.location.search).toEqual({}));
+      } else {
+        await waitFor(() => expect(router.state.location.pathname).toBe('/notes'));
+      }
+      expect(router.history.length).toBe(
+        initialHistoryLength + (destination === 'sidebar route' ? 1 : 0)
+      );
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it('discards a field draft or keeps editing without losing the original destination', async () => {
     vi.spyOn(taskApi, 'list').mockResolvedValue(

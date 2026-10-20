@@ -1,5 +1,5 @@
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { TaskWorkspace } from './TaskWorkspace';
 import { parseTaskSelection } from './taskNavigation';
 import { useTasksLayout } from './TasksRouteLayout';
@@ -13,7 +13,6 @@ export function TasksListPage() {
   const { listRatio, setListRatio } = useTasksLayout();
   const creationDirty = useRef(false);
   const creationSubmitting = useRef(false);
-  const [retainCreateDuringHistoryRestore, setRetainCreateDuringHistoryRestore] = useState(false);
   const draftGuard = useTaskDraftGuard();
 
   const search = new URLSearchParams(location.searchStr.replace(/^\?/, ''));
@@ -23,10 +22,7 @@ export function TasksListPage() {
     search.get('create') === 'true'
   );
   const blockedCreateTraversal = draftGuard?.blockedCreateTraversal ?? false;
-  const selection =
-    retainCreateDuringHistoryRestore || blockedCreateTraversal
-      ? ({ kind: 'create' } as const)
-      : locationSelection;
+  const selection = blockedCreateTraversal ? ({ kind: 'create' } as const) : locationSelection;
   const currentMarker = router.state.location.state.horizonTaskNavigation;
   const hasTrustedListOrigin =
     selection.kind === 'valid' &&
@@ -34,15 +30,6 @@ export function TasksListPage() {
     currentMarker.taskId === selection.id;
   const hasTrustedCreateOrigin =
     selection.kind === 'create' && currentMarker?.kind === 'creation-from-list';
-
-  useEffect(() => {
-    if (retainCreateDuringHistoryRestore && locationSelection.kind === 'create') {
-      const restoreTimer = window.setTimeout(() => {
-        setRetainCreateDuringHistoryRestore(false);
-      }, 0);
-      return () => window.clearTimeout(restoreTimer);
-    }
-  }, [locationSelection.kind, retainCreateDuringHistoryRestore]);
 
   function setCreationSubmitting(pending: boolean) {
     creationSubmitting.current = pending;
@@ -140,7 +127,6 @@ export function TasksListPage() {
       : undefined;
     creationDirty.current = false;
     creationSubmitting.current = false;
-    setRetainCreateDuringHistoryRestore(false);
     draftGuard?.register(null);
     draftGuard?.reset();
     void navigateWithoutGuard(() =>

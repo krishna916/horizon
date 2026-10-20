@@ -278,9 +278,9 @@ describe('TaskDetailSurface', () => {
     view.rerender(<TaskDetailSurface taskId={7} surface="panel" />);
 
     expect(screen.getByText('Verifying session…')).toBeVisible();
-    expect(view.container.querySelector<HTMLInputElement>('input[aria-label="Title"]')?.value).toBe(
-      'Unsaved same-owner draft'
-    );
+    expect(
+      view.container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Title"]')?.value
+    ).toBe('Unsaved same-owner draft');
 
     authenticateAs(1);
     view.rerender(<TaskDetailSurface taskId={7} surface="panel" />);

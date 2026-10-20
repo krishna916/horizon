@@ -30,9 +30,6 @@ interface DraftGuardApi {
   isBlocked: boolean;
   isPending: boolean;
   blockedCreateTraversal: boolean;
-  keepCreateForHistoryRestore: () => void;
-  retainCreateDuringHistoryRestore: boolean;
-  clearCreateHistoryRestore: () => void;
 }
 
 const DraftGuardContext = createContext<DraftGuardApi | null>(null);
@@ -42,7 +39,6 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
   const registrationGenerationRef = useRef(0);
   const skipBlocker = useRef(false);
   const [registrationState, setRegistrationState] = useState<TaskDraftRegistration | null>(null);
-  const [retainCreateDuringHistoryRestore, setRetainCreateDuringHistoryRestore] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const blocker = useBlocker({
     shouldBlockFn: () =>
@@ -111,23 +107,8 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
       isBlocked: blocker.status === 'blocked',
       isPending,
       blockedCreateTraversal,
-      keepCreateForHistoryRestore: () => {
-        if (blocker.action === 'BACK' || blocker.action === 'FORWARD') {
-          setRetainCreateDuringHistoryRestore(registrationRef.current?.kind === 'create');
-        }
-      },
-      retainCreateDuringHistoryRestore,
-      clearCreateHistoryRestore: () => setRetainCreateDuringHistoryRestore(false),
     }),
-    [
-      register,
-      clear,
-      bypass,
-      blocker,
-      isPending,
-      blockedCreateTraversal,
-      retainCreateDuringHistoryRestore,
-    ]
+    [register, clear, bypass, blocker, isPending, blockedCreateTraversal]
   );
 
   async function discardAndProceed() {
@@ -136,7 +117,6 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
     setSaveFailed(false);
     registrationRef.current = null;
     setRegistrationState(null);
-    setRetainCreateDuringHistoryRestore(false);
     if (blocker.status === 'blocked') blocker.proceed();
   }
 
@@ -144,9 +124,6 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
     cancelPendingLogoutNavigations();
     setSaveFailed(false);
     if (blocker.status === 'blocked') {
-      if (blocker.action === 'BACK' || blocker.action === 'FORWARD') {
-        setRetainCreateDuringHistoryRestore(registrationRef.current?.kind === 'create');
-      }
       blocker.reset();
     }
   }

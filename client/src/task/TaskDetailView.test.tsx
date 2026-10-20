@@ -95,4 +95,35 @@ describe('TaskDetailView', () => {
     expect(screen.getByRole('heading', { name: 'Review the release notes' })).toBeInTheDocument();
     expect(taskApi.update).not.toHaveBeenCalled();
   });
+
+  it('keeps title edit typography and heading semantics while editing', () => {
+    const { container } = render(<TaskDetailView task={task} userId={1} />, {
+      wrapper: createWrapper(),
+    });
+    const readTitle = screen.getByRole('button', {
+      name: 'Task title: Review the release notes',
+    });
+    expect(screen.getByRole('heading', { name: 'Review the release notes' })).toContainElement(
+      readTitle
+    );
+
+    fireEvent.doubleClick(readTitle);
+
+    const titleEditor = screen.getByLabelText('Title');
+    expect(titleEditor.tagName).toBe('TEXTAREA');
+    expect(titleEditor).toHaveClass(
+      'w-full',
+      'break-words',
+      'text-left',
+      'text-2xl',
+      'font-semibold',
+      'leading-tight',
+      'text-foreground'
+    );
+    expect(titleEditor).toHaveClass('border-0', 'bg-transparent', 'p-0', 'resize-none');
+    expect(titleEditor).not.toHaveClass('rounded-md', 'px-3', 'py-2', 'bg-background');
+    expect(container.querySelector('h1 div')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Review the release notes' })).toBeInTheDocument();
+    expect(titleEditor).toHaveFocus();
+  });
 });
