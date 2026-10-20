@@ -239,6 +239,47 @@ describe('TaskCreateForm', () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
+  it('does not release the current owner navigation lock when an old owner request settles', async () => {
+    let resolveFirst!: (task: TaskDetail) => void;
+    let resolveSecond!: (task: TaskDetail) => void;
+    createTask
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve)));
+    const onSubmittingChange = vi.fn();
+    const renderForUser = (userId: number) => (
+      <TaskCreateForm
+        key={userId}
+        userId={userId}
+        onCreated={vi.fn()}
+        onDirtyChange={vi.fn()}
+        onSubmittingChange={onSubmittingChange}
+        onCancel={vi.fn()}
+      />
+    );
+    const view = render(renderForUser(1));
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'User one task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+
+    view.rerender(renderForUser(2));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'User two task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(2));
+    expect(onSubmittingChange.mock.calls).toEqual([[true], [true]]);
+
+    await act(async () => resolveFirst(createdTask));
+
+    expect(onSubmittingChange.mock.calls).toEqual([[true], [true]]);
+
+    await act(async () => resolveSecond(createdTask));
+    expect(onSubmittingChange.mock.calls).toEqual([[true], [true], [false]]);
+  });
+
   it('calls Cancel immediately for a dirty form', async () => {
     const { onCancel, onDirtyChange } = renderForm();
     fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {

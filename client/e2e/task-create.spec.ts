@@ -276,6 +276,41 @@ test('blocks X, Escape, and backdrop dismissal while the create POST is pending'
   await expect(page.getByRole('heading', { name: 'Keep the pending panel open' })).toBeVisible();
 });
 
+test('blocks sidebar navigation and sign out while the create POST is pending', async ({
+  page,
+}) => {
+  let logoutRequests = 0;
+  const fixture = await installStatefulTaskApi(page, { holdFirstPost: true });
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    logoutRequests += 1;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto('/tasks');
+  await page.getByRole('button', { name: 'Add a task to Active…' }).click();
+  await page.getByRole('textbox', { name: 'Title' }).fill('Keep this pending task safe');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect.poll(() => fixture.requests).toHaveLength(1);
+
+  const pendingDialog = page.getByRole('alertdialog');
+  await page.getByRole('link', { name: 'Today' }).click();
+  await expect(pendingDialog).toContainText('Creating task…');
+  await pendingDialog.getByRole('button', { name: 'Stay here' }).click();
+  await expect(page).toHaveURL(/\/tasks\?create=true$/);
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue(
+    'Keep this pending task safe'
+  );
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(pendingDialog).toContainText('Creating task…');
+  await pendingDialog.getByRole('button', { name: 'Stay here' }).click();
+  expect(logoutRequests).toBe(0);
+
+  fixture.releasePost();
+  await expect(page).toHaveURL(/\/tasks\?task=41$/);
+  await expect(page.getByRole('heading', { name: 'Keep this pending task safe' })).toBeVisible();
+  expect(logoutRequests).toBe(0);
+});
+
 test('keeps a dirty draft on Back, then follows the chosen discard destination', async ({
   page,
 }) => {
