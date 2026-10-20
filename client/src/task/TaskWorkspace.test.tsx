@@ -224,9 +224,9 @@ describe('TaskWorkspace', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
 
     await act(async () => {
-      resolveAccountOneCreate(
-        { data: detail(11, 'Account one private draft') } as AxiosResponse<TaskDetail>
-      );
+      resolveAccountOneCreate({
+        data: detail(11, 'Account one private draft'),
+      } as AxiosResponse<TaskDetail>);
     });
 
     expect(onCreated).toHaveBeenCalledTimes(1);
