@@ -76,7 +76,7 @@ Exact code signatures below define interfaces shared across tasks. Re-read the c
 
 **Interfaces:**
 - `taskApi.complete(taskId: number): Promise<AxiosResponse<TaskDetail>>`, `taskApi.reopen(taskId: number): Promise<AxiosResponse<TaskDetail>>` via `apiClient.post<TaskDetail>(`/tasks/${taskId}/complete`)` and matching `reopen` path.
-- `TaskCompletionProvider({children}: {children: ReactNode}): JSX.Element` mounted *inside* the existing `TaskDraftNavigationGuard` of `TasksRouteLayout`, surrounding `<Outlet />`.
+- `TaskCompletionProvider({children}: {children: ReactNode}): React.JSX.Element` mounted *inside* the existing `TaskDraftNavigationGuard` of `TasksRouteLayout`, surrounding `<Outlet />`.
 - `useTaskCompletion(userId: number, task: TaskSummary): { completed: boolean; saving: boolean; error: string | null; toggle: () => boolean; retry: () => void }`. `toggle()` must atomically update the latest desired value and return the **new** boolean so list retention can react. `TaskDetail` extends `TaskSummary`.
 - `useTaskCompletionSnapshot(userId: number): ReadonlyMap<number, boolean>` exposes the coordinator's effective completion booleans to the list classifier (do not call hooks inside array loops). This is an ephemeral view projection; the server-provided completed timestamp remains canonical.
 - One shared route-layout-owned state/coordinator, keyed by `(userId, task.id)`; all list/detail consumers observe the same optimistic state. Snapshot derives from `task.completedAt` when no pending/failed coordination entry exists.
@@ -94,8 +94,8 @@ Exact code signatures below define interfaces shared across tasks. Re-read the c
 **Files:** Create `client/src/task/TaskCompletionToggle.tsx`, `TaskCompletionFeedback.tsx`; Modify `TaskRow.tsx`, `TaskSection.tsx`, `TaskRow.test.tsx`; adjust `TaskWorkspace.tsx` only to supply owner ID/retention callback when required by the row interface.
 
 **Interfaces:**
-- `TaskCompletionToggle({taskKey, completed, onToggle}: {taskKey:string; completed:boolean; onToggle:()=>void}): JSX.Element` displays 22px-class circular semantic checkbox with `role="checkbox"`, `aria-checked`, accessible action name `Complete TASK-7` / `Reopen TASK-7`, visible focus ring; no nested row button.
-- `TaskCompletionFeedback({taskKey, saving, error, onRetry}: {taskKey:string; saving:boolean; error:string|null; onRetry:()=>void}): JSX.Element | null`; show `Saving…` with accessible status and persistent local `role="alert"` with Retry as appropriate; IDs/labels must not collide if list and panel show the same task.
+- `TaskCompletionToggle({taskKey, completed, onToggle}: {taskKey:string; completed:boolean; onToggle:()=>void}): React.JSX.Element` displays 22px-class circular semantic checkbox with `role="checkbox"`, `aria-checked`, accessible action name `Complete TASK-7` / `Reopen TASK-7`, visible focus ring; no nested row button.
+- `TaskCompletionFeedback({taskKey, saving, error, onRetry}: {taskKey:string; saving:boolean; error:string|null; onRetry:()=>void}): React.JSX.Element | null`; show `Saving…` with accessible status and persistent local `role="alert"` with Retry as appropriate; IDs/labels must not collide if list and panel show the same task.
 - `TaskRowProps` adds `userId: number` and optional `onCompletionIntent?: (taskId:number, completed:boolean)=>void` (see Task 4); `TaskSection` forwards both. Each row obtains `useTaskCompletion(userId, task)`.
 
 - [ ] **Step 1 — RED:** Update `TaskRow.test.tsx` assertions for two sibling buttons (completion and existing row opener), keyboard Space/Enter on checkbox, no unintended row open, checked/struck title in **Active** when `task.completedAt !== null` or optimistic state is checked, saving output, persistent inline Retry after failure, and unchanged two-line metadata. Existing tests that assert exactly one button must be revised only for the intended checkbox addition.
