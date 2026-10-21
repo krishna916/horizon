@@ -1,5 +1,8 @@
 export type TaskPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 
+export type UpdateTaskPayload =
+  { title: string } | { priority: TaskPriority | null } | { dueDate: string | null };
+
 export interface TaskSummary {
   id: number;
   key: string;

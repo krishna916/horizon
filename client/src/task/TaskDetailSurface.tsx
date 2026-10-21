@@ -20,19 +20,29 @@ export function TaskDetailSurface({
   onOpenFullPage,
 }: TaskDetailSurfaceProps): JSX.Element {
   const currentUser = useCurrentUser();
-  const userId =
-    currentUser.isPending || currentUser.isFetching || currentUser.isError
-      ? undefined
-      : currentUser.data?.id;
+  const userId = currentUser.isPending || currentUser.isError ? undefined : currentUser.data?.id;
   const taskQuery = useTaskDetail(userId, taskId);
   const validTaskId = taskId !== null && Number.isSafeInteger(taskId) && taskId > 0;
+  const cachedDetailView =
+    validTaskId && currentUser.data && taskQuery.data && taskQuery.data.deletedAt === null ? (
+      <TaskDetailView
+        key={`${currentUser.data.id}:${taskQuery.data.id}`}
+        task={taskQuery.data}
+        userId={currentUser.data.id}
+      />
+    ) : null;
 
   let content: JSX.Element;
   let taskKey: string | undefined;
   if (currentUser.isPending) {
     content = <output className="text-sm text-muted-foreground">Loading task details…</output>;
   } else if (currentUser.isFetching) {
-    content = <output className="text-sm text-muted-foreground">Verifying session…</output>;
+    content = (
+      <div>
+        <div hidden>{cachedDetailView}</div>
+        <output className="text-sm text-muted-foreground">Verifying session…</output>
+      </div>
+    );
   } else if (currentUser.isError || !currentUser.data) {
     content = (
       <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">
@@ -75,7 +85,11 @@ export function TaskDetailSurface({
     content = <UnavailableTask />;
   } else {
     taskKey = taskQuery.data.key;
-    content = <TaskDetailView task={taskQuery.data} />;
+    content = (
+      <div>
+        <div>{cachedDetailView ?? <UnavailableTask />}</div>
+      </div>
+    );
   }
 
   if (surface === 'page') {

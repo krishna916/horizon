@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useCallback, useEffect } from 'react';
 import type { AxiosResponse } from 'axios';
 import {
   Outlet,
@@ -14,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
 import { TasksListPage } from './TasksListPage';
 import { TasksRouteLayout } from './TasksRouteLayout';
+import { useTaskDraftGuard } from './TaskDraftNavigationGuard';
 import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 
 vi.mock('@/user/hooks/useCurrentUser', () => ({
@@ -56,7 +58,44 @@ const detailResponse = (id: number): AxiosResponse<TaskDetail> =>
     },
   }) as AxiosResponse<TaskDetail>;
 
-function renderTasks(initialEntry: string) {
+let registerProbeDraft: (() => void) | undefined;
+let replaceProbeDraft: (() => void) | undefined;
+
+function DraftGuardProbe() {
+  const guard = useTaskDraftGuard();
+  const register = useCallback(
+    (pending: boolean, save: () => Promise<boolean>) =>
+      guard?.register({
+        id: 'field:probe:1:title',
+        kind: 'field',
+        dirty: true,
+        pending,
+        save,
+        discard: () => undefined,
+      }),
+    [guard]
+  );
+  useEffect(() => {
+    function save(): Promise<boolean> {
+      register(true, save);
+      return new Promise<boolean>((resolve) => (probeSaveResolver = resolve));
+    }
+    registerProbeDraft = () => register(false, save);
+    replaceProbeDraft = () => {
+      guard?.clear('field:probe:1:title');
+      register(false, save);
+    };
+    return () => {
+      registerProbeDraft = undefined;
+      replaceProbeDraft = undefined;
+    };
+  }, [guard, register]);
+  return null;
+}
+
+let probeSaveResolver: ((saved: boolean) => void) | undefined;
+
+function renderTasks(initialEntry: string, probe = false) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
   const tasksRoute = createRoute({
@@ -74,12 +113,24 @@ function renderTasks(initialEntry: string) {
           : undefined,
       create: search.create === true || search.create === 'true' ? true : undefined,
     }),
-    component: TasksListPage,
+    component: () => (
+      <>
+        <TasksListPage />
+        {probe && <DraftGuardProbe />}
+      </>
+    ),
   });
-  const routeTree = rootRoute.addChildren([tasksRoute.addChildren([tasksIndexRoute])]);
+  const notesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/notes',
+    component: () => <p>Notes workspace</p>,
+  });
+  const routeTree = rootRoute.addChildren([tasksRoute.addChildren([tasksIndexRoute]), notesRoute]);
   const router = createRouter({
     routeTree,
-    history: createMemoryHistory({ initialEntries: [initialEntry] }),
+    history: createMemoryHistory({
+      initialEntries: [initialEntry],
+    }),
   });
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
@@ -298,6 +349,173 @@ describe('TasksListPage', () => {
 
     await waitFor(() => expect(router.state.location.search).toEqual({ task: 2 }));
     await waitFor(() => expect(getSpy).toHaveBeenCalledWith(2));
+  });
+
+  it('blocks a dirty field edit and saves it before following the selected task destination', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'First task'), task(2, 'Second task')]) as never
+    );
+    vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+    const updateSpy = vi.spyOn(taskApi, 'update').mockImplementation(
+      async (id, patch) =>
+        ({
+          data: { ...detailResponse(id).data, ...patch },
+        }) as never
+    );
+    const { router } = renderTasks('/tasks');
+    fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-1: First task' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 1 }));
+    fireEvent.doubleClick(await screen.findByRole('button', { name: 'Task title: Task 1' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Renamed first task' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open TASK-2: Second task' }));
+
+    await screen.findByRole('alertdialog');
+    expect(screen.getByRole('group', { name: 'Draft actions' })).toHaveClass('flex-wrap');
+    expect(router.state.location.search).toEqual({ task: 1 });
+    expect(screen.getByLabelText('Title')).toHaveValue('Renamed first task');
+    expect(screen.getByRole('button', { name: 'Save and continue' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Discard and continue' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Keep editing' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { title: 'Renamed first task' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 2 }));
+    expect(await screen.findByRole('button', { name: 'Open TASK-1: First task' })).toBeVisible();
+  });
+
+  it.each(['task switch', 'panel close', 'sidebar route'] as const)(
+    'continues the original %s destination once after a deferred field save',
+    async (destination) => {
+      vi.spyOn(taskApi, 'list').mockResolvedValue(
+        response([task(1, 'First task'), task(2, 'Second task')]) as never
+      );
+      vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+      let resolveUpdate!: () => void;
+      const updateSpy = vi.spyOn(taskApi, 'update').mockImplementation(
+        (id, patch) =>
+          new Promise((resolve) => {
+            resolveUpdate = () =>
+              resolve({
+                ...detailResponse(id),
+                data: { ...detailResponse(id).data, ...patch },
+              });
+          })
+      );
+      const { router } = renderTasks('/tasks?task=1');
+      const initialHistoryLength = router.history.length;
+      fireEvent.doubleClick(await screen.findByRole('button', { name: 'Task title: Task 1' }));
+      fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Saved title' } });
+
+      if (destination === 'task switch') {
+        fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-2: Second task' }));
+      } else if (destination === 'panel close') {
+        fireEvent.click(screen.getByRole('button', { name: 'Close task details' }));
+      } else if (destination === 'sidebar route') {
+        act(() => {
+          void router.navigate({ to: '/notes' });
+        });
+      }
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Save and continue' }));
+      expect(await screen.findByRole('alertdialog')).toHaveTextContent('Saving field…');
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+      await act(async () => resolveUpdate());
+
+      if (destination === 'task switch') {
+        await waitFor(() => expect(router.state.location.search).toEqual({ task: 2 }));
+      } else if (destination === 'panel close') {
+        await waitFor(() => expect(router.state.location.search).toEqual({}));
+      } else {
+        await waitFor(() => expect(router.state.location.pathname).toBe('/notes'));
+      }
+      expect(router.history.length).toBe(
+        initialHistoryLength + (destination === 'sidebar route' ? 1 : 0)
+      );
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('discards a field draft or keeps editing without losing the original destination', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'First task'), task(2, 'Second task')]) as never
+    );
+    vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+    const updateSpy = vi.spyOn(taskApi, 'update');
+    const { router } = renderTasks('/tasks');
+    fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-1: First task' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 1 }));
+    fireEvent.doubleClick(await screen.findByRole('button', { name: 'Task title: Task 1' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Discard this title' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open TASK-2: Second task' }));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(router.state.location.search).toEqual({ task: 1 });
+    expect(screen.getByLabelText('Title')).toHaveValue('Discard this title');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open TASK-2: Second task' }));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and continue' }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 2 }));
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'Open TASK-1: First task' })).toBeVisible();
+  });
+
+  it('keeps navigation blocked while a field save is pending', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'First task'), task(2, 'Second task')]) as never
+    );
+    vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+    let resolveUpdate!: (value: AxiosResponse<TaskDetail>) => void;
+    vi.spyOn(taskApi, 'update').mockImplementation(
+      () => new Promise((resolve) => (resolveUpdate = resolve))
+    );
+    const { router } = renderTasks('/tasks');
+    fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-1: First task' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 1 }));
+    fireEvent.doubleClick(await screen.findByRole('button', { name: 'Task title: Task 1' }));
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Saving title' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open TASK-2: Second task' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save and continue' }));
+
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Saving field…');
+    expect(router.state.location.search).toEqual({ task: 1 });
+    expect(screen.queryByRole('button', { name: 'Save and continue' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Stay here' }));
+    act(() => {
+      void router.navigate({ to: '/tasks', search: { task: 2, create: undefined } });
+    });
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Saving field…');
+    await act(async () => resolveUpdate(detailResponse(1)));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 1 }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Open TASK-2: Second task' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 2 }));
+  });
+
+  it('does not clear a re-registered draft with the same ID when an old save settles', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+    const { router } = renderTasks('/tasks', true);
+    const taskButton = await screen.findByRole('button', { name: 'Open TASK-1: First task' });
+    act(() => registerProbeDraft?.());
+    fireEvent.click(taskButton);
+    fireEvent.click(await screen.findByRole('button', { name: 'Save and continue' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Saving field…');
+
+    act(() => replaceProbeDraft?.());
+    await act(async () => probeSaveResolver?.(true));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open TASK-1: First task' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'Your task draft has unsaved changes.'
+    );
+    expect(router.state.location.search).toEqual({});
   });
 
   it('replaces the creation history entry with detail after success', async () => {

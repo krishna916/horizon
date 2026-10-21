@@ -1,12 +1,10 @@
-import { useBlocker, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
-import { Button } from '@/components/ui/button';
+import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
+import { useRef } from 'react';
 import { TaskWorkspace } from './TaskWorkspace';
 import { parseTaskSelection } from './taskNavigation';
 import { useTasksLayout } from './TasksRouteLayout';
 import type { TaskDetail } from './types';
-import { cancelPendingLogoutNavigations } from '@/user/logoutNavigation';
+import { useTaskDraftGuard } from './TaskDraftNavigationGuard';
 
 export function TasksListPage() {
   const location = useLocation();
@@ -15,15 +13,7 @@ export function TasksListPage() {
   const { listRatio, setListRatio } = useTasksLayout();
   const creationDirty = useRef(false);
   const creationSubmitting = useRef(false);
-  const [isCreationSubmitting, setIsCreationSubmitting] = useState(false);
-  const [retainCreateDuringHistoryRestore, setRetainCreateDuringHistoryRestore] = useState(false);
-  const skipBlocker = useRef(false);
-  const blocker = useBlocker({
-    shouldBlockFn: () =>
-      !skipBlocker.current && (creationSubmitting.current || creationDirty.current),
-    enableBeforeUnload: () => creationSubmitting.current || creationDirty.current,
-    withResolver: true,
-  });
+  const draftGuard = useTaskDraftGuard();
 
   const search = new URLSearchParams(location.searchStr.replace(/^\?/, ''));
   const rawTaskId = search.get('task');
@@ -31,17 +21,8 @@ export function TasksListPage() {
     rawTaskId ?? undefined,
     search.get('create') === 'true'
   );
-  const blockedCreateTraversal =
-    blocker.status === 'blocked' &&
-    isCreationSubmitting &&
-    (blocker.action === 'BACK' || blocker.action === 'FORWARD') &&
-    blocker.current !== undefined &&
-    'create' in blocker.current.search &&
-    blocker.current.search.create === true;
-  const selection =
-    retainCreateDuringHistoryRestore || blockedCreateTraversal
-      ? ({ kind: 'create' } as const)
-      : locationSelection;
+  const blockedCreateTraversal = draftGuard?.blockedCreateTraversal ?? false;
+  const selection = blockedCreateTraversal ? ({ kind: 'create' } as const) : locationSelection;
   const currentMarker = router.state.location.state.horizonTaskNavigation;
   const hasTrustedListOrigin =
     selection.kind === 'valid' &&
@@ -50,28 +31,19 @@ export function TasksListPage() {
   const hasTrustedCreateOrigin =
     selection.kind === 'create' && currentMarker?.kind === 'creation-from-list';
 
-  useEffect(() => {
-    if (retainCreateDuringHistoryRestore && locationSelection.kind === 'create') {
-      const restoreTimer = window.setTimeout(() => {
-        setRetainCreateDuringHistoryRestore(false);
-      }, 0);
-      return () => window.clearTimeout(restoreTimer);
-    }
-  }, [locationSelection.kind, retainCreateDuringHistoryRestore]);
-
   function setCreationSubmitting(pending: boolean) {
     creationSubmitting.current = pending;
-    setIsCreationSubmitting(pending);
-    if (!pending && blocker.status === 'blocked') blocker.reset();
+    draftGuard?.register({
+      id: 'task-create',
+      kind: 'create',
+      dirty: creationDirty.current,
+      pending,
+      discard: () => {},
+    });
   }
 
   async function navigateWithoutGuard(action: () => void | Promise<unknown>) {
-    skipBlocker.current = true;
-    try {
-      await action();
-    } finally {
-      skipBlocker.current = false;
-    }
+    await (draftGuard?.bypass(action) ?? action());
   }
 
   function selectTask(taskId: number) {
@@ -155,9 +127,8 @@ export function TasksListPage() {
       : undefined;
     creationDirty.current = false;
     creationSubmitting.current = false;
-    setRetainCreateDuringHistoryRestore(false);
-    setIsCreationSubmitting(false);
-    if (blocker.status === 'blocked') blocker.reset();
+    draftGuard?.register(null);
+    draftGuard?.reset();
     void navigateWithoutGuard(() =>
       navigate({
         to: '/tasks',
@@ -166,22 +137,6 @@ export function TasksListPage() {
         replace: true,
       })
     );
-  }
-
-  function discardAndProceed() {
-    creationDirty.current = false;
-    setRetainCreateDuringHistoryRestore(false);
-    if (blocker.status === 'blocked') blocker.proceed();
-  }
-
-  function keepEditing() {
-    cancelPendingLogoutNavigations();
-    if (blocker.status === 'blocked') {
-      if (blocker.action === 'BACK' || blocker.action === 'FORWARD') {
-        setRetainCreateDuringHistoryRestore(true);
-      }
-      blocker.reset();
-    }
   }
 
   return (
@@ -194,6 +149,15 @@ export function TasksListPage() {
         onOpenFullPage={openFullPage}
         onCreationDirtyChange={(dirty) => {
           creationDirty.current = dirty;
+          draftGuard?.register({
+            id: 'task-create',
+            kind: 'create',
+            dirty,
+            pending: creationSubmitting.current,
+            discard: () => {
+              creationDirty.current = false;
+            },
+          });
         }}
         onCreationSubmittingChange={setCreationSubmitting}
         onCancelCreate={cancelCreate}
@@ -201,48 +165,6 @@ export function TasksListPage() {
         listRatio={listRatio}
         onListRatioChange={setListRatio}
       />
-      <Dialog.Root open={blocker.status === 'blocked'}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-[100] bg-black/45" />
-          <Dialog.Content
-            role="alertdialog"
-            aria-describedby="task-create-discard-description"
-            onEscapeKeyDown={(event) => {
-              event.preventDefault();
-              keepEditing();
-            }}
-            className="fixed left-1/2 top-1/2 z-[101] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-6 shadow-xl outline-none"
-          >
-            <Dialog.Title className="text-base font-semibold text-foreground">
-              {isCreationSubmitting ? 'Creating task…' : 'Discard draft?'}
-            </Dialog.Title>
-            <Dialog.Description
-              id="task-create-discard-description"
-              className="mt-2 text-sm text-muted-foreground"
-            >
-              {isCreationSubmitting
-                ? 'Your task is being saved. Stay here while the request finishes.'
-                : 'Your task draft has unsaved changes.'}
-            </Dialog.Description>
-            <div className="mt-6 flex justify-end gap-2">
-              {isCreationSubmitting ? (
-                <Button type="button" variant="outline" onClick={keepEditing}>
-                  Stay here
-                </Button>
-              ) : (
-                <>
-                  <Button type="button" variant="outline" onClick={keepEditing}>
-                    Keep editing
-                  </Button>
-                  <Button type="button" variant="destructive" onClick={discardAndProceed}>
-                    Discard draft
-                  </Button>
-                </>
-              )}
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
     </>
   );
 }
