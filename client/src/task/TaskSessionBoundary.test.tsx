@@ -4,6 +4,7 @@ import type { AxiosResponse } from 'axios';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
+import { TaskCompletionProvider } from './TaskCompletionProvider';
 import { TaskWorkspace } from './TaskWorkspace';
 import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 import { userApi } from '@/user/api';
@@ -39,7 +40,11 @@ function createWrapper() {
   });
 
   function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={queryClient}>
+        <TaskCompletionProvider>{children}</TaskCompletionProvider>
+      </QueryClientProvider>
+    );
   }
 
   return Wrapper;

@@ -13,6 +13,7 @@ import {
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
+import { TaskCompletionProvider } from './TaskCompletionProvider';
 import { TasksListPage } from './TasksListPage';
 import { TasksRouteLayout } from './TasksRouteLayout';
 import { useTaskDraftGuard } from './TaskDraftNavigationGuard';
@@ -40,7 +41,7 @@ const task = (id: number, title: string): TaskSummary => ({
 });
 
 const response = (items: TaskSummary[]) => ({ data: { items } });
-const detailResponse = (id: number): AxiosResponse<TaskDetail> =>
+const detailResponse = (id: number, completedAt: string | null = null): AxiosResponse<TaskDetail> =>
   ({
     data: {
       id,
@@ -49,7 +50,7 @@ const detailResponse = (id: number): AxiosResponse<TaskDetail> =>
       priority: null,
       dueDate: null,
       inbox: false,
-      completedAt: null,
+      completedAt,
       archivedAt: null,
       createdAt: '2026-10-18T10:00:00Z',
       updatedAt: '2026-10-18T10:00:00Z',
@@ -97,7 +98,13 @@ let probeSaveResolver: ((saved: boolean) => void) | undefined;
 
 function renderTasks(initialEntry: string, probe = false) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const rootRoute = createRootRoute({
+    component: () => (
+      <TaskCompletionProvider>
+        <Outlet />
+      </TaskCompletionProvider>
+    ),
+  });
   const tasksRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/tasks',
@@ -125,7 +132,16 @@ function renderTasks(initialEntry: string, probe = false) {
     path: '/notes',
     component: () => <p>Notes workspace</p>,
   });
-  const routeTree = rootRoute.addChildren([tasksRoute.addChildren([tasksIndexRoute]), notesRoute]);
+  const loginRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/login',
+    component: () => <p>Signed out</p>,
+  });
+  const routeTree = rootRoute.addChildren([
+    tasksRoute.addChildren([tasksIndexRoute]),
+    notesRoute,
+    loginRoute,
+  ]);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({
@@ -187,6 +203,37 @@ describe('TasksListPage', () => {
     expect(router.state.location.state.horizonTaskNavigation).toBeUndefined();
     expect(listSpy).toHaveBeenCalledTimes(1);
     expect(detailSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps same-task completion writes serialized across logout and reauthentication', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+    let finishComplete!: (response: AxiosResponse<TaskDetail>) => void;
+    let finishReopen!: (response: AxiosResponse<TaskDetail>) => void;
+    const completeSpy = vi
+      .spyOn(taskApi, 'complete')
+      .mockImplementation(() => new Promise((resolve) => (finishComplete = resolve)));
+    const reopenSpy = vi
+      .spyOn(taskApi, 'reopen')
+      .mockImplementation(() => new Promise((resolve) => (finishReopen = resolve)));
+    const { router } = renderTasks('/tasks');
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(completeSpy).toHaveBeenCalledTimes(1));
+    await act(async () => router.navigate({ to: '/login' }));
+    expect(await screen.findByText('Signed out')).toBeInTheDocument();
+    await act(async () =>
+      router.navigate({ to: '/tasks', search: { task: undefined, create: undefined } })
+    );
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Reopen TASK-1' }));
+
+    expect(reopenSpy).not.toHaveBeenCalled();
+    await act(async () => finishComplete(detailResponse(1, '2026-10-22T10:00:00Z')));
+    await waitFor(() => expect(reopenSpy).toHaveBeenCalledTimes(1));
+    await act(async () => finishReopen(detailResponse(1)));
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: 'Complete TASK-1' })).toBeInTheDocument()
+    );
   });
 
   it('pushes URL-backed creation from the list and supports Back and Forward', async () => {

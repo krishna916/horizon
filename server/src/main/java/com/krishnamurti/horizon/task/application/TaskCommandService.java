@@ -6,6 +6,8 @@ import com.krishnamurti.horizon.task.domain.TaskPriority;
 import com.krishnamurti.horizon.task.infrastructure.TaskKeyAllocator;
 import com.krishnamurti.horizon.task.infrastructure.TaskRepository;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.stereotype.Service;
@@ -61,6 +63,28 @@ public class TaskCommandService {
             task.updateDueDate(patch.dueDate().value());
         }
 
+        return taskRepository.saveAndFlush(task);
+    }
+
+    @Transactional
+    public Task complete(Long taskId) {
+        Long userId = requireCurrentUserId();
+        Task task =
+                taskRepository
+                        .findByIdAndUserIdAndDeletedAtIsNull(taskId, userId)
+                        .orElseThrow(TaskNotFoundException::new);
+        task.complete(OffsetDateTime.now(ZoneOffset.UTC));
+        return taskRepository.saveAndFlush(task);
+    }
+
+    @Transactional
+    public Task reopen(Long taskId) {
+        Long userId = requireCurrentUserId();
+        Task task =
+                taskRepository
+                        .findByIdAndUserIdAndDeletedAtIsNull(taskId, userId)
+                        .orElseThrow(TaskNotFoundException::new);
+        task.reopen();
         return taskRepository.saveAndFlush(task);
     }
 

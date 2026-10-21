@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { classifyTasks } from './task-view';
 import { useLocalDay } from './useLocalDay';
@@ -11,6 +11,7 @@ import { TaskCreateSurface } from './TaskCreateSurface';
 import { TaskPanelShell } from './TaskPanelShell';
 import { Button } from '@/components/ui/button';
 import type { TaskDetail } from './types';
+import { useTaskCompletionSnapshot } from './TaskCompletionProvider';
 
 interface TaskWorkspaceProps {
   readonly selection?: TaskSelection;
@@ -44,6 +45,16 @@ export function TaskWorkspace({
   const verifiedUserId = useRef<number | undefined>(undefined);
   const taskQuery = useTaskList(userId);
   const now = useLocalDay();
+  const [retention, setRetention] = useState<{
+    ownerId: number | undefined;
+    completedIds: Set<number>;
+  }>({ ownerId: undefined, completedIds: new Set() });
+  const completionSnapshot = useTaskCompletionSnapshot(userId ?? 0);
+  if (retention.ownerId !== userId) {
+    setRetention({ ownerId: userId, completedIds: new Set() });
+  }
+  const retainedCompletedIds =
+    retention.ownerId === userId ? retention.completedIds : new Set<number>();
 
   useLayoutEffect(() => {
     if (currentUser.isError) {
@@ -71,7 +82,25 @@ export function TaskWorkspace({
     userId,
   ]);
 
-  const sections = taskQuery.data ? classifyTasks(taskQuery.data.items, now) : undefined;
+  const sections = taskQuery.data
+    ? classifyTasks(taskQuery.data.items, now, retainedCompletedIds, completionSnapshot)
+    : undefined;
+
+  const onCompletionIntent = useCallback(
+    (taskId: number, completed: boolean) => {
+      setRetention((current) => {
+        const completedIds =
+          current.ownerId === userId ? new Set(current.completedIds) : new Set<number>();
+        if (completed && sections?.active.some((task) => task.id === taskId)) {
+          completedIds.add(taskId);
+        } else if (!completed) {
+          completedIds.delete(taskId);
+        }
+        return { ownerId: userId, completedIds };
+      });
+    },
+    [sections, userId]
+  );
   let workspaceContent;
 
   if (currentUser.isPending) {
@@ -121,6 +150,8 @@ export function TaskWorkspace({
           title="Active"
           tasks={sections.active}
           now={now}
+          userId={userId ?? 0}
+          onCompletionIntent={onCompletionIntent}
           onOpen={onSelectTask}
           selectedTaskId={selection.kind === 'valid' ? selection.id : null}
         />
@@ -129,6 +160,8 @@ export function TaskWorkspace({
             title="Completed"
             tasks={sections.completed}
             now={now}
+            userId={userId ?? 0}
+            onCompletionIntent={onCompletionIntent}
             onOpen={onSelectTask}
             selectedTaskId={selection.kind === 'valid' ? selection.id : null}
           />
@@ -193,6 +226,7 @@ export function TaskWorkspace({
           taskId={selection.kind === 'valid' ? selection.id : null}
           surface="panel"
           onClose={onClosePanel}
+          onCompletionIntent={onCompletionIntent}
           onOpenFullPage={
             selection.kind === 'valid' && onOpenFullPage
               ? () => onOpenFullPage(selection.id)

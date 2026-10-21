@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { taskApi } from './api';
+import { TaskCompletionProvider } from './TaskCompletionProvider';
 import { TaskDetailSurface } from './TaskDetailSurface';
 import type { TaskDetail } from './types';
 
@@ -39,7 +40,11 @@ function createWrapper() {
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
   });
   function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={queryClient}>
+        <TaskCompletionProvider>{children}</TaskCompletionProvider>
+      </QueryClientProvider>
+    );
   }
   return { Wrapper, queryClient };
 }
@@ -285,5 +290,25 @@ describe('TaskDetailSurface', () => {
     authenticateAs(1);
     view.rerender(<TaskDetailSurface taskId={7} surface="panel" />);
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Unsaved same-owner draft');
+  });
+
+  it('forwards completion intent from the panel and leaves the dedicated page unretained', async () => {
+    getSpy.mockResolvedValue(response(detail(7, 'Panel completion')) as never);
+    vi.spyOn(taskApi, 'complete').mockResolvedValue({
+      data: { ...detail(7, 'Panel completion'), completedAt: '2026-10-22T10:00:00Z' },
+    } as never);
+    const onCompletionIntent = vi.fn();
+    const { Wrapper } = createWrapper();
+    const view = render(
+      <TaskDetailSurface taskId={7} surface="panel" onCompletionIntent={onCompletionIntent} />,
+      { wrapper: Wrapper }
+    );
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-7' }));
+    expect(onCompletionIntent).toHaveBeenCalledWith(7, true);
+    view.rerender(
+      <TaskDetailSurface taskId={7} surface="page" onCompletionIntent={onCompletionIntent} />
+    );
+    expect(await screen.findByRole('checkbox', { name: 'Reopen TASK-7' })).toBeInTheDocument();
   });
 });

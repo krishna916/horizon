@@ -86,6 +86,51 @@ describe('classifyTasks', () => {
     expect(sections.completed).toEqual([tasks[2]]);
     expect(tasks).toEqual(original);
   });
+
+  it('optimisticReopenFromCompletedMovesToActiveBeforeResponse', () => {
+    const completed = summary(1, { completedAt: '2026-10-18T09:00:00Z' });
+
+    expect(
+      classifyTasks([completed], new Date(2026, 9, 18, 12), new Set(), new Map([[1, false]]))
+    ).toEqual({ active: [completed], completed: [] });
+  });
+
+  it('optimisticCompleteUsesRetainedActiveWithoutFakePersistedTimestamp', () => {
+    const incomplete = summary(1);
+
+    expect(
+      classifyTasks([incomplete], new Date(2026, 9, 18, 12), new Set([1]), new Map([[1, true]]))
+    ).toEqual({ active: [incomplete], completed: [] });
+    expect(incomplete.completedAt).toBeNull();
+  });
+
+  it('retainedCompletedTaskBelongsOnlyToActive', () => {
+    const completed = summary(1, { completedAt: '2026-10-18T09:00:00Z' });
+
+    expect(
+      classifyTasks([completed], new Date(2026, 9, 18, 12), new Set([1]), new Map([[1, true]]))
+    ).toEqual({ active: [completed], completed: [] });
+  });
+
+  it('archivedTaskCannotBeRetained', () => {
+    const archived = summary(1, {
+      completedAt: '2026-10-18T09:00:00Z',
+      archivedAt: '2026-10-18T10:00:00Z',
+    });
+
+    expect(
+      classifyTasks([archived], new Date(2026, 9, 18, 12), new Set([1]), new Map([[1, false]]))
+    ).toEqual({ active: [], completed: [] });
+  });
+
+  it('oldCompletionFollowsHistoricalVisibilityAfterReentry', () => {
+    const historical = summary(1, { completedAt: '2026-10-16T09:00:00Z' });
+
+    expect(classifyTasks([historical], new Date(2026, 9, 18, 12), new Set(), new Map())).toEqual({
+      active: [],
+      completed: [],
+    });
+  });
 });
 
 describe('formatTaskDueDate', () => {

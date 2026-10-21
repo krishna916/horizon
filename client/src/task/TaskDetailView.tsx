@@ -4,16 +4,25 @@ import { TaskFieldEditor } from './TaskFieldEditor';
 import type { TaskDetail } from './types';
 import { getTaskDescriptionText } from './taskDescriptionText';
 import { useTaskDraftGuard } from './TaskDraftNavigationGuard';
+import { useTaskCompletion } from './TaskCompletionProvider';
+import { TaskCompletionToggle } from './TaskCompletionToggle';
+import { TaskCompletionFeedback } from './TaskCompletionFeedback';
 
 interface TaskDetailViewProps {
   readonly task: TaskDetail;
   readonly userId: number;
+  readonly onCompletionIntent?: (taskId: number, completed: boolean) => void;
 }
 
-export function TaskDetailView({ task, userId }: TaskDetailViewProps) {
+export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailViewProps) {
   const description = getTaskDescriptionText(task.description);
   const edit = useTaskFieldEdit(task, userId);
   const draftGuard = useTaskDraftGuard();
+  const completion = useTaskCompletion(userId, task);
+  const toggleCompletion = () => {
+    const completed = completion.toggle();
+    onCompletionIntent?.(task.id, completed);
+  };
   const registerDraft = draftGuard?.register;
   const clearDraft = draftGuard?.clear;
   const saveRef = useRef(edit.save);
@@ -39,6 +48,7 @@ export function TaskDetailView({ task, userId }: TaskDetailViewProps) {
     return () => clearDraft?.(fieldId);
   }, [clearDraft, fieldId]);
   const editorProps = {
+    completed: completion.completed,
     activeField: edit.activeField,
     draft: edit.draft,
     dirty: edit.dirty,
@@ -57,13 +67,39 @@ export function TaskDetailView({ task, userId }: TaskDetailViewProps) {
           role="heading"
           aria-level={1}
           aria-label={task.title}
-          className="mt-[32px] mb-[32px] max-[1024px]:mt-[20px] max-[1024px]:mb-[20px] font-[family-name:var(--heading)] tracking-[-1.68px]"
+          className="mt-[32px] mb-[32px] flex items-start gap-3 max-[1024px]:mt-[20px] max-[1024px]:mb-[20px] font-[family-name:var(--heading)] tracking-[-1.68px]"
         >
-          <TaskFieldEditor field="title" value={task.title} {...editorProps} />
+          <TaskCompletionToggle
+            taskKey={task.key}
+            completed={completion.completed}
+            onToggle={toggleCompletion}
+          />
+          <div className="min-w-0 flex-1">
+            <TaskFieldEditor field="title" value={task.title} {...editorProps} />
+            <TaskCompletionFeedback
+              taskKey={task.key}
+              saving={completion.saving}
+              error={completion.error}
+              onRetry={completion.retry}
+            />
+          </div>
         </div>
       ) : (
-        <h1>
-          <TaskFieldEditor field="title" value={task.title} {...editorProps} />
+        <h1 aria-label={task.title} className="flex items-start gap-3">
+          <TaskCompletionToggle
+            taskKey={task.key}
+            completed={completion.completed}
+            onToggle={toggleCompletion}
+          />
+          <div className="min-w-0 flex-1">
+            <TaskFieldEditor field="title" value={task.title} {...editorProps} />
+            <TaskCompletionFeedback
+              taskKey={task.key}
+              saving={completion.saving}
+              error={completion.error}
+              onRetry={completion.retry}
+            />
+          </div>
         </h1>
       )}
       {description && (

@@ -5,13 +5,25 @@ interface TaskSectionProps {
   readonly title: 'Active' | 'Completed';
   readonly tasks: readonly TaskSummary[];
   readonly now: Date;
+  readonly userId: number;
+  readonly onCompletionIntent?: (taskId: number, completed: boolean) => void;
   readonly onOpen: (taskId: number) => void;
   readonly selectedTaskId: number | null;
 }
 
-export function TaskSection({ title, tasks, now, onOpen, selectedTaskId }: TaskSectionProps) {
-  const completed = title === 'Completed';
+export function TaskSection({
+  title,
+  tasks,
+  now,
+  userId,
+  onCompletionIntent,
+  onOpen,
+  selectedTaskId,
+}: TaskSectionProps) {
   const headingId = `task-section-${title.toLowerCase()}`;
+  const handleCompletionIntent = (taskId: number, completed: boolean) => {
+    if (title === 'Active' || !completed) onCompletionIntent?.(taskId, completed);
+  };
 
   return (
     <section aria-labelledby={headingId} className="mt-8">
@@ -31,7 +43,8 @@ export function TaskSection({ title, tasks, now, onOpen, selectedTaskId }: TaskS
               key={task.id}
               task={task}
               now={now}
-              completed={completed}
+              userId={userId}
+              onCompletionIntent={handleCompletionIntent}
               onOpen={onOpen}
               selected={task.id === selectedTaskId}
             />

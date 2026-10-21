@@ -13,7 +13,12 @@ function isSameLocalDay(left: Date, right: Date) {
   );
 }
 
-export function classifyTasks(tasks: readonly TaskSummary[], now: Date): TaskSections {
+export function classifyTasks(
+  tasks: readonly TaskSummary[],
+  now: Date,
+  retainedCompletedIds: ReadonlySet<number> = new Set(),
+  effectiveCompletedById: ReadonlyMap<number, boolean> = new Map()
+): TaskSections {
   const sections: TaskSections = { active: [], completed: [] };
 
   for (const task of tasks) {
@@ -21,12 +26,13 @@ export function classifyTasks(tasks: readonly TaskSummary[], now: Date): TaskSec
       continue;
     }
 
-    if (task.completedAt === null) {
+    const completed = effectiveCompletedById.get(task.id) ?? task.completedAt !== null;
+    if (!completed || retainedCompletedIds.has(task.id)) {
       sections.active.push(task);
       continue;
     }
 
-    const completedAt = new Date(task.completedAt);
+    const completedAt = task.completedAt === null ? now : new Date(task.completedAt);
     if (!Number.isNaN(completedAt.getTime()) && isSameLocalDay(completedAt, now)) {
       sections.completed.push(task);
     }

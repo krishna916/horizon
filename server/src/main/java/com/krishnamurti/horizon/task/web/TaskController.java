@@ -91,6 +91,16 @@ public class TaskController {
                 taskCommandService.update(id, taskRequestMapper.toPatch(request)));
     }
 
+    @PostMapping("/{id}/complete")
+    public TaskDetailResponse complete(@PathVariable Long id) {
+        return taskResponseMapper.toDetail(taskCommandService.complete(id));
+    }
+
+    @PostMapping("/{id}/reopen")
+    public TaskDetailResponse reopen(@PathVariable Long id) {
+        return taskResponseMapper.toDetail(taskCommandService.reopen(id));
+    }
+
     @GetMapping
     @ResponseStatus(HttpStatus.OK)
     public TaskListResponse list() {
