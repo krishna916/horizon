@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 
 type TaskSummary = {
   id: number;
@@ -30,16 +30,14 @@ function task(id: number, title: string): TaskSummary {
   };
 }
 
-test('guards, retries, saves, and discards inline field drafts across task navigation', async ({
-  page,
-}) => {
-  const tasks = [task(1, 'First browser task'), task(2, 'Second browser task')];
-  const details = new Map<number, TaskDetail>(
-    tasks.map((item) => [item.id, { ...item, description: null, deletedAt: null }])
-  );
-  const patches: Array<{ id: number; body: Record<string, unknown> }> = [];
-  let failNextPatch = true;
+type TaskPatchHandler = (route: Route, id: number) => Promise<void>;
 
+async function installTaskApi(
+  page: Page,
+  tasks: TaskSummary[],
+  details: Map<number, TaskDetail>,
+  handlePatch: TaskPatchHandler
+) {
   await page.route('**/api/v1/users/me', (route) =>
     route.fulfill({
       status: 200,
@@ -61,28 +59,43 @@ test('guards, retries, saves, and discards inline field drafts across task navig
   await page.route('**/api/v1/tasks/*', async (route) => {
     const id = Number(new URL(route.request().url()).pathname.split('/').at(-1));
     if (route.request().method() === 'PATCH') {
-      const body = route.request().postDataJSON() as Record<string, unknown>;
-      patches.push({ id, body });
-      if (failNextPatch) {
-        failNextPatch = false;
-        await route.fulfill({ status: 503, contentType: 'application/problem+json', body: '{}' });
-        return;
-      }
-      const updated = { ...details.get(id)!, ...body } as TaskDetail;
-      details.set(id, updated);
-      const index = tasks.findIndex((item) => item.id === id);
-      if (index >= 0) tasks[index] = { ...tasks[index], ...body } as TaskSummary;
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(updated),
-      });
+      await handlePatch(route, id);
       return;
     }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(details.get(id)),
+    });
+  });
+}
+
+test('guards, retries, saves, and discards inline field drafts across task navigation', async ({
+  page,
+}) => {
+  const tasks = [task(1, 'First browser task'), task(2, 'Second browser task')];
+  const details = new Map<number, TaskDetail>(
+    tasks.map((item) => [item.id, { ...item, description: null, deletedAt: null }])
+  );
+  const patches: Array<{ id: number; body: Record<string, unknown> }> = [];
+  let failNextPatch = true;
+
+  await installTaskApi(page, tasks, details, async (route, id) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    patches.push({ id, body });
+    if (failNextPatch) {
+      failNextPatch = false;
+      await route.fulfill({ status: 503, contentType: 'application/problem+json', body: '{}' });
+      return;
+    }
+    const updated = { ...details.get(id)!, ...body } as TaskDetail;
+    details.set(id, updated);
+    const index = tasks.findIndex((item) => item.id === id);
+    if (index >= 0) tasks[index] = { ...tasks[index], ...body } as TaskSummary;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(updated),
     });
   });
 
@@ -217,43 +230,16 @@ test('saves a dirty title before continuing to the original sidebar route after 
   let releasePatch!: () => void;
   const patchGate = new Promise<void>((resolve) => (releasePatch = resolve));
   let patchCount = 0;
-  await page.route('**/api/v1/users/me', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ id: 1, email: 'task-edit@example.com' }),
-    })
-  );
-  await page.route('**/api/v1/tasks', async (route) => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ items: tasks }),
-      });
-      return;
-    }
-    await route.fallback();
-  });
-  await page.route('**/api/v1/tasks/*', async (route) => {
-    const id = Number(new URL(route.request().url()).pathname.split('/').at(-1));
-    if (route.request().method() === 'PATCH') {
-      patchCount += 1;
-      await patchGate;
-      const body = route.request().postDataJSON() as Partial<TaskDetail>;
-      const updated = { ...details.get(id)!, ...body };
-      details.set(id, updated);
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(updated),
-      });
-      return;
-    }
+  await installTaskApi(page, tasks, details, async (route, id) => {
+    patchCount += 1;
+    await patchGate;
+    const body = route.request().postDataJSON() as Partial<TaskDetail>;
+    const updated = { ...details.get(id)!, ...body };
+    details.set(id, updated);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(details.get(id)),
+      body: JSON.stringify(updated),
     });
   });
 
