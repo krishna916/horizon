@@ -1,7 +1,7 @@
 # Issue #21 — Task completion and reopening: approved design specification
 
 **Date:** 2026-10-22
-**Status:** Written design for owner review; implementation has not started
+**Status:** Approved by owner on 2026-10-22; implementation has not started
 **Owner:** Horizon
 **Intended implementer:** Luna
 **Story:** [krishna916/horizon#21](https://github.com/krishna916/horizon/issues/21)
@@ -185,4 +185,4 @@ Update authoritative PRDs/issue acceptance language separately if the project do
 
 **Do not deliver** completed-history controls, sort controls, checklist models/warning UI, archive/delete implementation, offline synchronization, general toast system, or a status enum under this ticket.
 
-This document is submitted for **owner review**. Only after its content is approved should the Superpowers **writing-plans** step create a test-first, task-by-task implementation plan for Luna, including exact files, commands, commits, and a GitHub issue handoff.
+**Owner approval:** Approved on 2026-10-22. Its test-first Superpowers implementation plan is `docs/superpowers/plans/2026-10-22-issue-21-task-completion-implementation.md`, which has a separate plan-review gate before execution.
