@@ -11,7 +11,10 @@ import { TaskCreateSurface } from './TaskCreateSurface';
 import { TaskPanelShell } from './TaskPanelShell';
 import { Button } from '@/components/ui/button';
 import type { TaskDetail } from './types';
-import { useTaskCompletionSnapshot } from './TaskCompletionProvider';
+import {
+  useTaskCompletionReopenSnapshot,
+  useTaskCompletionSnapshot,
+} from './TaskCompletionProvider';
 
 interface TaskWorkspaceProps {
   readonly selection?: TaskSelection;
@@ -47,14 +50,20 @@ export function TaskWorkspace({
   const now = useLocalDay();
   const [retention, setRetention] = useState<{
     ownerId: number | undefined;
-    completedIds: Set<number>;
-  }>({ ownerId: undefined, completedIds: new Set() });
+    completionReopenRevisions: Map<number, number>;
+  }>({ ownerId: undefined, completionReopenRevisions: new Map() });
   const completionSnapshot = useTaskCompletionSnapshot(userId ?? 0);
+  const reopenRevisionSnapshot = useTaskCompletionReopenSnapshot(userId ?? 0);
   if (retention.ownerId !== userId) {
-    setRetention({ ownerId: userId, completedIds: new Set() });
+    setRetention({ ownerId: userId, completionReopenRevisions: new Map() });
   }
-  const retainedCompletedIds =
-    retention.ownerId === userId ? retention.completedIds : new Set<number>();
+  const retainedCompletedIds = new Set(
+    retention.ownerId === userId
+      ? [...retention.completionReopenRevisions]
+          .filter(([taskId, revision]) => revision === (reopenRevisionSnapshot.get(taskId) ?? 0))
+          .map(([taskId]) => taskId)
+      : []
+  );
 
   useLayoutEffect(() => {
     if (currentUser.isError) {
@@ -89,17 +98,17 @@ export function TaskWorkspace({
   const onCompletionIntent = useCallback(
     (taskId: number, completed: boolean) => {
       setRetention((current) => {
-        const completedIds =
-          current.ownerId === userId ? new Set(current.completedIds) : new Set<number>();
+        const completionReopenRevisions =
+          current.ownerId === userId
+            ? new Map(current.completionReopenRevisions)
+            : new Map<number, number>();
         if (completed && sections?.active.some((task) => task.id === taskId)) {
-          completedIds.add(taskId);
-        } else if (!completed) {
-          completedIds.delete(taskId);
+          completionReopenRevisions.set(taskId, reopenRevisionSnapshot.get(taskId) ?? 0);
         }
-        return { ownerId: userId, completedIds };
+        return { ownerId: userId, completionReopenRevisions };
       });
     },
-    [sections, userId]
+    [reopenRevisionSnapshot, sections, userId]
   );
   let workspaceContent;
 

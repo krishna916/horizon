@@ -39,6 +39,14 @@ const detail = (id: number, title: string, completedAt: string | null = null): T
   deletedAt: null,
 });
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -491,6 +499,164 @@ describe('TaskWorkspace', () => {
     await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
     expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('1');
     expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
+  });
+
+  it('rapidReopenThenCompleteKeepsLatestCompletionInActive', async () => {
+    const active = task(1, 'Rapidly toggled task');
+    const completedAt = todayString() + 'T10:00:00Z';
+    const reopenPending = deferred<Awaited<ReturnType<typeof taskApi.reopen>>>();
+    const completePending = deferred<Awaited<ReturnType<typeof taskApi.complete>>>();
+    listSpy.mockResolvedValue(response([active]) as never);
+    vi.spyOn(taskApi, 'complete')
+      .mockResolvedValueOnce({ data: detail(1, active.title, completedAt) } as never)
+      .mockReturnValueOnce(completePending.promise);
+    vi.spyOn(taskApi, 'reopen').mockReturnValue(reopenPending.promise);
+    const { Wrapper } = createWrapper();
+
+    render(<TaskWorkspace />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1' }));
+
+    await act(async () => reopenPending.resolve({ data: detail(1, active.title) } as never));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledTimes(2));
+    await act(async () =>
+      completePending.resolve({ data: detail(1, active.title, completedAt) } as never)
+    );
+
+    await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('1');
+    expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+  });
+
+  it('failedReopenKeepsPreviouslyRetainedCompletedTaskInActive', async () => {
+    const active = task(1, 'Retained after failed reopen');
+    const completedAt = todayString() + 'T10:00:00Z';
+    listSpy.mockResolvedValue(response([active]) as never);
+    vi.spyOn(taskApi, 'complete').mockResolvedValue({
+      data: detail(1, active.title, completedAt),
+    } as never);
+    vi.spyOn(taskApi, 'reopen').mockRejectedValue(new Error('service unavailable'));
+    vi.spyOn(taskApi, 'get').mockResolvedValue({
+      data: detail(1, active.title, completedAt),
+    } as never);
+    const { Wrapper } = createWrapper();
+
+    render(<TaskWorkspace />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1' }));
+
+    expect(screen.getByRole('checkbox', { name: 'Complete TASK-1' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save TASK-1.');
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('1');
+    expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
+    expect(screen.getAllByText(active.title)).toHaveLength(1);
+    expect(
+      screen.getByRole('button', { name: 'Retry TASK-1 completion save' })
+    ).toBeInTheDocument();
+  });
+
+  it('retryFailedReopenEventuallyClearsRetentionOnConfirmedSuccess', async () => {
+    const active = task(1, 'Reopened then completed again');
+    const completedAt = todayString() + 'T10:00:00Z';
+    listSpy.mockResolvedValue(response([active]) as never);
+    vi.spyOn(taskApi, 'complete')
+      .mockResolvedValueOnce({ data: detail(1, active.title, completedAt) } as never)
+      .mockResolvedValueOnce({ data: detail(1, active.title, completedAt) } as never);
+    vi.spyOn(taskApi, 'reopen')
+      .mockRejectedValueOnce(new Error('service unavailable'))
+      .mockResolvedValueOnce({ data: detail(1, active.title) } as never);
+    vi.spyOn(taskApi, 'get').mockResolvedValue({
+      data: detail(1, active.title, completedAt),
+    } as never);
+    const { Wrapper } = createWrapper();
+
+    render(<TaskWorkspace />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1' }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry TASK-1 completion save' }));
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByRole('checkbox', { name: 'Complete TASK-1' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1' }));
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('1');
+    expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
+  });
+
+  it('failedReopenOfPreexistingCompletedTaskReturnsToCompleted', async () => {
+    const completedAt = todayString() + 'T10:00:00Z';
+    const completed = task(1, 'Preexisting completed task', { completedAt });
+    listSpy.mockResolvedValue(response([completed]) as never);
+    vi.spyOn(taskApi, 'reopen').mockRejectedValue(new Error('service unavailable'));
+    vi.spyOn(taskApi, 'get').mockResolvedValue({
+      data: detail(1, completed.title, completedAt),
+    } as never);
+    const { Wrapper } = createWrapper();
+
+    render(<TaskWorkspace />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Reopen TASK-1' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save TASK-1.');
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    expect(screen.getByRole('heading', { name: 'Completed' }).parentElement).toHaveTextContent('1');
+    expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('0');
+  });
+
+  it('listUnmountAfterFailedReopenReclassifiesFromPersistedTimestamp', async () => {
+    const active = task(1, 'Reclassify after leaving list');
+    const completedAt = todayString() + 'T10:00:00Z';
+    listSpy
+      .mockResolvedValueOnce(response([active]) as never)
+      .mockResolvedValueOnce(response([task(1, active.title, { completedAt })]) as never);
+    vi.spyOn(taskApi, 'complete').mockResolvedValue({
+      data: detail(1, active.title, completedAt),
+    } as never);
+    vi.spyOn(taskApi, 'reopen').mockRejectedValue(new Error('service unavailable'));
+    vi.spyOn(taskApi, 'get').mockResolvedValue({
+      data: detail(1, active.title, completedAt),
+    } as never);
+    const { Wrapper } = createWrapper();
+    const view = render(<TaskWorkspace />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1' }));
+    await screen.findByRole('alert');
+
+    view.unmount();
+    render(<TaskWorkspace />, { wrapper: Wrapper });
+
+    expect(await screen.findByRole('heading', { name: 'Completed' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('0');
   });
 
   it('panelSwitchAndReturnPreserveRetention', async () => {

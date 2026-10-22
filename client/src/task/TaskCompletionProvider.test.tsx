@@ -224,6 +224,40 @@ describe('TaskCompletionProvider', () => {
     ).not.toBeNull();
   });
 
+  it('lateListRefetchCannotOverwriteConfirmedCompletion', async () => {
+    const completion = deferred<Awaited<ReturnType<typeof taskApi.complete>>>();
+    const staleList = deferred<{ items: TaskSummary[] }>();
+    vi.mocked(taskApi.complete).mockReturnValue(completion.promise);
+    const initial = task(1);
+    const { queryClient } = renderWithProvider(<Probe userId={1} value={initial} name="row" />);
+    queryClient.setQueryData(['tasks', 1], { items: [initial] });
+    queryClient.setQueryData(['tasks', 1, 'detail', 1], initial);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1 row' }));
+    const staleFetch = queryClient.fetchQuery({
+      queryKey: ['tasks', 1],
+      queryFn: () => staleList.promise,
+    });
+
+    await act(async () =>
+      completion.resolve(response({ ...initial, completedAt: '2026-10-22T01:00:00Z' }))
+    );
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<{ items: TaskSummary[] }>(['tasks', 1])?.items[0]?.completedAt
+      ).not.toBeNull()
+    );
+    await act(async () => staleList.resolve({ items: [initial] }));
+    await staleFetch;
+
+    expect(
+      queryClient.getQueryData<{ items: TaskSummary[] }>(['tasks', 1])?.items[0]?.completedAt
+    ).not.toBeNull();
+    expect(
+      queryClient.getQueryData<TaskDetail>(['tasks', 1, 'detail', 1])?.completedAt
+    ).not.toBeNull();
+  });
+
   it('timeoutReconcilesCommittedServerStateBeforeRetry', async () => {
     const initial = task(1);
     vi.mocked(taskApi.complete).mockRejectedValue(new Error('timeout'));
@@ -298,6 +332,118 @@ describe('TaskCompletionProvider', () => {
       'false'
     );
     expect(queryClient.getQueryData<TaskDetail>(['tasks', 2, 'detail', 1])?.completedAt).toBeNull();
+  });
+
+  it('failedPostAndFailedGetAfterRapidReopenShowsPersistentRetry', async () => {
+    const initial = task(1);
+    const pending = deferred<Awaited<ReturnType<typeof taskApi.complete>>>();
+    vi.mocked(taskApi.complete).mockReturnValue(pending.promise);
+    vi.mocked(taskApi.get).mockRejectedValue(new Error('unavailable'));
+    renderWithProvider(<Probe userId={1} value={initial} name="row" />);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1 row' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1 row' }));
+    await act(async () => pending.reject(new Error('timeout after possible commit')));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Complete TASK-1 row' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+    expect(screen.queryByText('row Saving…')).not.toBeInTheDocument();
+    expect(taskApi.get).toHaveBeenCalledTimes(1);
+    expect(taskApi.reopen).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Retry row' })).toBeInTheDocument();
+  });
+
+  it('unknownOutcomeRetryStillFailsGetKeepsError', async () => {
+    const initial = task(1);
+    vi.mocked(taskApi.complete).mockRejectedValue(new Error('timeout'));
+    vi.mocked(taskApi.get).mockRejectedValue(new Error('unavailable'));
+    renderWithProvider(<Probe userId={1} value={initial} name="row" />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1 row' }));
+
+    const retry = await screen.findByRole('button', { name: 'Retry row' });
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(taskApi.get).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry row' })).toBeInTheDocument();
+    expect(screen.queryByText('row Saving…')).not.toBeInTheDocument();
+    expect(taskApi.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('unknownOutcomeRetryReconcilesAndPersistsLatestIntent', async () => {
+    const initial = task(1);
+    const completedAt = '2026-10-22T01:00:00Z';
+    vi.mocked(taskApi.complete).mockRejectedValue(new Error('timeout'));
+    vi.mocked(taskApi.get)
+      .mockRejectedValueOnce(new Error('unavailable'))
+      .mockResolvedValue(response({ ...initial, completedAt }));
+    vi.mocked(taskApi.reopen).mockResolvedValue(response(initial));
+    const { queryClient } = renderWithProvider(<Probe userId={1} value={initial} name="row" />);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1 row' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1 row' }));
+    await screen.findByRole('button', { name: 'Retry row' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry row' }));
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(taskApi.get).toHaveBeenCalledTimes(2);
+    expect(taskApi.reopen).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData<TaskDetail>(['tasks', 1, 'detail', 1])?.completedAt).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Complete TASK-1 row' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+  });
+
+  it('knownReconciliationMatchingLatestIntentFinishesCleanly', async () => {
+    const initial = task(1);
+    const pending = deferred<Awaited<ReturnType<typeof taskApi.complete>>>();
+    vi.mocked(taskApi.complete).mockReturnValue(pending.promise);
+    vi.mocked(taskApi.get).mockResolvedValue(response(initial));
+    renderWithProvider(<Probe userId={1} value={initial} name="row" />);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1 row' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1 row' }));
+    await act(async () => pending.reject(new Error('timeout')));
+
+    await waitFor(() => expect(screen.queryByText('row Saving…')).not.toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(taskApi.get).toHaveBeenCalledTimes(1);
+    expect(taskApi.reopen).not.toHaveBeenCalled();
+    expect(screen.getByRole('checkbox', { name: 'Complete TASK-1 row' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+  });
+
+  it('unknownFailureDoesNotLeakAcrossUsers', async () => {
+    const initial = task(1);
+    vi.mocked(taskApi.complete).mockRejectedValue(new Error('timeout'));
+    vi.mocked(taskApi.get).mockRejectedValue(new Error('unavailable'));
+    const { rerender, queryClient } = renderWithProvider(
+      <Probe userId={1} value={initial} name="user" />
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1 user' }));
+    await screen.findByRole('button', { name: 'Retry user' });
+    queryClient.setQueryData(['tasks', 2, 'detail', 1], { ...initial, title: 'Other owner task' });
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <TaskCompletionProvider>
+          <Probe userId={2} value={{ ...initial, title: 'Other owner task' }} name="user" />
+        </TaskCompletionProvider>
+      </QueryClientProvider>
+    );
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry user' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Complete TASK-1 user' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
   });
 
   it('fieldPatchResponseCannotOverwriteCompletion', async () => {

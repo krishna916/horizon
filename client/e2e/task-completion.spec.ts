@@ -36,6 +36,7 @@ type ApiControls = {
   tasks: Task[];
   commands: string[];
   failNextCompletion: boolean;
+  failNextReopen: boolean;
   holdNextCompletion: ((resume: () => void) => void) | null;
 };
 
@@ -44,6 +45,7 @@ async function installTaskApi(page: Page, initial: Task[] = [task(1), task(2)]) 
     tasks: initial.map((item) => ({ ...item })),
     commands: [],
     failNextCompletion: false,
+    failNextReopen: false,
     holdNextCompletion: null,
   };
   await page.route('**/api/v1/users/me', (route) =>
@@ -81,6 +83,11 @@ async function installTaskApi(page: Page, initial: Task[] = [task(1), task(2)]) 
       }
       if (action === 'complete' && controls.failNextCompletion) {
         controls.failNextCompletion = false;
+        await route.fulfill({ status: 503, contentType: 'application/problem+json', body: '{}' });
+        return;
+      }
+      if (action === 'reopen' && controls.failNextReopen) {
+        controls.failNextReopen = false;
         await route.fulfill({ status: 503, contentType: 'application/problem+json', body: '{}' });
         return;
       }
@@ -216,6 +223,47 @@ test('serverFailureRestoresStateAndShowsPersistentRetry', async ({ page }) => {
     'true'
   );
   await expect.poll(() => api.commands).toEqual(['complete:1', 'complete:1']);
+});
+
+test('failedReopenRetainsCompletedActiveRowUntilConfirmedRetryAndListReentry', async ({ page }) => {
+  const api = await installTaskApi(page);
+  api.failNextReopen = true;
+  await page.goto('/tasks');
+
+  await page.getByRole('checkbox', { name: 'Complete TASK-1' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Reopen TASK-1' })).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Reopen TASK-1' }).click();
+
+  await expect(page.getByRole('alert')).toContainText('Could not save TASK-1.');
+  await expect(page.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
+    'aria-checked',
+    'true'
+  );
+  await expect(page.getByRole('heading', { name: 'Active' }).locator('..')).toContainText('2');
+  await expect(page.getByRole('heading', { name: 'Completed' })).toHaveCount(0);
+  await expect(page.getByText('Completion task 1')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Retry TASK-1 completion save' }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('checkbox', { name: 'Complete TASK-1' })).toHaveAttribute(
+    'aria-checked',
+    'false'
+  );
+  await expect.poll(() => api.commands).toEqual(['complete:1', 'reopen:1', 'reopen:1']);
+
+  await page.getByRole('checkbox', { name: 'Complete TASK-1' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Reopen TASK-1' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open TASK-1: Completion task 1' }).click();
+  await page
+    .getByTestId('task-detail-pane')
+    .getByRole('button', { name: 'Open full page' })
+    .click();
+  await expect(page).toHaveURL(/\/tasks\/1$/);
+  await page.getByRole('button', { name: 'Back to Tasks' }).click();
+  await expect(page).toHaveURL(/\/tasks\?task=1$/);
+  await expect(page.getByRole('heading', { name: 'Completed' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Active' }).locator('..')).toContainText('1');
+  await expect(page.getByRole('heading', { name: 'Completed' }).locator('..')).toContainText('1');
 });
 
 test('dirtyFieldDraftRemainsEditableOnCompletion', async ({ page }) => {

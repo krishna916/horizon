@@ -14,10 +14,12 @@ interface CompletionEntry {
   readonly error: string | null;
   readonly retryDesired: boolean | null;
   readonly version: number;
+  readonly outcomeUnknown: boolean;
 }
 
 interface CompletionContextValue {
   readonly entries: ReadonlyMap<string, CompletionEntry>;
+  readonly reopenRevisions: ReadonlyMap<string, number>;
   readonly toggle: (userId: number, task: TaskSummary) => boolean;
   readonly retry: (userId: number, task: TaskSummary) => void;
 }
@@ -28,7 +30,7 @@ function entryKey(userId: number, taskId: number): string {
   return `${userId}:${taskId}`;
 }
 
-function setCompletionInCache(
+async function setCompletionInCache(
   queryClient: ReturnType<typeof useQueryClient>,
   userId: number,
   taskId: number,
@@ -37,6 +39,10 @@ function setCompletionInCache(
 ) {
   const detailKey = ['tasks', userId, 'detail', taskId] as const;
   const listKey = ['tasks', userId] as const;
+  await Promise.all([
+    queryClient.cancelQueries({ queryKey: detailKey, exact: true }),
+    queryClient.cancelQueries({ queryKey: listKey, exact: true }),
+  ]);
   queryClient.setQueryData<TaskDetail>(detailKey, (current) =>
     current ? { ...current, completedAt, updatedAt } : current
   );
@@ -54,6 +60,7 @@ function setCompletionInCache(
 export function TaskCompletionProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const queryClient = useQueryClient();
   const [entries, setEntries] = useState<Map<string, CompletionEntry>>(() => new Map());
+  const [reopenRevisions, setReopenRevisions] = useState<Map<string, number>>(() => new Map());
   const entriesRef = useRef(entries);
   const running = useRef(new Set<string>());
 
@@ -64,6 +71,15 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
     setEntries(next);
   }, []);
 
+  const confirmReopen = useCallback((userId: number, taskId: number) => {
+    const key = entryKey(userId, taskId);
+    setReopenRevisions((current) => {
+      const next = new Map(current);
+      next.set(key, (next.get(key) ?? 0) + 1);
+      return next;
+    });
+  }, []);
+
   const run = useCallback(
     async (key: string) => {
       if (running.current.has(key)) return;
@@ -72,6 +88,55 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
         while (true) {
           const current = entriesRef.current.get(key);
           if (!current) return;
+          if (current.outcomeUnknown) {
+            let reconciled: Awaited<ReturnType<typeof taskApi.get>>;
+            try {
+              reconciled = await taskApi.get(current.taskId);
+            } catch {
+              const latest = entriesRef.current.get(key);
+              if (!latest) return;
+              publish((next) => {
+                const entry = next.get(key);
+                if (entry) {
+                  next.set(key, {
+                    ...entry,
+                    desired: entry.confirmedAt !== null,
+                    saving: false,
+                    error: "We couldn't save this completion change.",
+                    retryDesired: latest.desired,
+                    outcomeUnknown: true,
+                  });
+                }
+              });
+              return;
+            }
+            await setCompletionInCache(
+              queryClient,
+              current.userId,
+              current.taskId,
+              reconciled.data.completedAt,
+              reconciled.data.updatedAt
+            );
+            const latest = entriesRef.current.get(key);
+            if (!latest) return;
+            if (reconciled.data.completedAt === null && !latest.desired) {
+              confirmReopen(current.userId, current.taskId);
+            }
+            publish((next) => {
+              const entry = next.get(key);
+              if (entry) {
+                next.set(key, {
+                  ...entry,
+                  confirmedAt: reconciled.data.completedAt,
+                  saving: true,
+                  error: null,
+                  retryDesired: null,
+                  outcomeUnknown: false,
+                });
+              }
+            });
+            continue;
+          }
           const confirmed = current.confirmedAt !== null;
           if (current.desired === confirmed) {
             publish((next) => next.delete(key));
@@ -87,7 +152,7 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
           try {
             const response = await request;
             const task = response.data;
-            setCompletionInCache(
+            await setCompletionInCache(
               queryClient,
               current.userId,
               current.taskId,
@@ -96,6 +161,9 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
             );
             const latest = entriesRef.current.get(key);
             if (!latest) return;
+            if (task.completedAt === null && !latest.desired) {
+              confirmReopen(current.userId, current.taskId);
+            }
             const confirmedAt = task.completedAt;
             if (latest.desired === (confirmedAt !== null)) {
               publish((next) => next.delete(key));
@@ -103,14 +171,23 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
             }
             publish((next) => {
               const entry = next.get(key);
-              if (entry) next.set(key, { ...entry, confirmedAt, saving: true, error: null });
+              if (entry)
+                next.set(key, {
+                  ...entry,
+                  confirmedAt,
+                  saving: true,
+                  error: null,
+                  outcomeUnknown: false,
+                });
             });
           } catch {
             let confirmedAt = entriesRef.current.get(key)?.confirmedAt ?? null;
+            let outcomeUnknown = true;
             try {
               const reconciled = await taskApi.get(current.taskId);
               confirmedAt = reconciled.data.completedAt;
-              setCompletionInCache(
+              outcomeUnknown = false;
+              await setCompletionInCache(
                 queryClient,
                 current.userId,
                 current.taskId,
@@ -123,6 +200,26 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
 
             const latest = entriesRef.current.get(key);
             if (!latest) return;
+            if (!outcomeUnknown && confirmedAt === null && !latest.desired) {
+              confirmReopen(current.userId, current.taskId);
+            }
+            if (outcomeUnknown) {
+              publish((next) => {
+                const entry = next.get(key);
+                if (entry) {
+                  next.set(key, {
+                    ...entry,
+                    confirmedAt,
+                    desired: confirmedAt !== null,
+                    saving: false,
+                    error: "We couldn't save this completion change.",
+                    retryDesired: latest.desired,
+                    outcomeUnknown: true,
+                  });
+                }
+              });
+              return;
+            }
             if (latest.version > requestedVersion) {
               publish((next) => {
                 const entry = next.get(key);
@@ -133,6 +230,7 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
                     saving: true,
                     error: null,
                     retryDesired: null,
+                    outcomeUnknown: false,
                   });
                 }
               });
@@ -154,6 +252,7 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
                   saving: false,
                   error: "We couldn't save this completion change.",
                   retryDesired: latest.desired,
+                  outcomeUnknown: false,
                 });
               }
             });
@@ -164,7 +263,7 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
         running.current.delete(key);
       }
     },
-    [publish, queryClient]
+    [confirmReopen, publish, queryClient]
   );
 
   const prepare = useCallback(
@@ -180,6 +279,7 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
         error: null,
         retryDesired,
         version: (existing?.version ?? 0) + 1,
+        outcomeUnknown: existing?.outcomeUnknown ?? false,
       };
       publish((next) => next.set(key, nextEntry));
       void queryClient.cancelQueries({ queryKey: ['tasks', userId], exact: true });
@@ -213,8 +313,8 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
   );
 
   const value = useMemo<CompletionContextValue>(
-    () => ({ entries, toggle, retry }),
-    [entries, retry, toggle]
+    () => ({ entries, reopenRevisions, toggle, retry }),
+    [entries, reopenRevisions, retry, toggle]
   );
 
   return <CompletionContext.Provider value={value}>{children}</CompletionContext.Provider>;
@@ -244,4 +344,18 @@ export function useTaskCompletionSnapshot(userId: number): ReadonlyMap<number, b
     }
     return snapshot;
   }, [context.entries, userId]);
+}
+
+export function useTaskCompletionReopenSnapshot(userId: number): ReadonlyMap<number, number> {
+  const context = useContext(CompletionContext);
+  if (!context)
+    throw new Error('useTaskCompletionReopenSnapshot must be used inside TaskCompletionProvider.');
+  return useMemo(() => {
+    const snapshot = new Map<number, number>();
+    const prefix = `${userId}:`;
+    for (const [key, revision] of context.reopenRevisions) {
+      if (key.startsWith(prefix)) snapshot.set(Number(key.slice(prefix.length)), revision);
+    }
+    return snapshot;
+  }, [context.reopenRevisions, userId]);
 }
