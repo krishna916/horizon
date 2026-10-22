@@ -1,8 +1,22 @@
-import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { taskApi } from './api';
+import { TaskCompletionProvider } from './TaskCompletionProvider';
 import type { TaskSummary } from './types';
 import { TaskRow } from './TaskRow';
 import { TaskSection } from './TaskSection';
+
+vi.mock('./api', () => ({
+  taskApi: {
+    list: vi.fn(),
+    get: vi.fn(),
+    complete: vi.fn(),
+    reopen: vi.fn(),
+    update: vi.fn(),
+    create: vi.fn(),
+  },
+}));
 
 const task = (changes: Partial<TaskSummary> = {}): TaskSummary => ({
   id: 7,
@@ -20,20 +34,40 @@ const task = (changes: Partial<TaskSummary> = {}): TaskSummary => ({
 
 function renderTaskRow(
   changes: Partial<TaskSummary> = {},
-  props: { onOpen?: (taskId: number) => void; selected?: boolean } = {}
+  props: {
+    onOpen?: (taskId: number) => void;
+    selected?: boolean;
+    onCompletionIntent?: (taskId: number, completed: boolean) => void;
+  } = {}
 ) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <ul>
-      <TaskRow
-        task={task(changes)}
-        now={new Date(2026, 9, 18, 12)}
-        completed={false}
-        onOpen={props.onOpen ?? vi.fn()}
-        selected={props.selected ?? false}
-      />
-    </ul>
+    <QueryClientProvider client={queryClient}>
+      <TaskCompletionProvider>
+        <ul>
+          <TaskRow
+            task={task(changes)}
+            now={new Date(2026, 9, 18, 12)}
+            userId={1}
+            onCompletionIntent={props.onCompletionIntent}
+            onOpen={props.onOpen ?? vi.fn()}
+            selected={props.selected ?? false}
+          />
+        </ul>
+      </TaskCompletionProvider>
+    </QueryClientProvider>
   );
 }
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(taskApi.complete).mockResolvedValue({
+    data: { ...task(), completedAt: '2026-10-22T01:00:00Z', description: null, deletedAt: null },
+  } as never);
+  vi.mocked(taskApi.reopen).mockResolvedValue({
+    data: { ...task(), completedAt: null, description: null, deletedAt: null },
+  } as never);
+});
 
 describe('TaskRow', () => {
   it('renders title and available metadata in the approved two-line order', () => {
@@ -54,7 +88,8 @@ describe('TaskRow', () => {
     ).toBeTruthy();
     expect(container.querySelectorAll('li')).toHaveLength(1);
     expect(row.querySelector('svg')).toBeInTheDocument();
-    expect(row.querySelectorAll('button')).toHaveLength(1);
+    expect(row.querySelectorAll('button')).toHaveLength(2);
+    expect(within(row).getByRole('checkbox', { name: 'Complete TASK-7' })).toBeInTheDocument();
     expect(row.textContent).not.toContain('description');
     expect(row.textContent).not.toContain('Engineering');
     expect(row.textContent).not.toContain('file');
@@ -94,35 +129,69 @@ describe('TaskRow', () => {
     );
   });
 
-  it('visually mutes and strikes completed titles but leaves active titles plain', () => {
-    const { rerender } = render(
-      <ul>
-        <TaskRow
-          task={task()}
-          now={new Date(2026, 9, 18)}
-          completed={false}
-          onOpen={vi.fn()}
-          selected={false}
-        />
-      </ul>
-    );
-    expect(screen.getByText('Review the release notes')).not.toHaveClass('line-through');
-
-    rerender(
-      <ul>
-        <TaskRow
-          task={task()}
-          now={new Date(2026, 9, 18)}
-          completed
-          onOpen={vi.fn()}
-          selected={false}
-        />
-      </ul>
-    );
+  it('visually strikes through a persisted completion in the Active section', () => {
+    renderTaskRow({ completedAt: '2026-10-22T01:00:00Z' });
     expect(screen.getByText('Review the release notes')).toHaveClass(
       'line-through',
       'text-muted-foreground'
     );
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-7' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+  });
+
+  it('keeps completion independent from the row opener and reports the latest intent', async () => {
+    const onOpen = vi.fn();
+    const onCompletionIntent = vi.fn();
+    renderTaskRow({}, { onOpen, onCompletionIntent });
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-7' }));
+
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onCompletionIntent).toHaveBeenCalledWith(7, true);
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-7' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
+  });
+
+  it('keeps the native completion button keyboard-focusable without opening the row', () => {
+    const onOpen = vi.fn();
+    renderTaskRow({}, { onOpen });
+    const checkbox = screen.getByRole('checkbox', { name: 'Complete TASK-7' });
+    checkbox.focus();
+
+    expect(checkbox.tagName).toBe('BUTTON');
+    expect(checkbox.tabIndex).toBe(0);
+    expect(checkbox).toHaveFocus();
+    fireEvent.keyDown(checkbox, { key: ' ' });
+    fireEvent.keyDown(checkbox, { key: 'Enter' });
+
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(checkbox).toHaveFocus();
+  });
+
+  it('shows persistent inline retry feedback after a failed save', async () => {
+    vi.mocked(taskApi.complete).mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(taskApi.get).mockResolvedValueOnce({
+      data: { ...task(), description: null, deletedAt: null },
+    } as never);
+    renderTaskRow();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-7' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText(/TASK-7/)).toBeInTheDocument();
+    expect(
+      within(alert).getByRole('button', { name: 'Retry TASK-7 completion save' })
+    ).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: 'Complete TASK-7' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    );
+    expect(screen.getByText(/Could not save TASK-7/)).toBeInTheDocument();
   });
 
   it('opens from title and key clicks and keeps native keyboard focusability', () => {
@@ -149,15 +218,21 @@ describe('TaskRow', () => {
 });
 
 describe('TaskSection', () => {
-  it('renders a text heading and count with a task-opening control', () => {
+  it('renders a text heading, count, and independent completion/open controls', () => {
+    const queryClient = new QueryClient();
     render(
-      <TaskSection
-        title="Completed"
-        tasks={[task()]}
-        now={new Date(2026, 9, 18, 12)}
-        onOpen={vi.fn()}
-        selectedTaskId={null}
-      />
+      <QueryClientProvider client={queryClient}>
+        <TaskCompletionProvider>
+          <TaskSection
+            title="Completed"
+            tasks={[task({ completedAt: '2026-10-22T01:00:00Z' })]}
+            now={new Date(2026, 9, 18, 12)}
+            userId={1}
+            onOpen={vi.fn()}
+            selectedTaskId={null}
+          />
+        </TaskCompletionProvider>
+      </QueryClientProvider>
     );
 
     const heading = screen.getByRole('heading', { name: 'Completed' });
@@ -167,18 +242,26 @@ describe('TaskSection', () => {
       screen.getByRole('button', { name: 'Open TASK-7: Review the release notes' })
     ).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-7' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
   });
 
   it('shows the exact empty message for Active without fake rows or controls', () => {
     render(
-      <TaskSection
-        title="Active"
-        tasks={[]}
-        now={new Date(2026, 9, 18)}
-        onOpen={vi.fn()}
-        selectedTaskId={null}
-      />
+      <QueryClientProvider client={new QueryClient()}>
+        <TaskCompletionProvider>
+          <TaskSection
+            title="Active"
+            tasks={[]}
+            now={new Date(2026, 9, 18)}
+            userId={1}
+            onOpen={vi.fn()}
+            selectedTaskId={null}
+          />
+        </TaskCompletionProvider>
+      </QueryClientProvider>
     );
 
     expect(screen.getByText('No active tasks.')).toBeInTheDocument();

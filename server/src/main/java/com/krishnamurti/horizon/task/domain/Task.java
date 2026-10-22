@@ -92,6 +92,16 @@ public class Task extends BaseEntity {
         this.dueDate = dueDate;
     }
 
+    public void complete(OffsetDateTime when) {
+        if (completedAt == null) {
+            completedAt = Objects.requireNonNull(when, "when must not be null");
+        }
+    }
+
+    public void reopen() {
+        completedAt = null;
+    }
+
     /**
      * Returns a defensive copy so nested document edits are persisted only through
      * updateDescription.

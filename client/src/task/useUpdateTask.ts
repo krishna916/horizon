@@ -37,11 +37,26 @@ export function useUpdateTask(userId: number) {
 
       const detailKey = ['tasks', variables.ownerId, 'detail', task.id] as const;
       const listKey = ['tasks', variables.ownerId] as const;
-      queryClient.setQueryData(detailKey, task);
+      queryClient.setQueryData<TaskDetail>(detailKey, (current) => {
+        const updated = { ...task, ...current };
+        if ('title' in variables.patch) updated.title = task.title;
+        if ('priority' in variables.patch) updated.priority = task.priority;
+        if ('dueDate' in variables.patch) updated.dueDate = task.dueDate;
+        updated.updatedAt = task.updatedAt;
+        return updated;
+      });
       queryClient.setQueryData<TaskListResponse>(listKey, (current) =>
         current
           ? {
-              items: current.items.map((item) => (item.id === task.id ? toSummary(task) : item)),
+              items: current.items.map((item) => {
+                if (item.id !== task.id) return item;
+                const updated = { ...toSummary(task), ...item };
+                if ('title' in variables.patch) updated.title = task.title;
+                if ('priority' in variables.patch) updated.priority = task.priority;
+                if ('dueDate' in variables.patch) updated.dueDate = task.dueDate;
+                updated.updatedAt = task.updatedAt;
+                return updated;
+              }),
             }
           : current
       );

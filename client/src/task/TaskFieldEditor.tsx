@@ -6,6 +6,7 @@ import { formatTaskDueDate } from './task-view';
 interface TaskFieldEditorProps {
   readonly field: TaskFieldName;
   readonly value: string | null;
+  readonly completed?: boolean;
   readonly activeField: TaskFieldName | null;
   readonly draft: string;
   readonly dirty: boolean;
@@ -49,6 +50,7 @@ function handleReadKeyDown(event: KeyboardEvent<HTMLButtonElement>, activate: ()
 export function TaskFieldEditor({
   field,
   value,
+  completed = false,
   activeField,
   draft,
   dirty,
@@ -105,7 +107,7 @@ export function TaskFieldEditor({
         onKeyDown={(event) => handleReadKeyDown(event, () => onActivate(field))}
         className={
           field === 'title'
-            ? 'w-full break-words whitespace-pre-wrap text-left text-2xl font-semibold leading-tight text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+            ? `w-full break-words whitespace-pre-wrap text-left text-2xl font-semibold leading-tight focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${completed ? 'text-muted-foreground line-through' : 'text-foreground'}`
             : 'rounded-sm text-left text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
         }
       >

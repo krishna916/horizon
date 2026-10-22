@@ -57,6 +57,173 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void completeAndReopenPersistThroughGetAndList() throws Exception {
+        createTask(
+                "Complete lifecycle", "{\"title\":\"Complete lifecycle\",\"priority\":\"HIGH\"}");
+        Long id = taskIdForTitle("Complete lifecycle");
+
+        mockMvc.perform(post("/api/v1/tasks/{id}/complete", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.title").value("Complete lifecycle"))
+                .andExpect(jsonPath("$.priority").value("HIGH"))
+                .andExpect(jsonPath("$.completedAt").isNotEmpty());
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT completed_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isNotNull();
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.completedAt").isNotEmpty());
+        mockMvc.perform(get("/api/v1/tasks").cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].completedAt").isNotEmpty());
+
+        mockMvc.perform(post("/api/v1/tasks/{id}/reopen", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.title").value("Complete lifecycle"))
+                .andExpect(jsonPath("$.priority").value("HIGH"))
+                .andExpect(jsonPath("$.completedAt").doesNotExist());
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT completed_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isNull();
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.completedAt").doesNotExist());
+    }
+
+    @Test
+    void repeatedCompletePreservesOriginalTimestampAndRepeatedReopenIsNull() throws Exception {
+        createTask("Idempotent lifecycle", "{\"title\":\"Idempotent lifecycle\"}");
+        Long id = taskIdForTitle("Idempotent lifecycle");
+        OffsetDateTime original = OffsetDateTime.parse("2026-10-20T12:00:00Z");
+        jdbcTemplate.update("UPDATE task SET completed_at = ? WHERE id = ?", original, id);
+
+        MvcResult completed =
+                mockMvc.perform(post("/api/v1/tasks/{id}/complete", id).cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.completedAt").isNotEmpty())
+                        .andReturn();
+        assertThat(
+                        OffsetDateTime.parse(
+                                JsonPath.parse(completed.getResponse().getContentAsString())
+                                        .read("$.completedAt", String.class)))
+                .isEqualTo(original);
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT completed_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isEqualTo(original);
+
+        mockMvc.perform(post("/api/v1/tasks/{id}/reopen", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.completedAt").doesNotExist());
+        mockMvc.perform(post("/api/v1/tasks/{id}/reopen", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.completedAt").doesNotExist());
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT completed_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isNull();
+    }
+
+    @Test
+    void archivedCompletionPreservesArchivedAt() throws Exception {
+        createTask("Archived lifecycle", "{\"title\":\"Archived lifecycle\"}");
+        Long id = taskIdForTitle("Archived lifecycle");
+        OffsetDateTime archivedAt = OffsetDateTime.parse("2026-10-19T09:15:00Z");
+        jdbcTemplate.update("UPDATE task SET archived_at = ? WHERE id = ?", archivedAt, id);
+
+        MvcResult completed =
+                mockMvc.perform(post("/api/v1/tasks/{id}/complete", id).cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.completedAt").isNotEmpty())
+                        .andExpect(jsonPath("$.archivedAt").isNotEmpty())
+                        .andReturn();
+        assertThat(
+                        OffsetDateTime.parse(
+                                JsonPath.parse(completed.getResponse().getContentAsString())
+                                        .read("$.archivedAt", String.class)))
+                .isEqualTo(archivedAt);
+        MvcResult reopened =
+                mockMvc.perform(post("/api/v1/tasks/{id}/reopen", id).cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.completedAt").doesNotExist())
+                        .andExpect(jsonPath("$.archivedAt").isNotEmpty())
+                        .andReturn();
+        assertThat(
+                        OffsetDateTime.parse(
+                                JsonPath.parse(reopened.getResponse().getContentAsString())
+                                        .read("$.archivedAt", String.class)))
+                .isEqualTo(archivedAt);
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT archived_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isEqualTo(archivedAt);
+    }
+
+    @Test
+    void deletedAndOtherUserTasksReturn404() throws Exception {
+        createTask("Lifecycle owner scope", "{\"title\":\"Lifecycle owner scope\"}");
+        Long ownedId = taskIdForTitle("Lifecycle owner scope");
+        createTask("Lifecycle deleted", "{\"title\":\"Lifecycle deleted\"}");
+        Long deletedId = taskIdForTitle("Lifecycle deleted");
+        jdbcTemplate.update(
+                "UPDATE task SET deleted_at = ? WHERE id = ?",
+                OffsetDateTime.now(ZoneOffset.UTC),
+                deletedId);
+        String otherEmail = UUID.randomUUID() + "@example.com";
+        userCommandService.register(otherEmail, PASSWORD);
+        Cookie otherCookie = login(otherEmail);
+
+        MvcResult otherOwnerResult =
+                mockMvc.perform(post("/api/v1/tasks/{id}/complete", ownedId).cookie(otherCookie))
+                        .andExpect(status().isNotFound())
+                        .andReturn();
+        MvcResult missingResult =
+                mockMvc.perform(
+                                post("/api/v1/tasks/{id}/complete", Long.MAX_VALUE)
+                                        .cookie(otherCookie))
+                        .andExpect(status().isNotFound())
+                        .andReturn();
+        assertThat(otherOwnerResult.getResponse().getContentAsString())
+                .isEqualTo(missingResult.getResponse().getContentAsString());
+
+        mockMvc.perform(post("/api/v1/tasks/{id}/complete", deletedId).cookie(ownerCookie))
+                .andExpect(status().isNotFound());
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT completed_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                ownedId))
+                .isNull();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT completed_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                deletedId))
+                .isNull();
+    }
+
+    @Test
+    void unauthenticatedLifecycleCommandsReturn401() throws Exception {
+        mockMvc.perform(post("/api/v1/tasks/{id}/complete", 1))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/tasks/{id}/reopen", 1)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void createTitleOnlyReturns201LocationIdAndOwnKey() throws Exception {
         MvcResult result =
                 mockMvc.perform(

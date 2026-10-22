@@ -11,6 +11,7 @@ interface TaskDetailSurfaceProps {
   readonly surface: 'panel' | 'page';
   readonly onClose?: () => void;
   readonly onOpenFullPage?: () => void;
+  readonly onCompletionIntent?: (taskId: number, completed: boolean) => void;
 }
 
 export function TaskDetailSurface({
@@ -18,6 +19,7 @@ export function TaskDetailSurface({
   surface,
   onClose,
   onOpenFullPage,
+  onCompletionIntent,
 }: TaskDetailSurfaceProps): JSX.Element {
   const currentUser = useCurrentUser();
   const userId = currentUser.isPending || currentUser.isError ? undefined : currentUser.data?.id;
@@ -29,6 +31,7 @@ export function TaskDetailSurface({
         key={`${currentUser.data.id}:${taskQuery.data.id}`}
         task={taskQuery.data}
         userId={currentUser.data.id}
+        onCompletionIntent={surface === 'panel' ? onCompletionIntent : undefined}
       />
     ) : null;
 

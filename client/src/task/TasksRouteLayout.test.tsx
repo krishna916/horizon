@@ -7,6 +7,7 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 import { useTasksLayout, TasksRouteLayout } from './TasksRouteLayout';
 
@@ -45,17 +46,26 @@ function createTestRouter(initialEntry: string) {
   return router;
 }
 
+function renderRouter(router: ReturnType<typeof createTestRouter>) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  );
+}
+
 describe('TasksRouteLayout', () => {
   it.each(['/tasks', '/tasks?task=123'])('renders its nested index at %s', async (entry) => {
     const router = createTestRouter(entry);
-    render(<RouterProvider router={router} />);
+    renderRouter(router);
 
     expect(await screen.findByText('List ratio: 60')).toBeInTheDocument();
   });
 
   it('retains ratio across child rerenders and resets after leaving Tasks', async () => {
     const router = createTestRouter('/tasks');
-    render(<RouterProvider router={router} />);
+    renderRouter(router);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Set list ratio' }));
     expect(screen.getByText('List ratio: 67')).toBeInTheDocument();

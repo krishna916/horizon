@@ -80,12 +80,14 @@ describe('useUpdateTask', () => {
     expect(patchSpy).toHaveBeenCalledWith('/tasks/7', { priority: null });
     expect(saved).toEqual(updated);
     expect(saved.description).toEqual(detail().description);
-    expect(queryClient.getQueryData(['tasks', 1, 'detail', 7])).toEqual(updated);
+    expect(queryClient.getQueryData(['tasks', 1, 'detail', 7])).toEqual(
+      detail({ title: 'Original title', priority: null })
+    );
     expect(queryClient.getQueryData(['tasks', 2, 'detail', 7])).toMatchObject({
       title: 'Other account copy',
     });
     expect(queryClient.getQueryData<TaskListResponse>(listKey)?.items).toEqual([
-      summary({ id: 7, title: 'Renamed task', priority: null, dueDate: null }),
+      summary({ id: 7, title: 'Original title', priority: null }),
       existingSummary,
     ]);
     expect(queryClient.getQueryData<TaskListResponse>(otherListKey)?.items[0]?.title).toBe(

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { classifyTasks } from './task-view';
 import { useLocalDay } from './useLocalDay';
@@ -11,6 +11,10 @@ import { TaskCreateSurface } from './TaskCreateSurface';
 import { TaskPanelShell } from './TaskPanelShell';
 import { Button } from '@/components/ui/button';
 import type { TaskDetail } from './types';
+import {
+  useTaskCompletionReopenSnapshot,
+  useTaskCompletionSnapshot,
+} from './TaskCompletionProvider';
 
 interface TaskWorkspaceProps {
   readonly selection?: TaskSelection;
@@ -44,6 +48,22 @@ export function TaskWorkspace({
   const verifiedUserId = useRef<number | undefined>(undefined);
   const taskQuery = useTaskList(userId);
   const now = useLocalDay();
+  const [retention, setRetention] = useState<{
+    ownerId: number | undefined;
+    completionReopenRevisions: Map<number, number>;
+  }>({ ownerId: undefined, completionReopenRevisions: new Map() });
+  const completionSnapshot = useTaskCompletionSnapshot(userId ?? 0);
+  const reopenRevisionSnapshot = useTaskCompletionReopenSnapshot(userId ?? 0);
+  if (retention.ownerId !== userId) {
+    setRetention({ ownerId: userId, completionReopenRevisions: new Map() });
+  }
+  const retainedCompletedIds = new Set(
+    retention.ownerId === userId
+      ? [...retention.completionReopenRevisions]
+          .filter(([taskId, revision]) => revision === (reopenRevisionSnapshot.get(taskId) ?? 0))
+          .map(([taskId]) => taskId)
+      : []
+  );
 
   useLayoutEffect(() => {
     if (currentUser.isError) {
@@ -71,7 +91,25 @@ export function TaskWorkspace({
     userId,
   ]);
 
-  const sections = taskQuery.data ? classifyTasks(taskQuery.data.items, now) : undefined;
+  const sections = taskQuery.data
+    ? classifyTasks(taskQuery.data.items, now, retainedCompletedIds, completionSnapshot)
+    : undefined;
+
+  const onCompletionIntent = useCallback(
+    (taskId: number, completed: boolean) => {
+      setRetention((current) => {
+        const completionReopenRevisions =
+          current.ownerId === userId
+            ? new Map(current.completionReopenRevisions)
+            : new Map<number, number>();
+        if (completed && sections?.active.some((task) => task.id === taskId)) {
+          completionReopenRevisions.set(taskId, reopenRevisionSnapshot.get(taskId) ?? 0);
+        }
+        return { ownerId: userId, completionReopenRevisions };
+      });
+    },
+    [reopenRevisionSnapshot, sections, userId]
+  );
   let workspaceContent;
 
   if (currentUser.isPending) {
@@ -121,6 +159,8 @@ export function TaskWorkspace({
           title="Active"
           tasks={sections.active}
           now={now}
+          userId={userId ?? 0}
+          onCompletionIntent={onCompletionIntent}
           onOpen={onSelectTask}
           selectedTaskId={selection.kind === 'valid' ? selection.id : null}
         />
@@ -129,6 +169,8 @@ export function TaskWorkspace({
             title="Completed"
             tasks={sections.completed}
             now={now}
+            userId={userId ?? 0}
+            onCompletionIntent={onCompletionIntent}
             onOpen={onSelectTask}
             selectedTaskId={selection.kind === 'valid' ? selection.id : null}
           />
@@ -193,6 +235,7 @@ export function TaskWorkspace({
           taskId={selection.kind === 'valid' ? selection.id : null}
           surface="panel"
           onClose={onClosePanel}
+          onCompletionIntent={onCompletionIntent}
           onOpenFullPage={
             selection.kind === 'valid' && onOpenFullPage
               ? () => onOpenFullPage(selection.id)
