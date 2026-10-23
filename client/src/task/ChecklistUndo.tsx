@@ -25,8 +25,6 @@ export function ChecklistUndo({ removedItem, onUndo, onDismiss }: ChecklistUndoP
 
   useEffect(() => {
     if (removedItemId === undefined) return;
-    phaseRef.current = 'idle';
-    setPhase('idle');
     timeoutRef.current = window.setTimeout(() => {
       timeoutRef.current = null;
       if (phaseRef.current === 'idle') onDismissRef.current();
