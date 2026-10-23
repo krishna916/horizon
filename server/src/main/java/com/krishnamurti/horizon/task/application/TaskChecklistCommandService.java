@@ -81,10 +81,15 @@ public class TaskChecklistCommandService {
             throw new ChecklistOrderConflictException();
         }
         for (Long itemId : itemIds) {
-            if (itemId == null
-                    || checklistItemRepository
-                            .findByIdAndTaskIdAndDeletedAtIsNull(itemId, task.getId())
-                            .isEmpty()) {
+            if (itemId == null) {
+                throw new TaskNotFoundException();
+            }
+            if (checklistItemRepository
+                    .findByIdAndTaskIdAndDeletedAtIsNull(itemId, task.getId())
+                    .isEmpty()) {
+                if (checklistItemRepository.findByIdAndTaskId(itemId, task.getId()).isPresent()) {
+                    throw new ChecklistOrderConflictException();
+                }
                 throw new TaskNotFoundException();
             }
         }

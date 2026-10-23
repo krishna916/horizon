@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -210,6 +211,53 @@ class TaskChecklistControllerIntegrationTest {
         mockMvc.perform(reorder(taskId, List.of(first, first))).andExpect(status().isConflict());
         mockMvc.perform(reorder(taskId, List.of(first))).andExpect(status().isConflict());
         assertThat(activeIds(taskId)).containsExactlyElementsOf(before);
+    }
+
+    @Test
+    void staleReorderAfterDeletingOwnedItemReturns409WithoutWrites() throws Exception {
+        createTask("Checklist deleted-item reorder");
+        Long taskId = taskIdForTitle("Checklist deleted-item reorder");
+        Long first = addItemAndGetId(taskId, "First");
+        Long deleted = addItemAndGetId(taskId, "Deleted");
+        Long third = addItemAndGetId(taskId, "Third");
+        createTask("Checklist deleted-item reorder other parent");
+        Long otherTaskId = taskIdForTitle("Checklist deleted-item reorder other parent");
+        Long foreignItem = addItemAndGetId(otherTaskId, "Other parent item");
+
+        mockMvc.perform(delete(itemPath(taskId, deleted)).cookie(ownerCookie))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(reorder(taskId, List.of(first, deleted, third)))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(409));
+        mockMvc.perform(reorder(taskId, List.of(first, 9_999_999L)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(reorder(taskId, List.of(first, foreignItem)))
+                .andExpect(status().isNotFound());
+
+        assertThat(activeIds(taskId)).containsExactly(first, third);
+        assertThat(positionFor(first)).isZero();
+        assertThat(positionFor(third)).isEqualTo(1);
+    }
+
+    @Test
+    void staleReorderAfterAddingOwnedItemReturns409WithoutWrites() throws Exception {
+        createTask("Checklist added-item reorder");
+        Long taskId = taskIdForTitle("Checklist added-item reorder");
+        Long first = addItemAndGetId(taskId, "First");
+        Long second = addItemAndGetId(taskId, "Second");
+        List<Long> staleOrder = List.of(first, second);
+        Long added = addItemAndGetId(taskId, "Added after snapshot");
+
+        mockMvc.perform(reorder(taskId, staleOrder))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409));
+
+        assertThat(activeIds(taskId)).containsExactly(first, second, added);
+        assertThat(positionFor(first)).isZero();
+        assertThat(positionFor(second)).isEqualTo(1);
+        assertThat(positionFor(added)).isEqualTo(2);
     }
 
     @Test
@@ -438,7 +486,11 @@ class TaskChecklistControllerIntegrationTest {
 
     private Long taskIdForTitle(String title) {
         return jdbcTemplate.queryForObject(
-                "SELECT id FROM task WHERE title = ?", Long.class, title);
+                "SELECT task.id FROM task JOIN users ON users.id = task.user_id"
+                        + " WHERE users.email = ? AND task.title = ?",
+                Long.class,
+                ownerEmail,
+                title);
     }
 
     private Cookie login(String email) throws Exception {
