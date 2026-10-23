@@ -65,8 +65,10 @@ export function useTaskCompletionGate(
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<CompletionIntent | null>(null);
   const sequence = useRef(0);
+  const checkingRef = useRef(false);
   const mounted = useRef(false);
   const latest = useRef({ userId, task, completed, proceed });
+  const identity = useRef({ userId, taskId: task.id });
 
   useEffect(() => {
     mounted.current = true;
@@ -80,7 +82,18 @@ export function useTaskCompletionGate(
     latest.current = { userId, task, completed, proceed };
   }, [completed, proceed, task, userId]);
 
+  useEffect(() => {
+    if (identity.current.userId === userId && identity.current.taskId === task.id) return;
+    identity.current = { userId, taskId: task.id };
+    sequence.current += 1;
+    checkingRef.current = false;
+    setChecking(false);
+    setError(null);
+    setConfirmation(null);
+  }, [task.id, userId]);
+
   const requestToggle = useCallback(() => {
+    if (checkingRef.current) return;
     const current = latest.current;
     const requestId = ++sequence.current;
     if (current.completed) {
@@ -91,6 +104,7 @@ export function useTaskCompletionGate(
       return;
     }
 
+    checkingRef.current = true;
     setChecking(true);
     setError(null);
     setConfirmation(null);
@@ -100,9 +114,13 @@ export function useTaskCompletionGate(
         if (!mounted.current || sequence.current !== requestId) return;
         const active = latest.current;
         if (active.userId !== current.userId || active.task.id !== current.task.id) return;
-        queryClient.setQueryData(['tasks', current.userId, 'detail', current.task.id], data);
+        queryClient.setQueryData<TaskDetail>(
+          ['tasks', current.userId, 'detail', current.task.id],
+          (cached) => (cached ? { ...cached, checklist: data.checklist } : data)
+        );
+        checkingRef.current = false;
         setChecking(false);
-        if (active.completed || data.completedAt !== null) return;
+        if (active.completed) return;
         const unfinishedCount = data.checklist.filter((item) => item.completedAt === null).length;
         if (unfinishedCount === 0) {
           active.proceed();
@@ -117,6 +135,7 @@ export function useTaskCompletionGate(
       })
       .catch(() => {
         if (!mounted.current || sequence.current !== requestId) return;
+        checkingRef.current = false;
         setChecking(false);
         setError('Could not check checklist items.');
       });
@@ -124,6 +143,9 @@ export function useTaskCompletionGate(
 
   const cancel = useCallback(() => {
     sequence.current += 1;
+    checkingRef.current = false;
+    setChecking(false);
+    setError(null);
     setConfirmation(null);
   }, []);
 
@@ -139,15 +161,8 @@ export function useTaskCompletionGate(
     ) {
       return;
     }
-    const detail = queryClient.getQueryData<TaskDetail>([
-      'tasks',
-      intent.userId,
-      'detail',
-      intent.taskId,
-    ]);
-    if (detail && detail.completedAt !== null) return;
     current.proceed();
-  }, [confirmation, queryClient]);
+  }, [confirmation]);
 
   const visibleConfirmation =
     confirmation?.userId === userId && confirmation.taskId === task.id ? confirmation : null;

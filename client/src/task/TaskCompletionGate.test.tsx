@@ -31,8 +31,18 @@ const detail = (
   ...changes,
 });
 
-function GateProbe({ completed = false, proceed }: { completed?: boolean; proceed: () => void }) {
-  const gate = useTaskCompletionGate(1, task, completed, proceed);
+function GateProbe({
+  completed = false,
+  proceed,
+  userId = 1,
+  gateTask = task,
+}: {
+  completed?: boolean;
+  proceed: () => void;
+  userId?: number;
+  gateTask?: TaskSummary;
+}) {
+  const gate = useTaskCompletionGate(userId, gateTask, completed, proceed);
   return (
     <>
       <button type="button" onClick={gate.requestToggle}>
@@ -48,7 +58,7 @@ function GateProbe({ completed = false, proceed }: { completed?: boolean; procee
         </div>
       )}
       <TaskCompletionGateDialog
-        taskKey={task.key}
+        taskKey={gateTask.key}
         unfinishedCount={gate.unfinishedCount}
         onConfirm={gate.confirm}
         onCancel={gate.cancel}
@@ -127,6 +137,62 @@ describe('task completion gate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry checklist check' }));
     await waitFor(() => expect(getSpy).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(proceed).toHaveBeenCalledTimes(1));
+  });
+
+  it('coalesces repeated clicks while one checklist read is pending', async () => {
+    let resolveDetail!: (response: AxiosResponse<TaskDetail>) => void;
+    const getSpy = vi
+      .spyOn(taskApi, 'get')
+      .mockImplementation(() => new Promise((resolve) => (resolveDetail = resolve)) as never);
+    const { proceed } = renderGate();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Request completion' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Request completion' }));
+    expect(getSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => resolveDetail({ data: detail([]) } as AxiosResponse<TaskDetail>));
+    expect(proceed).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges checklist results without replacing newer cached parent fields', async () => {
+    vi.spyOn(taskApi, 'get').mockResolvedValue({
+      data: detail([], { title: 'Stale server title' }),
+    } as never);
+    const { proceed, queryClient } = renderGate();
+    queryClient.setQueryData(
+      ['tasks', 1, 'detail', task.id],
+      detail([], { title: 'Fresh field patch' })
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Request completion' }));
+    await waitFor(() => expect(proceed).toHaveBeenCalledTimes(1));
+    expect(queryClient.getQueryData<TaskDetail>(['tasks', 1, 'detail', task.id])?.title).toBe(
+      'Fresh field patch'
+    );
+  });
+
+  it('ignores a pending check after switching owner and task', async () => {
+    let resolveDetail!: (response: AxiosResponse<TaskDetail>) => void;
+    vi.spyOn(taskApi, 'get').mockImplementation(
+      () => new Promise((resolve) => (resolveDetail = resolve)) as never
+    );
+    const proceed = vi.fn();
+    const { queryClient, rerender } = renderGate(proceed);
+    const cached = detail([
+      { id: 1, title: 'Keep this checklist', dueDate: null, completedAt: null, position: 0 },
+    ]);
+    queryClient.setQueryData(['tasks', 1, 'detail', task.id], cached);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Request completion' }));
+    await waitFor(() => expect(resolveDetail).toBeTypeOf('function'));
+    rerender(
+      <GateProbe userId={2} gateTask={{ ...task, id: 8, key: 'TASK-8' }} proceed={proceed} />
+    );
+
+    await act(async () => resolveDetail({ data: detail([]) } as AxiosResponse<TaskDetail>));
+    expect(proceed).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(['tasks', 1, 'detail', task.id])).toEqual(cached);
+    expect(screen.queryByText('Checking checklist…')).not.toBeInTheDocument();
   });
 
   it('reopens a completed parent immediately without a checklist warning', () => {

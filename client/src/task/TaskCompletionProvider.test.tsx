@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
+import { TaskCompletionGateDialog, useTaskCompletionGate } from './TaskCompletionGate';
 import { TaskCompletionProvider, useTaskCompletion } from './TaskCompletionProvider';
 import { useUpdateTask } from './useUpdateTask';
 import type { TaskDetail, TaskSummary } from './types';
@@ -97,6 +98,41 @@ function FieldPatchProbe({ userId, value }: { userId: number; value: TaskDetail 
   );
 }
 
+function CompletionGateProviderProbe({ value }: { value: TaskDetail }) {
+  const userId = 1;
+  const taskQuery = useQuery({
+    queryKey: ['tasks', userId, 'detail', value.id],
+    queryFn: disabledQuery,
+    initialData: value,
+    enabled: false,
+  });
+  const completion = useTaskCompletion(userId, taskQuery.data);
+  const gate = useTaskCompletionGate(
+    userId,
+    taskQuery.data,
+    completion.completed,
+    completion.toggle
+  );
+  return (
+    <>
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={completion.completed}
+        onClick={gate.requestToggle}
+      >
+        {completion.completed ? 'Reopen' : 'Complete'} {taskQuery.data.key}
+      </button>
+      <TaskCompletionGateDialog
+        taskKey={taskQuery.data.key}
+        unfinishedCount={gate.unfinishedCount}
+        onConfirm={gate.confirm}
+        onCancel={gate.cancel}
+      />
+    </>
+  );
+}
+
 function renderWithProvider(children: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -175,6 +211,26 @@ describe('TaskCompletionProvider', () => {
     await waitFor(() => expect(screen.queryByText('row Saving…')).not.toBeInTheDocument());
     expect(taskApi.complete).toHaveBeenCalledTimes(1);
     expect(taskApi.reopen).not.toHaveBeenCalled();
+  });
+
+  it('preserves a new Complete intent when the checklist read sees the still-pending Reopen state', async () => {
+    const reopen = deferred<Awaited<ReturnType<typeof taskApi.reopen>>>();
+    vi.mocked(taskApi.reopen).mockReturnValue(reopen.promise);
+    vi.mocked(taskApi.get).mockResolvedValue(response(task(1, '2026-10-22T01:00:00Z')));
+    vi.mocked(taskApi.complete).mockResolvedValue(response(task(1, '2026-10-22T02:00:00Z')));
+    renderWithProvider(<CompletionGateProviderProbe value={task(1, '2026-10-22T01:00:00Z')} />);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1' }));
+    expect(taskApi.reopen).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1' }));
+
+    await waitFor(() => expect(taskApi.get).toHaveBeenCalledWith(1));
+    await act(async () => reopen.resolve(response(task(1))));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
   });
 
   it('differentTasksSaveIndependently', () => {
