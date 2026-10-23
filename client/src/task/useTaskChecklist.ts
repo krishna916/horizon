@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { taskChecklistApi } from './api';
-import type { ChecklistItem } from './types';
+import type { ChecklistItem, TaskDetail } from './types';
 
 type ChecklistMutationResult = ChecklistItem | ChecklistItem[] | void;
 
@@ -53,10 +53,40 @@ export function useTaskChecklist(userId: number, taskId: number) {
       }
     },
     retry: false,
-    onSuccess: (_result, variables) => {
+    onSuccess: (result, variables) => {
       if (!isCurrentIdentity(activeIdentity.current, variables)) return;
+      const detailKey = ['tasks', variables.ownerId, 'detail', variables.taskId] as const;
+      queryClient.setQueryData<TaskDetail>(detailKey, (current) => {
+        if (!current) return current;
+        let checklist = current.checklist;
+        switch (variables.kind) {
+          case 'add':
+            checklist = [...checklist, result as ChecklistItem];
+            break;
+          case 'patch':
+          case 'complete':
+          case 'reopen':
+          case 'restore': {
+            const updated = result as ChecklistItem;
+            checklist = checklist.some((item) => item.id === updated.id)
+              ? checklist.map((item) => (item.id === updated.id ? updated : item))
+              : [...checklist, updated];
+            break;
+          }
+          case 'reorder':
+            checklist = result as ChecklistItem[];
+            break;
+          case 'remove':
+            checklist = checklist.filter((item) => item.id !== variables.itemId);
+            break;
+        }
+        return {
+          ...current,
+          checklist: [...checklist].sort((left, right) => left.position - right.position),
+        };
+      });
       void queryClient.invalidateQueries({
-        queryKey: ['tasks', variables.ownerId, 'detail', variables.taskId],
+        queryKey: detailKey,
         exact: true,
       });
     },

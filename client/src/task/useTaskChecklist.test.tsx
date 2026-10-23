@@ -91,6 +91,7 @@ describe('useTaskChecklist', () => {
 
     expect(addSpy).toHaveBeenCalledWith(12, 'Call florist');
     expect(queryClient.getQueryState(ownedKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryData<TaskDetail>(ownedKey)?.checklist).toEqual([item]);
     expect(queryClient.getQueryState(otherOwnerKey)?.isInvalidated).toBe(false);
     expect(queryClient.getQueryState(otherTaskKey)?.isInvalidated).toBe(false);
   });
@@ -124,5 +125,23 @@ describe('useTaskChecklist', () => {
     expect(queryClient.getQueryState(oldKey)?.isInvalidated).toBe(false);
     expect(queryClient.getQueryState(newKey)?.isInvalidated).toBe(false);
     expect(queryClient.getQueryData(newKey)).toEqual(detail(13));
+  });
+
+  it('invalidates only the selected task detail when a write has an ambiguous failure', async () => {
+    vi.spyOn(taskChecklistApi, 'add').mockRejectedValue(new Error('connection lost'));
+    const { Wrapper, queryClient } = createWrapper();
+    const ownedKey = ['tasks', 1, 'detail', 12] as const;
+    const otherKey = ['tasks', 1, 'detail', 13] as const;
+    queryClient.setQueryData(ownedKey, detail(12));
+    queryClient.setQueryData(otherKey, detail(13));
+    const { result } = renderHook(() => useTaskChecklist(1, 12), { wrapper: Wrapper });
+
+    await act(async () => {
+      await expect(result.current.addItem('Call florist')).rejects.toThrow('connection lost');
+    });
+
+    expect(result.current.isError).toBe(true);
+    expect(queryClient.getQueryState(ownedKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(otherKey)?.isInvalidated).toBe(false);
   });
 });

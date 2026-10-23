@@ -106,6 +106,33 @@ describe('TaskDetailSurface', () => {
     ).toBeVisible();
   });
 
+  it.each(['panel', 'page'] as const)(
+    'renders the same checklist in the %s detail surface',
+    async (surface) => {
+      getSpy.mockResolvedValue({
+        data: {
+          ...detail(7, 'Review the release notes'),
+          checklist: [
+            {
+              id: 31,
+              title: 'Call florist',
+              dueDate: '2026-10-28',
+              completedAt: null,
+              position: 0,
+            },
+          ],
+        },
+      } as never);
+      const { Wrapper } = createWrapper();
+      render(<TaskDetailSurface taskId={7} surface={surface} />, { wrapper: Wrapper });
+
+      expect(await screen.findByText('Call florist')).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Set due date for Call florist' })
+      ).toBeInTheDocument();
+    }
+  );
+
   it('shows the same generic unavailable state for 404 and never leaves the prior task visible', async () => {
     getSpy
       .mockResolvedValueOnce(response(detail(7, 'Private previous task')) as never)

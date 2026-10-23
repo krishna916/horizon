@@ -40,7 +40,7 @@ function createWrapper() {
 }
 
 describe('TaskDetailView', () => {
-  it('renders supported task content and optional metadata without invented controls or sections', () => {
+  it('renders task content, checklist, and optional metadata', () => {
     render(<TaskDetailView task={task} userId={1} />, { wrapper: createWrapper() });
 
     expect(screen.getByRole('heading', { name: 'Review the release notes' })).toBeInTheDocument();
@@ -50,7 +50,29 @@ describe('TaskDetailView', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button')).toHaveLength(3);
     expect(screen.getAllByRole('checkbox')).toHaveLength(1);
-    expect(screen.queryByText(/checklist|tags|attachments|activity/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Checklist' })).toBeInTheDocument();
+    expect(screen.queryByText(/tags|attachments|activity/i)).not.toBeInTheDocument();
+  });
+
+  it('renders checklist item controls inside task detail', () => {
+    render(
+      <TaskDetailView
+        task={{
+          ...task,
+          checklist: [
+            { id: 3, title: 'Call florist', dueDate: null, completedAt: null, position: 0 },
+          ],
+        }}
+        userId={1}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.getByText('Call florist')).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: 'Complete checklist item Call florist' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Add checklist item' })).toBeInTheDocument();
   });
 
   it('uses subdued strike-through styling for a completed title', () => {
