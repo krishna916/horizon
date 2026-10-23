@@ -1,7 +1,7 @@
 # Issue #22 — Lightweight task checklist: design specification
 
 **Date:** 2026-10-23
-**Status:** Written for owner review; NOT yet approved for implementation
+**Status:** Approved by owner on 2026-10-23; ready for native/inline Luna implementation
 **Owner:** Horizon
 **Intended implementer:** Luna
 **Story:** [krishna916/horizon#22](https://github.com/krishna916/horizon/issues/22)
@@ -128,4 +128,4 @@ Run repository-prescribed backend and frontend format/lint/typecheck/tests plus 
 
 ## 8. Planning handoff gate
 
-This is the **written design review artifact** only. After owner approval, use the Superpowers `writing-plans` workflow to produce `docs/superpowers/plans/2026-10-23-issue-22-checklist-items.md` with exact file ownership, tests, small TDD tasks and validation commands. Have the owner review the written plan before implementation/execution by Luna. Do **not** treat conversational design approval as written-spec approval.
+Owner approved this written design on 2026-10-23, and subsequently approved the [written implementation plan](../plans/2026-10-23-issue-22-checklist-items.md). Luna's selected execution method is native/inline `superpowers:executing-plans`, following the issue #22 handoff comment. Planning approval does not imply that implementation code has already been changed.
