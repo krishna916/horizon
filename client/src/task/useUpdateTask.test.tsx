@@ -21,11 +21,17 @@ const detail = (changes: Partial<TaskDetail> = {}): TaskDetail => ({
   updatedAt: '2026-10-20T11:00:00Z',
   description: { type: 'doc', content: [{ type: 'text', text: 'Keep this description.' }] },
   deletedAt: null,
+  checklist: [],
   ...changes,
 });
 
 const summary = (changes: Partial<TaskSummary> = {}): TaskSummary => {
-  const { description: _description, deletedAt: _deletedAt, ...taskSummary } = detail(changes);
+  const {
+    description: _description,
+    deletedAt: _deletedAt,
+    checklist: _checklist,
+    ...taskSummary
+  } = detail(changes);
   return taskSummary;
 };
 

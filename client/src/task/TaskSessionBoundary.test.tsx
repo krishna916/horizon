@@ -32,6 +32,7 @@ const taskDetail = (id: number, title: string): TaskDetail => ({
     content: [{ type: 'paragraph', content: [{ type: 'text', text: title }] }],
   },
   deletedAt: null,
+  checklist: [],
 });
 
 function createWrapper() {

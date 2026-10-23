@@ -31,6 +31,7 @@ const detail = (id: number, title: string): TaskDetail => ({
     content: [{ type: 'paragraph', content: [{ type: 'text', text: `${title} description` }] }],
   },
   deletedAt: null,
+  checklist: [],
 });
 
 const response = (data: TaskDetail) => ({ data }) as AxiosResponse<TaskDetail>;

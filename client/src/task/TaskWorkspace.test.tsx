@@ -37,6 +37,7 @@ const detail = (id: number, title: string, completedAt: string | null = null): T
   ...task(id, title, { completedAt }),
   description: null,
   deletedAt: null,
+  checklist: [],
 });
 
 function deferred<T>() {
@@ -448,6 +449,7 @@ describe('TaskWorkspace', () => {
           content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Private details' }] }],
         },
         deletedAt: null,
+        checklist: [],
       } satisfies TaskDetail,
     } as never);
     const onClose = vi.fn();

@@ -33,6 +33,7 @@ function task(id: number, completedAt: string | null = null): TaskDetail {
     updatedAt: '2026-10-22T00:00:00Z',
     description: null,
     deletedAt: null,
+    checklist: [],
   };
 }
 

@@ -23,6 +23,7 @@ const task: TaskDetail = {
     content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Check the release notes.' }] }],
   },
   deletedAt: null,
+  checklist: [],
 };
 
 function createWrapper() {
