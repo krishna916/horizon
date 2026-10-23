@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Complete task representation returned by create, get, and update operations. */
@@ -20,11 +21,13 @@ public record TaskDetailResponse(
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         Map<String, Object> description,
-        OffsetDateTime deletedAt) {
+        OffsetDateTime deletedAt,
+        List<ChecklistItemResponse> checklist) {
     public TaskDetailResponse {
         if (description != null) {
             description = Collections.unmodifiableMap(new LinkedHashMap<>(description));
         }
+        checklist = checklist == null ? List.of() : List.copyOf(checklist);
     }
 
     @Override

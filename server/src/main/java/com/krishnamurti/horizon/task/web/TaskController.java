@@ -1,8 +1,10 @@
 package com.krishnamurti.horizon.task.web;
 
 import com.krishnamurti.horizon.task.application.IdempotentTaskCreationService;
+import com.krishnamurti.horizon.task.application.TaskChecklistQueryService;
 import com.krishnamurti.horizon.task.application.TaskCommandService;
 import com.krishnamurti.horizon.task.application.TaskQueryService;
+import com.krishnamurti.horizon.task.domain.Task;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
@@ -27,6 +29,7 @@ public class TaskController {
     private final TaskCommandService taskCommandService;
     private final IdempotentTaskCreationService idempotentTaskCreationService;
     private final TaskQueryService taskQueryService;
+    private final TaskChecklistQueryService taskChecklistQueryService;
     private final TaskResponseMapper taskResponseMapper;
     private final TaskRequestMapper taskRequestMapper;
 
@@ -34,11 +37,13 @@ public class TaskController {
             TaskCommandService taskCommandService,
             IdempotentTaskCreationService idempotentTaskCreationService,
             TaskQueryService taskQueryService,
+            TaskChecklistQueryService taskChecklistQueryService,
             TaskResponseMapper taskResponseMapper,
             TaskRequestMapper taskRequestMapper) {
         this.taskCommandService = taskCommandService;
         this.idempotentTaskCreationService = idempotentTaskCreationService;
         this.taskQueryService = taskQueryService;
+        this.taskChecklistQueryService = taskChecklistQueryService;
         this.taskResponseMapper = taskResponseMapper;
         this.taskRequestMapper = taskRequestMapper;
     }
@@ -50,18 +55,24 @@ public class TaskController {
         UUID requestKey = parseIdempotencyKey(idempotencyKey);
         var priority = taskRequestMapper.parsePriority(request.priority());
         var dueDate = taskRequestMapper.parseDueDate(request.dueDate());
+        var checklist = taskRequestMapper.parseChecklist(request.checklist());
         var task =
                 requestKey == null
                         ? taskCommandService.create(
-                                request.title(), request.description(), priority, dueDate)
+                                request.title(),
+                                request.description(),
+                                priority,
+                                dueDate,
+                                checklist)
                         : idempotentTaskCreationService.create(
                                 requestKey,
                                 request.title(),
                                 request.description(),
                                 priority,
-                                dueDate);
+                                dueDate,
+                                checklist);
         URI location = URI.create("/api/v1/tasks/" + task.getId());
-        return ResponseEntity.created(location).body(taskResponseMapper.toDetail(task));
+        return ResponseEntity.created(location).body(toDetail(task));
     }
 
     private UUID parseIdempotencyKey(String value) {
@@ -81,24 +92,23 @@ public class TaskController {
 
     @GetMapping("/{id}")
     public TaskDetailResponse get(@PathVariable Long id) {
-        return taskResponseMapper.toDetail(taskQueryService.get(id));
+        return toDetail(taskQueryService.get(id));
     }
 
     @PatchMapping("/{id}")
     public TaskDetailResponse update(
             @PathVariable Long id, @RequestBody UpdateTaskRequest request) {
-        return taskResponseMapper.toDetail(
-                taskCommandService.update(id, taskRequestMapper.toPatch(request)));
+        return toDetail(taskCommandService.update(id, taskRequestMapper.toPatch(request)));
     }
 
     @PostMapping("/{id}/complete")
     public TaskDetailResponse complete(@PathVariable Long id) {
-        return taskResponseMapper.toDetail(taskCommandService.complete(id));
+        return toDetail(taskCommandService.complete(id));
     }
 
     @PostMapping("/{id}/reopen")
     public TaskDetailResponse reopen(@PathVariable Long id) {
-        return taskResponseMapper.toDetail(taskCommandService.reopen(id));
+        return toDetail(taskCommandService.reopen(id));
     }
 
     @GetMapping
@@ -107,5 +117,9 @@ public class TaskController {
         List<TaskSummaryResponse> items =
                 taskQueryService.list().stream().map(taskResponseMapper::toSummary).toList();
         return new TaskListResponse(items);
+    }
+
+    private TaskDetailResponse toDetail(Task task) {
+        return taskResponseMapper.toDetail(task, taskChecklistQueryService.list(task.getId()));
     }
 }

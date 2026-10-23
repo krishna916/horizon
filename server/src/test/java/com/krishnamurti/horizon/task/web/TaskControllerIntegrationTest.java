@@ -248,6 +248,130 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void taskDetailsReturnOrderedChecklistOnGetCreateUpdateCompleteAndReopen() throws Exception {
+        String body =
+                "{\"title\":\"Checklist detail\",\"checklist\":["
+                        + "{\"title\":\"First\",\"dueDate\":\"2026-10-28\"},"
+                        + "{\"title\":\"Second\"}]}";
+        MvcResult created =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(ownerCookie)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.checklist[0].title").value("First"))
+                        .andExpect(jsonPath("$.checklist[0].position").value(0))
+                        .andExpect(jsonPath("$.checklist[0].dueDate").value("2026-10-28"))
+                        .andExpect(jsonPath("$.checklist[1].title").value("Second"))
+                        .andExpect(jsonPath("$.checklist[1].position").value(1))
+                        .andReturn();
+        Long id =
+                JsonPath.parse(created.getResponse().getContentAsString()).read("$.id", Long.class);
+
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checklist[0].title").value("First"))
+                .andExpect(jsonPath("$.checklist[1].title").value("Second"));
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Updated checklist detail\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checklist[0].title").value("First"));
+        mockMvc.perform(post("/api/v1/tasks/{id}/complete", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checklist.length()").value(2));
+        mockMvc.perform(post("/api/v1/tasks/{id}/reopen", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checklist.length()").value(2));
+    }
+
+    @Test
+    void createWithChecklistIsAtomicOnInvalidChild() throws Exception {
+        String requestKey = UUID.randomUUID().toString();
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", requestKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Invalid checklist\",\"checklist\":["
+                                                + "{\"title\":\"Valid first\"},"
+                                                + "{\"title\":\"  \"}]}"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(taskIdCountForTitle("Invalid checklist")).isZero();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM task_creation_request WHERE request_key = ?",
+                                Long.class,
+                                UUID.fromString(requestKey)))
+                .isZero();
+    }
+
+    @Test
+    void keyedChecklistReplayDoesNotDuplicateAndChangedDateOrOrderConflicts() throws Exception {
+        String requestKey = UUID.randomUUID().toString();
+        String body =
+                "{\"title\":\"Keyed checklist\",\"checklist\":["
+                        + "{\"title\":\"First\",\"dueDate\":\"2026-10-28\"},"
+                        + "{\"title\":\"Second\"}]}";
+        MvcResult created =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", requestKey)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isCreated())
+                        .andReturn();
+        Long id =
+                JsonPath.parse(created.getResponse().getContentAsString()).read("$.id", Long.class);
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", requestKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.checklist.length()").value(2));
+        assertThat(checklistItemCount(id)).isEqualTo(2L);
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", requestKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body.replace("2026-10-28", "2026-10-29")))
+                .andExpect(status().isConflict());
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", requestKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Keyed checklist\",\"checklist\":["
+                                            + "{\"title\":\"Second\"},"
+                                            + "{\"title\":\"First\",\"dueDate\":\"2026-10-28\"}]}"))
+                .andExpect(status().isConflict());
+        assertThat(checklistItemCount(id)).isEqualTo(2L);
+    }
+
+    @Test
+    void listSummaryDoesNotContainChecklist() throws Exception {
+        createTask(
+                "Checklist summary",
+                "{\"title\":\"Checklist summary\",\"checklist\":["
+                        + "{\"title\":\"Hidden from summary\"}]}");
+
+        mockMvc.perform(get("/api/v1/tasks").cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].checklist").doesNotExist());
+    }
+
+    @Test
     void keyedCreateReplayReturnsSameTaskAndLocation() throws Exception {
         String requestKey = UUID.randomUUID().toString();
         String body = "{\"title\":\"Keyed create\"}";
@@ -990,6 +1114,11 @@ class TaskControllerIntegrationTest {
     private long taskIdCountForTitle(String title) {
         return jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM task WHERE title = ?", Long.class, title);
+    }
+
+    private long checklistItemCount(Long taskId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM checklist_item WHERE task_id = ?", Long.class, taskId);
     }
 
     private String assertFieldValidation(MvcResult result, String field) throws Exception {

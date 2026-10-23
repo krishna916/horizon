@@ -1,12 +1,14 @@
 package com.krishnamurti.horizon.task.web;
 
 import com.krishnamurti.horizon.task.application.FieldUpdate;
+import com.krishnamurti.horizon.task.application.InitialChecklistItem;
 import com.krishnamurti.horizon.task.application.TaskPatch;
 import com.krishnamurti.horizon.task.domain.TaskPriority;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Component;
@@ -62,6 +64,12 @@ public class TaskRequestMapper {
         } catch (DateTimeParseException exception) {
             throw new TaskRequestValidationException("dueDate", "Must be a valid ISO date.");
         }
+    }
+
+    public List<InitialChecklistItem> parseChecklist(List<InitialChecklistItemRequest> checklist) {
+        return checklist.stream()
+                .map(item -> new InitialChecklistItem(item.title(), parseDueDate(item.dueDate())))
+                .toList();
     }
 
     private FieldUpdate<String> stringUpdate(Map<String, JsonNode> fields, String field) {

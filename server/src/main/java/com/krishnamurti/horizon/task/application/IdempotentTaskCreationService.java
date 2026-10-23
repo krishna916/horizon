@@ -7,6 +7,7 @@ import com.krishnamurti.horizon.task.infrastructure.TaskCreationReceipt;
 import com.krishnamurti.horizon.task.infrastructure.TaskCreationRequestRepository;
 import com.krishnamurti.horizon.task.infrastructure.TaskRepository;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
@@ -40,6 +41,17 @@ public class IdempotentTaskCreationService {
             Map<String, Object> description,
             TaskPriority priority,
             LocalDate dueDate) {
+        return create(requestKey, title, description, priority, dueDate, List.of());
+    }
+
+    @Transactional
+    public Task create(
+            UUID requestKey,
+            String title,
+            Map<String, Object> description,
+            TaskPriority priority,
+            LocalDate dueDate,
+            List<InitialChecklistItem> checklist) {
         Long userId =
                 currentUserProvider
                         .getCurrentUserId()
@@ -47,10 +59,11 @@ public class IdempotentTaskCreationService {
                                 () ->
                                         new InsufficientAuthenticationException(
                                                 "User is not authenticated"));
-        String fingerprint = TaskCreationFingerprint.compute(title, description, priority, dueDate);
+        String fingerprint =
+                TaskCreationFingerprint.compute(title, description, priority, dueDate, checklist);
 
         if (creationRequestRepository.claim(userId, requestKey, fingerprint)) {
-            Task task = taskCommandService.create(title, description, priority, dueDate);
+            Task task = taskCommandService.create(title, description, priority, dueDate, checklist);
             creationRequestRepository.complete(userId, requestKey, task.getId());
             return task;
         }
