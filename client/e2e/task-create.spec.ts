@@ -17,6 +17,7 @@ interface TaskSummary {
 interface TaskDetail extends TaskSummary {
   description: Record<string, unknown> | null;
   deletedAt: string | null;
+  checklist: [];
 }
 
 interface CreatePayload {
@@ -43,7 +44,7 @@ function summary(id: number, title: string, changes: Partial<TaskSummary> = {}):
 }
 
 function detail(task: TaskSummary, description: TaskDetail['description'] = null): TaskDetail {
-  return { ...task, description, deletedAt: null };
+  return { ...task, description, deletedAt: null, checklist: [] };
 }
 
 async function installStatefulTaskApi(

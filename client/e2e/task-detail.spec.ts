@@ -30,6 +30,7 @@ const taskDetail = (id: number) => ({
     ],
   },
   deletedAt: null,
+  checklist: [],
 });
 
 test.beforeEach(async ({ page }) => {

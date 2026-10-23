@@ -56,8 +56,9 @@ const detailResponse = (id: number, completedAt: string | null = null): AxiosRes
       updatedAt: '2026-10-18T10:00:00Z',
       description: null,
       deletedAt: null,
+      checklist: [],
     },
-  }) as AxiosResponse<TaskDetail>;
+  }) as unknown as AxiosResponse<TaskDetail>;
 
 let registerProbeDraft: (() => void) | undefined;
 let replaceProbeDraft: (() => void) | undefined;
@@ -580,6 +581,7 @@ describe('TasksListPage', () => {
         updatedAt: '2026-10-20T10:00:00Z',
         description: null,
         deletedAt: null,
+        checklist: [],
       },
     } as never);
     vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);

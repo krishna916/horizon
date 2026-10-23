@@ -333,7 +333,7 @@ describe('TaskDetailSurface', () => {
     );
 
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-7' }));
-    expect(onCompletionIntent).toHaveBeenCalledWith(7, true);
+    await waitFor(() => expect(onCompletionIntent).toHaveBeenCalledWith(7, true));
     view.rerender(
       <TaskDetailSurface taskId={7} surface="page" onCompletionIntent={onCompletionIntent} />
     );

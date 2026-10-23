@@ -31,7 +31,11 @@ export function TaskCompletionGateControls({
 }) {
   return (
     <>
-      {gate.checking && <p role="status" className="mt-2 text-xs text-muted-foreground">Checking checklist…</p>}
+      {gate.checking && (
+        <p role="status" className="mt-2 text-xs text-muted-foreground">
+          Checking checklist…
+        </p>
+      )}
       {gate.error && (
         <div role="alert" className="mt-2 flex items-center gap-2 text-xs text-destructive">
           <span>{gate.error}</span>

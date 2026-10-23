@@ -13,6 +13,7 @@ type Task = {
   updatedAt: string;
   description: null;
   deletedAt: null;
+  checklist: [];
 };
 
 function task(id: number, completedAt: string | null = null): Task {
@@ -29,6 +30,7 @@ function task(id: number, completedAt: string | null = null): Task {
     updatedAt: '2026-10-20T10:00:00Z',
     description: null,
     deletedAt: null,
+    checklist: [],
   };
 }
 
@@ -64,7 +66,9 @@ async function installTaskApi(page: Page, initial: Task[] = [task(1), task(2)]) 
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          items: controls.tasks.map(({ description: _, deletedAt: __, ...summary }) => summary),
+          items: controls.tasks.map(
+            ({ description: _, deletedAt: __, checklist: ___, ...summary }) => summary
+          ),
         }),
       });
       return;
