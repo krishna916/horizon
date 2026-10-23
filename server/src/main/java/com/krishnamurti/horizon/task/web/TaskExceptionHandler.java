@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /** Task-controller Problem Details for owner-safe not-found and domain validation failures. */
-@RestControllerAdvice(assignableTypes = TaskController.class)
+@RestControllerAdvice(assignableTypes = {TaskController.class, TaskChecklistController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class TaskExceptionHandler {
 
