@@ -1,8 +1,8 @@
 # Issue #22 — Lightweight Task Checklist Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For Luna (agentic implementer): REQUIRED SUB-SKILL: Use `superpowers:executing-plans` in NATIVE/INLINE mode. Do NOT dispatch task subagents or use `superpowers:subagent-driven-development`. Follow task-by-task RED → GREEN, verification, commits, and final whole-branch review. Track checkboxes (`- [ ]`) as you progress.**
 >
-> **Owner review gate:** This document is an implementation plan, not approval to start coding. Do not begin implementation until the owner approves this written plan and selects/preserves Luna's execution mode.
+> **Approval:** The owner approved this written plan on **2026-10-23** and selected **native/inline Luna execution**, consistent with issue #21. Luna may begin execution after reading issue #22's handoff comment and verifying the feature branch.
 
 **Goal:** Let each task own an ordered, editable checklist with immediate completion and due-date changes, saved reordering, soft-delete with 8-second Undo, initial checklist creation, and a frontend-only unfinished-item warning when completing a parent task.
 
@@ -307,10 +307,10 @@ Use these exact package roots: Java `com.krishnamurti.horizon.task`; TypeScript 
 
 ## Execution handoff
 
-1. **Before coding:** Owner approves this written plan. Confirm the selected Luna implementation mode. For continuity with issue #21, **recommend native/inline `superpowers:executing-plans`**, using the existing task ledger/TDD and final whole-branch review. If owner instead chooses per-task subagents, run `superpowers:subagent-driven-development`.
+1. **Before coding:** The owner approved this plan on 2026-10-23. **Execution mode: native/inline `superpowers:executing-plans`**; do not dispatch per-task subagents. Read the committed spec/plan in the feature branch, maintain the task ledger, run RED→GREEN checks, and perform a final whole-branch review.
 2. **Branch:** Create or use `feat/issue-22-task-checklist` from the commit containing both this plan and the approved design spec. Implement in an isolated worktree; never on `master`.
 3. **Task cadence:** For each task: failing test → observe RED → smallest GREEN change → targeted tests → commit. Use distinct task commits and track checkboxes. Do not skip ownership and failure cases for speed.
-4. **GitHub handoff:** Only **after plan approval**, add a concise comment to issue #22 with the branch, links to spec/plan, command to run the agreed Superpowers execution skill, and explicit instruction to follow task order. Keep the approved spec and plan in the feature branch so Luna can begin by reading the comment.
+4. **GitHub handoff:** Issue #22's implementation handoff comment is Luna's starting point; follow its branch and links to this approved spec/plan and execute tasks in order. Keep both documents in the feature branch.
 5. **Stop conditions:** Product ambiguity that contradicts the written spec, failed owner security checks, API contract drift, or a change requiring an ADR must be escalated; do not invent policy silently. Routine implementation library choices can be made within the approved constraints.
 
-**This plan is ready for owner review. No implementation changes have been made.**
+**Owner-approved on 2026-10-23. Planning is complete; no product implementation changes have been made by this handoff.**
