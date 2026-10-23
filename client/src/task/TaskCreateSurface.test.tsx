@@ -27,4 +27,22 @@ describe('TaskCreateSurface', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
   });
+
+  it('treats checklist-only input as a dirty create-form draft', () => {
+    const onDirtyChange = vi.fn();
+    render(
+      <TaskCreateSurface
+        userId={1}
+        onCreated={vi.fn()}
+        onDirtyChange={onDirtyChange}
+        onSubmittingChange={vi.fn()}
+        onCancel={vi.fn()}
+        onDismiss={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add checklist draft item' }));
+    expect(onDirtyChange).toHaveBeenCalledWith(true);
+    expect(createTask).not.toHaveBeenCalled();
+  });
 });
