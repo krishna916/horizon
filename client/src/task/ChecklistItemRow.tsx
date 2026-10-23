@@ -1,4 +1,4 @@
-import { Check, Pencil } from 'lucide-react';
+import { Check, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { ChecklistDueDatePicker } from './ChecklistDueDatePicker';
 import type { ChecklistItem } from './types';
@@ -15,6 +15,7 @@ interface ChecklistItemRowProps {
   readonly onDueDateChange: (value: string | null) => void;
   readonly onComplete: () => void;
   readonly onReopen: () => void;
+  readonly onRemove: () => void;
 }
 
 export function ChecklistItemRow({
@@ -29,6 +30,7 @@ export function ChecklistItemRow({
   onDueDateChange,
   onComplete,
   onReopen,
+  onRemove,
 }: ChecklistItemRowProps) {
   const completed = item.completedAt !== null;
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -108,13 +110,24 @@ export function ChecklistItemRow({
           </button>
         </div>
       ) : (
-        <ChecklistDueDatePicker
-          itemId={item.id}
-          itemTitle={item.title}
-          value={item.dueDate}
-          disabled={disabled}
-          onChange={onDueDateChange}
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          <ChecklistDueDatePicker
+            itemId={item.id}
+            itemTitle={item.title}
+            value={item.dueDate}
+            disabled={disabled}
+            onChange={onDueDateChange}
+          />
+          <button
+            type="button"
+            aria-label={`Remove checklist item ${item.title}`}
+            disabled={disabled}
+            onClick={onRemove}
+            className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 aria-hidden="true" className="size-4" />
+          </button>
+        </div>
       )}
     </li>
   );

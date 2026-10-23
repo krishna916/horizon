@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChecklistItem } from './types';
 import { ChecklistSection } from './ChecklistSection';
 
@@ -8,6 +8,8 @@ const actions = vi.hoisted(() => ({
   patchItem: vi.fn(),
   completeItem: vi.fn(),
   reopenItem: vi.fn(),
+  removeItem: vi.fn(),
+  restoreItem: vi.fn(),
 }));
 
 vi.mock('./useTaskChecklist', () => ({
@@ -53,7 +55,11 @@ beforeEach(() => {
   }));
   actions.completeItem.mockResolvedValue({ ...item, completedAt: '2026-10-23T00:00:00Z' });
   actions.reopenItem.mockResolvedValue(item);
+  actions.removeItem.mockResolvedValue(undefined);
+  actions.restoreItem.mockResolvedValue(item);
 });
+
+afterEach(() => vi.useRealTimers());
 
 describe('ChecklistSection', () => {
   it('adds a trimmed title on Enter without a separate Save action', async () => {
@@ -140,5 +146,93 @@ describe('ChecklistSection', () => {
     ).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Edit checklist item Call florist' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Set due date for Call florist' })).toBeEnabled();
+  });
+
+  it('hides a deleted item immediately and shows Undo', async () => {
+    renderChecklist();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Call florist' }));
+
+    expect(screen.queryByText('Call florist')).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Undo removing Call florist' })
+    ).toBeInTheDocument();
+    await waitFor(() => expect(actions.removeItem).toHaveBeenCalledWith(4));
+  });
+
+  it('restores the same item identity and position when Undo is selected before eight seconds', async () => {
+    renderChecklist();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Call florist' }));
+    await waitFor(() => expect(actions.removeItem).toHaveBeenCalledWith(4));
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo removing Call florist' }));
+
+    await waitFor(() => expect(actions.restoreItem).toHaveBeenCalledWith(4));
+    expect(screen.getByText('Call florist')).toBeInTheDocument();
+    expect(actions.addItem).not.toHaveBeenCalled();
+  });
+
+  it('expires Undo after exactly eight seconds', async () => {
+    vi.useFakeTimers();
+    renderChecklist();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Call florist' }));
+    await act(async () => Promise.resolve());
+    expect(screen.getByRole('button', { name: 'Undo removing Call florist' })).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTimeAsync(7_999));
+    expect(screen.getByRole('button', { name: 'Undo removing Call florist' })).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(
+      screen.queryByRole('button', { name: 'Undo removing Call florist' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('cleans the Undo timer and recovery state when the detail unmounts', async () => {
+    vi.useFakeTimers();
+    const view = renderChecklist();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Call florist' }));
+    await act(async () => Promise.resolve());
+    expect(vi.getTimerCount()).toBe(1);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => vi.advanceTimersByTimeAsync(8_000));
+    expect(actions.restoreItem).not.toHaveBeenCalled();
+  });
+
+  it('keeps removal retryable and keeps failed Undo recoverable', async () => {
+    actions.removeItem
+      .mockRejectedValueOnce(new Error('delete failed'))
+      .mockResolvedValueOnce(undefined);
+    actions.restoreItem
+      .mockRejectedValueOnce(new Error('restore failed'))
+      .mockResolvedValueOnce(item);
+    renderChecklist();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Call florist' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save checklist changes.');
+    expect(screen.getByText('Call florist')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry checklist change' }));
+    await waitFor(() => expect(actions.removeItem).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo removing Call florist' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not undo checklist removal.');
+    expect(screen.getByRole('button', { name: 'Undo removing Call florist' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry undo checklist removal' }));
+    await waitFor(() => expect(actions.restoreItem).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Call florist')).toBeInTheDocument();
+  });
+
+  it('binds Undo to the most recent item when a second item is deleted', async () => {
+    const second: ChecklistItem = { ...item, id: 5, title: 'Book a table', position: 1 };
+    renderChecklist([item, second]);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Call florist' }));
+    await waitFor(() => expect(actions.removeItem).toHaveBeenCalledWith(4));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Book a table' }));
+    await waitFor(() => expect(actions.removeItem).toHaveBeenCalledWith(5));
+
+    expect(
+      await screen.findByRole('button', { name: 'Undo removing Book a table' })
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo removing Book a table' }));
+    await waitFor(() => expect(actions.restoreItem).toHaveBeenCalledWith(5));
+    expect(actions.restoreItem).not.toHaveBeenCalledWith(4);
   });
 });

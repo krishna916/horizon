@@ -1,6 +1,7 @@
 import { Plus } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChecklistItemRow } from './ChecklistItemRow';
+import { ChecklistUndo } from './ChecklistUndo';
 import type { ChecklistItem } from './types';
 import { useTaskChecklist } from './useTaskChecklist';
 
@@ -28,6 +29,8 @@ export function ChecklistSection({
   const [quickAddTitle, setQuickAddTitle] = useState('');
   const [titleEdit, setTitleEdit] = useState<TitleEdit | null>(null);
   const [actionError, setActionError] = useState(false);
+  const [hiddenItemIds, setHiddenItemIds] = useState<Set<number>>(() => new Set());
+  const [removedItem, setRemovedItem] = useState<ChecklistItem | null>(null);
   const retryRef = useRef<(() => Promise<unknown>) | null>(null);
   const disabled = editBlocked || checklist.isPending;
   const isTitleEditing = titleEdit !== null;
@@ -66,7 +69,38 @@ export function ChecklistSection({
     });
   }
 
-  const orderedItems = [...items].sort((left, right) => left.position - right.position);
+  function removeItem(item: ChecklistItem) {
+    void run(async () => {
+      setHiddenItemIds((current) => new Set(current).add(item.id));
+      setRemovedItem(null);
+      try {
+        await checklist.removeItem(item.id);
+        setRemovedItem(item);
+      } catch (error) {
+        setHiddenItemIds((current) => {
+          const next = new Set(current);
+          next.delete(item.id);
+          return next;
+        });
+        throw error;
+      }
+    });
+  }
+
+  async function undoRemovedItem() {
+    if (!removedItem) return;
+    await checklist.restoreItem(removedItem.id);
+    setHiddenItemIds((current) => {
+      const next = new Set(current);
+      next.delete(removedItem.id);
+      return next;
+    });
+  }
+
+  const dismissUndo = useCallback(() => setRemovedItem(null), []);
+  const orderedItems = [...items]
+    .filter((item) => !hiddenItemIds.has(item.id))
+    .sort((left, right) => left.position - right.position);
 
   return (
     <section aria-labelledby="task-checklist-heading" className="space-y-3">
@@ -93,6 +127,7 @@ export function ChecklistSection({
                 }
                 onComplete={() => void run(() => checklist.completeItem(item.id))}
                 onReopen={() => void run(() => checklist.reopenItem(item.id))}
+                onRemove={() => removeItem(item)}
               />
             );
           })}
@@ -117,7 +152,7 @@ export function ChecklistSection({
           className="min-h-10 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         />
       </div>
-      {(actionError || checklist.isError) && (
+      {actionError && (
         <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-foreground">
           <p>Could not save checklist changes.</p>
           <button
@@ -137,6 +172,12 @@ export function ChecklistSection({
           Saving checklist…
         </p>
       )}
+      <ChecklistUndo
+        key={removedItem?.id ?? 'none'}
+        removedItem={removedItem}
+        onUndo={undoRemovedItem}
+        onDismiss={dismissUndo}
+      />
     </section>
   );
 }
