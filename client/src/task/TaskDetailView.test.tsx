@@ -76,6 +76,15 @@ describe('TaskDetailView', () => {
   });
 
   it('blocks parent field editors during a reorder draft but keeps completion available', async () => {
+    vi.spyOn(taskApi, 'get').mockResolvedValue({
+      data: {
+        ...task,
+        checklist: [
+          { id: 3, title: 'Call florist', dueDate: null, completedAt: null, position: 0 },
+          { id: 4, title: 'Book a table', dueDate: null, completedAt: null, position: 1 },
+        ],
+      },
+    } as never);
     const completeSpy = vi.spyOn(taskApi, 'complete').mockResolvedValue({
       data: { ...task, completedAt: '2026-10-23T00:00:00Z' },
     } as never);
@@ -101,6 +110,7 @@ describe('TaskDetailView', () => {
     expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-7' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete Anyway' }));
     await waitFor(() => expect(completeSpy).toHaveBeenCalledWith(7));
   });
 
@@ -196,6 +206,7 @@ describe('TaskDetailView', () => {
   });
 
   it('shows completion beside the title and keeps its dirty draft independent', async () => {
+    vi.spyOn(taskApi, 'get').mockResolvedValue({ data: task } as never);
     vi.spyOn(taskApi, 'complete').mockResolvedValue({
       data: { ...task, completedAt: '2026-10-22T10:00:00Z' },
     } as never);
@@ -213,6 +224,7 @@ describe('TaskDetailView', () => {
       checkbox
     );
     await act(async () => fireEvent.click(checkbox));
+    await waitFor(() => expect(onCompletionIntent).toHaveBeenCalledWith(7, true));
 
     expect(screen.getByLabelText('Title')).toHaveValue('Unsaved title draft');
     expect(onCompletionIntent).toHaveBeenCalledWith(7, true);

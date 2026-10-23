@@ -3,6 +3,7 @@ import { formatTaskDueDate } from './task-view';
 import { useTaskCompletion } from './TaskCompletionProvider';
 import { TaskCompletionToggle } from './TaskCompletionToggle';
 import { TaskCompletionFeedback } from './TaskCompletionFeedback';
+import { TaskCompletionGateControls, useTaskCompletionGate } from './TaskCompletionGate';
 import type { TaskPriority, TaskSummary } from './types';
 
 interface TaskRowProps {
@@ -23,18 +24,17 @@ const priorityLabels: Record<TaskPriority, string> = {
 
 export function TaskRow({ task, now, userId, onCompletionIntent, onOpen, selected }: TaskRowProps) {
   const completion = useTaskCompletion(userId, task);
-
-  function toggleCompletion() {
+  const gate = useTaskCompletionGate(userId, task, completion.completed, () => {
     const completed = completion.toggle();
     onCompletionIntent?.(task.id, completed);
-  }
+  });
 
   return (
     <li className="flex items-start gap-3 border-b border-border px-4 py-4 last:border-b-0 sm:px-6">
       <TaskCompletionToggle
         taskKey={task.key}
         completed={completion.completed}
-        onToggle={toggleCompletion}
+        onToggle={gate.requestToggle}
       />
       <div className="min-w-0 flex-1">
         <button
@@ -82,6 +82,7 @@ export function TaskRow({ task, now, userId, onCompletionIntent, onOpen, selecte
           error={completion.error}
           onRetry={completion.retry}
         />
+        <TaskCompletionGateControls taskKey={task.key} gate={gate} />
       </div>
     </li>
   );

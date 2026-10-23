@@ -8,6 +8,7 @@ import { useTaskCompletion } from './TaskCompletionProvider';
 import { TaskCompletionToggle } from './TaskCompletionToggle';
 import { TaskCompletionFeedback } from './TaskCompletionFeedback';
 import { ChecklistSection } from './ChecklistSection';
+import { TaskCompletionGateControls, useTaskCompletionGate } from './TaskCompletionGate';
 
 interface TaskDetailViewProps {
   readonly task: TaskDetail;
@@ -21,10 +22,10 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
   const draftGuard = useTaskDraftGuard();
   const completion = useTaskCompletion(userId, task);
   const [checklistEditing, setChecklistEditing] = useState(false);
-  const toggleCompletion = () => {
+  const gate = useTaskCompletionGate(userId, task, completion.completed, () => {
     const completed = completion.toggle();
     onCompletionIntent?.(task.id, completed);
-  };
+  });
   const registerDraft = draftGuard?.register;
   const clearDraft = draftGuard?.clear;
   const saveRef = useRef(edit.save);
@@ -76,7 +77,7 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
           <TaskCompletionToggle
             taskKey={task.key}
             completed={completion.completed}
-            onToggle={toggleCompletion}
+            onToggle={gate.requestToggle}
           />
           <div className="min-w-0 flex-1">
             <TaskFieldEditor field="title" value={task.title} {...editorProps} />
@@ -93,7 +94,7 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
           <TaskCompletionToggle
             taskKey={task.key}
             completed={completion.completed}
-            onToggle={toggleCompletion}
+            onToggle={gate.requestToggle}
           />
           <div className="min-w-0 flex-1">
             <TaskFieldEditor field="title" value={task.title} {...editorProps} />
@@ -118,6 +119,7 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
         editBlocked={Boolean(edit.activeField) || edit.pending}
         onEditSessionChange={setChecklistEditing}
       />
+      <TaskCompletionGateControls taskKey={task.key} gate={gate} />
       <dl className="flex flex-wrap gap-x-6 gap-y-3 border-t border-border pt-5 text-sm">
         <div className="space-y-1">
           <dt className="text-xs text-muted-foreground">Priority</dt>
