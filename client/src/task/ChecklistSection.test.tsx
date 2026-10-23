@@ -29,6 +29,16 @@ const item: ChecklistItem = {
   position: 0,
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function renderChecklist(items: ChecklistItem[] = [item]) {
   const onEditSessionChange = vi.fn();
   const props = {
@@ -236,6 +246,65 @@ describe('ChecklistSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Undo removing Book a table' }));
     await waitFor(() => expect(actions.restoreItem).toHaveBeenCalledWith(5));
     expect(actions.restoreItem).not.toHaveBeenCalledWith(4);
+  });
+
+  it('keeps failed Undo retry available after the original eight-second window', async () => {
+    vi.useFakeTimers();
+    const pendingRestore = deferred<ChecklistItem>();
+    const retryRestore = deferred<ChecklistItem>();
+    actions.restoreItem
+      .mockReturnValueOnce(pendingRestore.promise)
+      .mockReturnValueOnce(retryRestore.promise);
+    const { unmount } = renderChecklist();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Call florist' }));
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('button', { name: 'Undo removing Call florist' })).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTimeAsync(7_900));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo removing Call florist' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo removing Call florist' }));
+    expect(actions.restoreItem).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    await act(async () => pendingRestore.reject(new Error('restore failed')));
+
+    const retryButton = screen.getByRole('button', { name: 'Retry undo checklist removal' });
+    await act(async () => {
+      fireEvent.click(retryButton);
+      fireEvent.click(retryButton);
+    });
+    expect(actions.restoreItem).toHaveBeenCalledTimes(2);
+    expect(actions.restoreItem).toHaveBeenNthCalledWith(1, item.id);
+    expect(actions.restoreItem).toHaveBeenNthCalledWith(2, item.id);
+
+    await act(async () => retryRestore.resolve(item));
+    expect(screen.queryByText('Removed Call florist')).not.toBeInTheDocument();
+    unmount();
+  });
+
+  it('expires an unattempted Undo after eight seconds and clears its timer on unmount', async () => {
+    vi.useFakeTimers();
+    const { unmount } = renderChecklist();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Call florist' }));
+      await Promise.resolve();
+    });
+    expect(vi.getTimerCount()).toBe(1);
+
+    await act(async () => vi.advanceTimersByTimeAsync(8_000));
+    expect(screen.queryByText('Removed Call florist')).not.toBeInTheDocument();
+    unmount();
+
+    const secondRender = renderChecklist();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove checklist item Call florist' }));
+      await Promise.resolve();
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    secondRender.unmount();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('locks all checklist item mutations while a reorder draft is dirty', async () => {

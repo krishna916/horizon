@@ -7,8 +7,13 @@ interface ChecklistUndoProps {
   readonly onDismiss: () => void;
 }
 
+type UndoPhase = 'idle' | 'restoring' | 'failed' | 'resolved';
+
 export function ChecklistUndo({ removedItem, onUndo, onDismiss }: ChecklistUndoProps) {
-  const [undoErrorItemId, setUndoErrorItemId] = useState<number | null>(null);
+  const [phase, setPhase] = useState<UndoPhase>('idle');
+  const phaseRef = useRef<UndoPhase>('idle');
+  const attemptRef = useRef(0);
+  const timeoutRef = useRef<number | null>(null);
   const onDismissRef = useRef(onDismiss);
   const onUndoRef = useRef(onUndo);
   const removedItemId = removedItem?.id;
@@ -20,17 +25,36 @@ export function ChecklistUndo({ removedItem, onUndo, onDismiss }: ChecklistUndoP
 
   useEffect(() => {
     if (removedItemId === undefined) return;
-    const timeout = window.setTimeout(() => onDismissRef.current(), 8_000);
-    return () => window.clearTimeout(timeout);
+    phaseRef.current = 'idle';
+    setPhase('idle');
+    timeoutRef.current = window.setTimeout(() => {
+      timeoutRef.current = null;
+      if (phaseRef.current === 'idle') onDismissRef.current();
+    }, 8_000);
+    return () => {
+      if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+      attemptRef.current += 1;
+    };
   }, [removedItemId]);
 
   async function undo() {
-    if (removedItem) setUndoErrorItemId(null);
+    if (!removedItem || phaseRef.current === 'restoring' || phaseRef.current === 'resolved') return;
+    phaseRef.current = 'restoring';
+    setPhase('restoring');
+    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
+    const attempt = ++attemptRef.current;
     try {
       await onUndoRef.current();
+      if (attempt !== attemptRef.current) return;
+      phaseRef.current = 'resolved';
+      setPhase('resolved');
       onDismissRef.current();
     } catch {
-      if (removedItem) setUndoErrorItemId(removedItem.id);
+      if (attempt !== attemptRef.current) return;
+      phaseRef.current = 'failed';
+      setPhase('failed');
     }
   }
 
@@ -42,12 +66,13 @@ export function ChecklistUndo({ removedItem, onUndo, onDismiss }: ChecklistUndoP
       <button
         type="button"
         aria-label={`Undo removing ${removedItem.title}`}
+        disabled={phase === 'restoring' || phase === 'resolved'}
         onClick={() => void undo()}
         className="rounded-md px-2 py-1 font-medium underline underline-offset-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         Undo
       </button>
-      {undoErrorItemId === removedItem.id && (
+      {phase === 'failed' && (
         <div role="alert" className="flex items-center gap-2">
           <p>Could not undo checklist removal.</p>
           <button
