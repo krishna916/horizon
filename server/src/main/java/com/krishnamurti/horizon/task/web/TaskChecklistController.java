@@ -1,6 +1,7 @@
 package com.krishnamurti.horizon.task.web;
 
 import com.krishnamurti.horizon.task.application.TaskChecklistCommandService;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,6 +22,10 @@ public class TaskChecklistController {
     private final TaskChecklistCommandService commandService;
     private final TaskChecklistRequestMapper requestMapper;
 
+    // SpotBugs reports a false positive for retaining this Spring-managed constructor dependency.
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "The injected service is a private final Spring-managed dependency.")
     public TaskChecklistController(
             TaskChecklistCommandService commandService, TaskChecklistRequestMapper requestMapper) {
         this.commandService = commandService;
