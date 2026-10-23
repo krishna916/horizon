@@ -75,6 +75,35 @@ describe('TaskDetailView', () => {
     expect(screen.getByRole('textbox', { name: 'Add checklist item' })).toBeInTheDocument();
   });
 
+  it('blocks parent field editors during a reorder draft but keeps completion available', async () => {
+    const completeSpy = vi.spyOn(taskApi, 'complete').mockResolvedValue({
+      data: { ...task, completedAt: '2026-10-23T00:00:00Z' },
+    } as never);
+    render(
+      <TaskDetailView
+        task={{
+          ...task,
+          checklist: [
+            { id: 3, title: 'Call florist', dueDate: null, completedAt: null, position: 0 },
+            { id: 4, title: 'Book a table', dueDate: null, completedAt: null, position: 1 },
+          ],
+        }}
+        userId={1}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder checklist' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move Book a table up' }));
+    fireEvent.doubleClick(
+      screen.getByRole('button', { name: 'Task title: Review the release notes' })
+    );
+    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-7' }));
+    await waitFor(() => expect(completeSpy).toHaveBeenCalledWith(7));
+  });
+
   it('uses subdued strike-through styling for a completed title', () => {
     render(<TaskDetailView task={{ ...task, completedAt: '2026-10-22T10:00:00Z' }} userId={1} />, {
       wrapper: createWrapper(),

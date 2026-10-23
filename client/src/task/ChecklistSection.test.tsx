@@ -10,6 +10,7 @@ const actions = vi.hoisted(() => ({
   reopenItem: vi.fn(),
   removeItem: vi.fn(),
   restoreItem: vi.fn(),
+  reorderItems: vi.fn(),
 }));
 
 vi.mock('./useTaskChecklist', () => ({
@@ -57,6 +58,7 @@ beforeEach(() => {
   actions.reopenItem.mockResolvedValue(item);
   actions.removeItem.mockResolvedValue(undefined);
   actions.restoreItem.mockResolvedValue(item);
+  actions.reorderItems.mockResolvedValue([item]);
 });
 
 afterEach(() => vi.useRealTimers());
@@ -234,5 +236,25 @@ describe('ChecklistSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Undo removing Book a table' }));
     await waitFor(() => expect(actions.restoreItem).toHaveBeenCalledWith(5));
     expect(actions.restoreItem).not.toHaveBeenCalledWith(4);
+  });
+
+  it('locks all checklist item mutations while a reorder draft is dirty', async () => {
+    const second: ChecklistItem = { ...item, id: 5, title: 'Book a table', position: 1 };
+    renderChecklist([item, second]);
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder checklist' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move Book a table up' }));
+
+    expect(screen.getByRole('button', { name: 'Save checklist order' })).toBeEnabled();
+    expect(
+      screen.queryByRole('button', { name: 'Remove checklist item Call florist' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('checkbox', { name: 'Complete checklist item Call florist' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Add checklist item' })).not.toBeInTheDocument();
+    expect(actions.patchItem).not.toHaveBeenCalled();
+    expect(actions.completeItem).not.toHaveBeenCalled();
+    expect(actions.removeItem).not.toHaveBeenCalled();
+    expect(actions.addItem).not.toHaveBeenCalled();
   });
 });

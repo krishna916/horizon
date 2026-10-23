@@ -44,7 +44,7 @@ export function ChecklistItemRow({
       <input
         type="checkbox"
         checked={completed}
-        disabled={disabled}
+        disabled={disabled || editingTitle}
         aria-label={`${completed ? 'Reopen' : 'Complete'} checklist item ${item.title}`}
         onChange={() => (completed ? onReopen() : onComplete())}
         className="size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
