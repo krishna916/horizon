@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import com.krishnamurti.horizon.TestcontainersConfiguration;
+import com.krishnamurti.horizon.task.domain.ChecklistItem;
+import com.krishnamurti.horizon.task.domain.InvalidTaskException;
 import com.krishnamurti.horizon.task.domain.Task;
 import com.krishnamurti.horizon.task.domain.TaskPriority;
 import com.krishnamurti.horizon.user.application.UserCommandService;
@@ -37,6 +39,7 @@ class TaskPersistenceIntegrationTest {
     @Autowired private UserCommandService userCommandService;
     @Autowired private TaskKeyAllocator taskKeyAllocator;
     @Autowired private TaskRepository taskRepository;
+    @Autowired private ChecklistItemRepository checklistItemRepository;
     @Autowired private EntityManager entityManager;
     @Autowired private PlatformTransactionManager transactionManager;
 
@@ -44,6 +47,43 @@ class TaskPersistenceIntegrationTest {
     void migrationCreatesTaskAndCounterTables() {
         assertThat(tableExists("task")).isTrue();
         assertThat(tableExists("task_key_counter")).isTrue();
+    }
+
+    @Test
+    void migrationCreatesChecklistItemWithForeignKeyAndIndex() {
+        assertThat(tableExists("checklist_item")).isTrue();
+        assertThat(columnExists("checklist_item", "task_id")).isTrue();
+        assertThat(columnExists("checklist_item", "due_date")).isTrue();
+        assertThat(columnExists("checklist_item", "completed_at")).isTrue();
+        assertThat(columnExists("checklist_item", "position")).isTrue();
+        assertThat(columnExists("checklist_item", "deleted_at")).isTrue();
+        assertThat(columnExists("checklist_item", "created_at")).isTrue();
+        assertThat(columnExists("checklist_item", "updated_at")).isTrue();
+        assertThat(constraintExists("checklist_item", "fk_checklist_item_task")).isTrue();
+        assertThat(indexExists("idx_checklist_item_task_active_position")).isTrue();
+    }
+
+    @Test
+    void checklistItemPersistsAndReloadsInOrderWithOptionalDate() {
+        Long userId = createUserId();
+        Task task = taskRepository.saveAndFlush(createTask(userId, "TASK-1", "Parent"));
+        LocalDate dueDate = LocalDate.of(2026, 11, 2);
+        ChecklistItem first = ChecklistItem.create(task.getId(), "  First  ", dueDate, 0);
+        ChecklistItem second = ChecklistItem.create(task.getId(), "Second", null, 1);
+        checklistItemRepository.saveAllAndFlush(List.of(first, second));
+        entityManager.clear();
+
+        List<ChecklistItem> reloaded =
+                checklistItemRepository.findAllByTaskIdAndDeletedAtIsNullOrderByPositionAscIdAsc(
+                        task.getId());
+
+        assertThat(reloaded).extracting(ChecklistItem::getTitle).containsExactly("First", "Second");
+        assertThat(reloaded).extracting(ChecklistItem::getPosition).containsExactly(0, 1);
+        assertThat(reloaded).extracting(ChecklistItem::getDueDate).containsExactly(dueDate, null);
+        assertThatExceptionOfType(InvalidTaskException.class)
+                .isThrownBy(() -> ChecklistItem.create(task.getId(), "  ", null, 0));
+        assertThatExceptionOfType(InvalidTaskException.class)
+                .isThrownBy(() -> ChecklistItem.create(task.getId(), "x".repeat(256), null, 0));
     }
 
     @Test
@@ -405,5 +445,33 @@ class TaskPersistenceIntegrationTest {
                                 + " ?)",
                         Boolean.class,
                         tableName));
+    }
+
+    private boolean columnExists(String tableName, String columnName) {
+        return Boolean.TRUE.equals(
+                jdbcTemplate.queryForObject(
+                        "SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = ?"
+                                + " AND column_name = ?)",
+                        Boolean.class,
+                        tableName,
+                        columnName));
+    }
+
+    private boolean constraintExists(String tableName, String constraintName) {
+        return Boolean.TRUE.equals(
+                jdbcTemplate.queryForObject(
+                        "SELECT EXISTS (SELECT FROM information_schema.table_constraints WHERE"
+                                + " table_name = ? AND constraint_name = ?)",
+                        Boolean.class,
+                        tableName,
+                        constraintName));
+    }
+
+    private boolean indexExists(String indexName) {
+        return Boolean.TRUE.equals(
+                jdbcTemplate.queryForObject(
+                        "SELECT EXISTS (SELECT FROM pg_indexes WHERE indexname = ?)",
+                        Boolean.class,
+                        indexName));
     }
 }
