@@ -476,6 +476,69 @@ describe('TasksListPage', () => {
     expect(router.state.location.pathname).toBe('/tasks');
   });
 
+  it('deletingSelectedTaskFromRowClosesItsDetailSelection', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'Task 1')]) as never);
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const deleteSpy = vi
+      .spyOn(taskApi, 'softDelete')
+      .mockResolvedValue({ data: undefined } as never);
+    const { router } = renderTasks('/tasks?task=1');
+
+    fireEvent.keyDown(await screen.findByRole('button', { name: 'More actions for TASK-1' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(screen.queryByRole('region', { name: 'Task details' })).not.toBeInTheDocument();
+  });
+
+  it('deletingDifferentRowKeepsCurrentDetailOpen', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'Task 1'), task(2, 'Task 2')]) as never
+    );
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const deleteSpy = vi
+      .spyOn(taskApi, 'softDelete')
+      .mockResolvedValue({ data: undefined } as never);
+    const { router } = renderTasks('/tasks?task=1');
+
+    fireEvent.keyDown(await screen.findByRole('button', { name: 'More actions for TASK-2' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(2));
+    expect(router.state.location.search).toEqual({ task: 1 });
+    expect(screen.getByRole('heading', { name: 'Task 1' })).toBeInTheDocument();
+  });
+
+  it('keeps the selected detail open when row deletion is cancelled or fails', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'Task 1')]) as never);
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const deleteSpy = vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
+    const { router } = renderTasks('/tasks?task=1');
+
+    fireEvent.keyDown(await screen.findByRole('button', { name: 'More actions for TASK-1' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(router.state.location.search).toEqual({ task: 1 });
+    expect(deleteSpy).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-1' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1));
+    expect(router.state.location.search).toEqual({ task: 1 });
+  });
+
   it('blocks task navigation during a create POST and restores the dirty guard after failure', async () => {
     vi.spyOn(taskApi, 'list').mockResolvedValue(
       response([task(1, 'First task'), task(2, 'Second task')]) as never

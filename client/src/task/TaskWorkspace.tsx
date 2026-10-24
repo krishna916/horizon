@@ -112,6 +112,12 @@ export function TaskWorkspace({
     },
     [reopenRevisionSnapshot, sections, userId]
   );
+  const handleRowDeleted = useCallback(
+    (taskId: number) => {
+      if (selection.kind === 'valid' && selection.id === taskId) onDeleted?.();
+    },
+    [onDeleted, selection]
+  );
   let workspaceContent;
 
   if (currentUser.isPending) {
@@ -164,6 +170,7 @@ export function TaskWorkspace({
           userId={userId ?? 0}
           onCompletionIntent={onCompletionIntent}
           onOpen={onSelectTask}
+          onDeleted={handleRowDeleted}
           selectedTaskId={selection.kind === 'valid' ? selection.id : null}
         />
         {sections.completed.length > 0 && (
@@ -174,6 +181,7 @@ export function TaskWorkspace({
             userId={userId ?? 0}
             onCompletionIntent={onCompletionIntent}
             onOpen={onSelectTask}
+            onDeleted={handleRowDeleted}
             selectedTaskId={selection.kind === 'valid' ? selection.id : null}
           />
         )}

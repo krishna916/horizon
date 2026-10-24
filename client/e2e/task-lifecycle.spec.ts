@@ -246,6 +246,39 @@ test('confirmed panel delete returns to the list and Undo restores the task', as
   await expect.poll(() => api.commands).toEqual(['delete:1', 'restore-deleted:1']);
 });
 
+test('deleting the selected task from its row menu returns to Tasks and Undo restores it', async ({
+  page,
+}) => {
+  const api = await installTaskApi(page, [task(1)]);
+  await page.goto('/tasks?task=1');
+  await expect(page.getByTestId('task-detail-pane')).toBeVisible();
+  await page.getByRole('button', { name: 'More actions for TASK-1' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
+
+  await expect(page).toHaveURL(/\/tasks$/);
+  await expect(page.getByTestId('task-detail-pane')).toHaveCount(0);
+  await expect(page.getByText('TASK-1 moved to Trash')).toBeVisible();
+  await page.getByRole('button', { name: 'Undo TASK-1 delete' }).click();
+  await expect(page.getByRole('button', { name: 'Open TASK-1: Lifecycle task 1' })).toBeVisible();
+  expect(api.commands).toEqual(['delete:1', 'restore-deleted:1']);
+});
+
+test('deleting a different row preserves the selected task details', async ({ page }) => {
+  const api = await installTaskApi(page, [task(1), task(2)]);
+  await page.goto('/tasks?task=1');
+  await expect(page.getByTestId('task-detail-pane')).toBeVisible();
+  await page.getByRole('button', { name: 'More actions for TASK-2' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
+
+  await expect(page).toHaveURL(/\/tasks\?task=1$/);
+  await expect(page.getByTestId('task-detail-pane')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Lifecycle task 1' })).toBeVisible();
+  await expect(page.getByText('TASK-2 moved to Trash')).toBeVisible();
+  expect(api.commands).toEqual(['delete:2']);
+});
+
 test('a committed delete with a lost response stays retryable after a later list refetch', async ({
   page,
 }) => {
