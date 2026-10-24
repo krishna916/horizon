@@ -108,7 +108,7 @@
 
 **Interfaces:** retain `looksLikeMarkdown(text: string): boolean` and `createMarkdownPasteExtension()` exports; keep HTML clipboard precedence and cursor/selection insertion.
 
-- [ ] **Step 1 — RED (detector):** In `markdownPaste.test.ts`, expect `looksLikeMarkdown("| Name |\\n| --- |\\n| Ada |")` and alignment separator `| :---: |` to be true. Expect plain paragraph prose with pipe, `---` appearing mid-sentence, or incomplete/stray separators to remain false.
+- [ ] **Step 1 — RED (detector):** In `markdownPaste.test.ts`, expect `looksLikeMarkdown("| Name |\n| --- |\n| Ada |")` and alignment separator `| :---: |` to be true. Expect plain paragraph prose with pipe, `---` appearing mid-sentence, or incomplete/stray separators to remain false.
 - [ ] **Step 2 — RED (real parsing):** Use the existing Tiptap editor/`dispatchPaste` harness, paste that one-column Markdown source and assert generated JSON contains a `table` with 1 cell per row and the preserved `Name`/`Ada` text, not merely `looksLikeMarkdown === true`. Confirm both editor serialization and server-compatible JSON if schema permits.
 - [ ] **Step 3 — Verify RED:** `cd client && npm test -- markdownPaste.test.ts`; expect failures in single-column cases.
 - [ ] **Step 4 — GREEN:** Replace the two-column-only regex in `markdownPaste.ts` with a conservative table detector that verifies adjacent header and separator row and one-or-more pipe columns; do not reinterpret arbitrary pipe text. **First verify** pinned `@tiptap/markdown` parses single-column GFM tables. If its parser does not, do not fake success by returning true and pasting incorrect nodes—report that implementation-library gap and propose the smallest safe solution before diverging from agreed V1 behavior.
