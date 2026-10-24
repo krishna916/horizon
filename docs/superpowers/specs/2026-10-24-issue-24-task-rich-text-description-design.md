@@ -1,7 +1,7 @@
 # Issue #24 — Task rich-text descriptions: design specification
 
 **Date:** 2026-10-24
-**Status:** Draft for owner review; NOT YET APPROVED for implementation.
+**Status:** Owner-approved V1 scope and design direction (2026-10-24); concrete engineering defaults recorded below.
 **Source:** [Issue #24](https://github.com/krishna916/horizon/issues/24), PRD-004 Tasks (FR-015 and related task behaviors), `docs/design/tasks-workspace/DESIGN-SPEC.md`, Horizon Constitution, shared concepts, existing master code.
 **Scope:** One vertical slice across Task creation, Task detail editing/read mode, API validation, persistence and tests. This document does not supersede the approved Tasks workspace design.
 
@@ -16,13 +16,13 @@ Create, edit and read formatted task descriptions in both the task side panel an
 - **Rejected: Markdown as canonical storage.** Does not naturally round-trip all required tables and rich editor behavior, and introduces conversion drift.
 - **Chosen: `null` for absence / semantically empty descriptions.** B (persist every empty Tiptap document) has minor uniformity benefits, but not substantial future import/export value; it pushes 'is empty?' parsing to each consumer. Keep the Tiptap empty-doc conversion at one adapter boundary.
 
-**Architectural boundary:** Task-specific editing integration stays in `client/src/task` and validation inside the server's Task module. Small rich-text document/editor helpers may be cleanly separated within that feature for later extraction if Notes needs the same contract; no cross-feature RichText platform, export adapters, document-version registry, or database migration in #24.
+**Architectural boundary:** Reusable frontend Tiptap schema, Markdown conversion, toolbar and read-only rendering live in a small `client/src/components/rich-text/` area so later Notes can share them. Task-specific persistence, edit state, navigation and creation remain in `client/src/task`; server document validation stays in Task module. No generic rich-text platform, export adapters, document-version registry or database migration in #24.
 
 ## Editor foundation and future compatibility (owner clarified 2026-10-24)
 
 Horizon should feel as close as practical to Notion/Obsidian for the **supported formatting features**, with a Markdown-first authoring experience. The Task implementation is the first consumer of a foundation needed later by Notes, not a one-off textarea replacement.
 
-**Small reusable frontend boundary (proposed for approval):** extract the document schema/Tiptap extension configuration, canonical JSON normalization, view-only rendering, editor presentation and Markdown parsing/paste behavior into cohesive frontend rich-text components/helpers (e.g. `client/src/components/rich-text/`), with task-specific Save/Cancel, navigation guard, creation snapshots and API update logic remaining inside `client/src/task`. Do not expose a generic plugin registry, export service, abstract document repository or backend platform in V1.
+**Small reusable frontend boundary (approved direction):** extract the document schema/Tiptap extension configuration, canonical JSON normalization, view-only rendering, editor presentation and Markdown parsing/paste behavior into cohesive frontend rich-text components/helpers (e.g. `client/src/components/rich-text/`), with task-specific Save/Cancel, navigation guard, creation snapshots and API update logic remaining inside `client/src/task`. Do not expose a generic plugin registry, export service, abstract document repository or backend platform in V1.
 
 **Future revisit list (deferred until Notes or a specifically approved editor enhancement):** slash commands, block drag/reorder, nested document links and `[[wikilinks]]`, backlinks, callouts, attachments/embeds, note-level Markdown import/export workflows, collaborative editing, and richer keyboard navigation. Capture these as *future candidates*, not silent V1 features. Any future Markdown import/export should consume the same approved JSON schema and adapter; do not add exporters in #24.
 
@@ -30,7 +30,7 @@ Horizon should feel as close as practical to Notion/Obsidian for the **supported
 
 ## Required formatting contract
 
-Round-trip Tiptap JSON for headings, bold, italic, HTTP(S)/mailto links, bullet lists, ordered lists, code blocks, block quotes, and tables. Use only registered and explicitly supported Tiptap nodes, marks, and attributes. Allow ordinary paragraphs/text and hard breaks needed to edit them. Implement link editing and table insertion/basic row/column operations, not just display. A practical editor baseline is headings at levels 2 and 3 so task title retains the page's level-1 heading; this is an implementation proposal for owner review, since PRD names 'headings' without levels. Code mark may be enabled only if configured and validated consistently; PRD explicitly requires code *blocks*.
+Round-trip Tiptap JSON for headings, bold, italic, HTTP(S)/mailto links, bullet lists, ordered lists, code blocks, block quotes, and tables. Use only registered and explicitly supported Tiptap nodes, marks, and attributes. Allow ordinary paragraphs/text and hard breaks needed to edit them. Implement link editing and table insertion/basic row/column operations, not just display. **Engineering convention for Markdown fidelity:** support heading levels 1–3, including `# `, `## ` and `### ` input shortcuts, rather than silently reinterpreting Markdown heading levels. Task's title remains the primary page heading; style and accessibility must make editor headings subordinate in presentation. Disable unrelated StarterKit marks unless both frontend rendering and backend validation support them. Inline code mark may be included when deliberately configured and validated; code blocks are required.
 
 ### Markdown-style typing shortcuts (owner requested, added 2026-10-24)
 
@@ -38,7 +38,7 @@ The editor **must** support immediate Notion/Obsidian-like Markdown input rules 
 
 | Input at start of block (followed by Space where applicable) | Result |
 | --- | --- |
-| `## ` and `### ` | Heading 2 / Heading 3 |
+| `# `, `## ` and `### ` | Heading 1 / Heading 2 / Heading 3 |
 | `- ` or `* ` | Bullet list |
 | `1. ` | Numbered list |
 | `> ` | Blockquote |
@@ -46,7 +46,7 @@ The editor **must** support immediate Notion/Obsidian-like Markdown input rules 
 | `\`\`\` ` | Code block |
 | `**text**` | Bold mark via supported inline rule |
 
-**Horizontal divider is explicitly requested beyond PRD-004's nine formatting categories.** Include `horizontalRule` in the supported Tiptap document schema, strict backend allowlist, read-only renderer and tests. Check actual Tiptap v3 trigger behavior against its current docs and test it rather than guessing. Honor the agreed H2/H3 design default; do not silently introduce H1 inside task descriptions without owner sign-off.
+**Horizontal divider is explicitly requested beyond PRD-004's nine formatting categories.** Include `horizontalRule` in the supported Tiptap document schema, strict backend allowlist, read-only renderer and tests. Check actual Tiptap v3 trigger behavior against its current docs and test it rather than guessing. Support H1–H3 Markdown levels consistently across typing, pasted Markdown, JSON storage, safe read rendering and server validation.
 
 ### Automatic Markdown-to-rich-text paste (owner confirmed for V1)
 
@@ -77,7 +77,7 @@ Do not persist raw HTML or arbitrary pasted CSS/styles/embedded content. Paste c
 
 - The persisted absence value is **`null`** for never-entered, cleared or only-whitespace textual content; initialize the editor with a valid empty Tiptap document when loading null.
 - Normalize at the editor/API boundary, not ad hoc in every renderer. Empty-text nodes, empty paragraph(s) and whitespace-only text do not create a persisted description.
-- **Non-text structural content matters:** an intentionally inserted empty table is not disposable whitespace; preserve it even with blank cells. This is an implementation proposal for owner review to prevent silent structural data loss. Avoid treating a nonempty document as empty merely because its plain-text extraction is empty.
+- **Non-text structural content matters:** an intentionally inserted empty table is not disposable whitespace; preserve it even with blank cells. This is a conservative data-loss prevention rule. Avoid treating a nonempty document as empty merely because its plain-text extraction is empty.
 - Use a semantic empty predicate for placeholder state and cancel/save dirty comparison, without confusing Tiptap transient transactions with persisted content changes.
 - `PATCH` omitted description leaves it unchanged; explicit `description: null` clears it. `POST` may omit description or send null.
 
@@ -86,7 +86,7 @@ Do not persist raw HTML or arbitrary pasted CSS/styles/embedded content. Paste c
 - Introduce **one Task-owned document validator**, reused for creation and partial updates and protected by tests at the domain/application boundary. Existing controller request mapping must not diverge: current PATCH validates only the root `type=doc` and `content=[]` shape; create has no equivalent full web-layer check.
 - Accept `null` and schema-conforming `doc` structures. Reject unknown nodes/marks, attributes outside an allowlist, malformed child placement, malformed JSON types, or unsupported nesting. Validate table row/cell structures and supported table attrs in line with the configured Tiptap extensions.
 - Validate links: only absolute HTTP/HTTPS and `mailto:`, safe URL parsing, no `javascript:`, `data:`, `vbscript:`, scriptable embeds or event-handler attributes. Open outbound links with safe rel/target. Do not trust previously persisted JSON when rendering; never use unsanitized `innerHTML`.
-- Add bounded input checks before deep traversal to avoid resource exhaustion or recursive overflow. **Proposed engineering limits for owner review:** max 256 KiB serialized JSON UTF-8, max 10,000 nodes, max nesting depth 32. These are not yet approved product limits and may be adjusted before implementation.
+- Add bounded input checks before deep traversal to avoid resource exhaustion or recursive overflow. **V1 engineering guardrails (non-product configuration defaults):** max 256 KiB serialized JSON UTF-8, max 10,000 nodes, max nesting depth 32. Implement as named constants with boundary tests. Escalate any genuine usability regression instead of silently raising or reducing them.
 - Invalid create/PATCH description returns HTTP 400 with the existing field-scoped validation/error contract. Creation still honors user ownership and idempotency behavior; editing preserves 404 for inaccessible tasks.
 - Existing Tiptap-style paragraph documents already persisted by `toTaskDescriptionDocument` must remain loadable/renderable/editable. Do not introduce a schema migration or change the `task.description` column.
 - Schema validation applies to incoming writes; reading legacy content should not crash the task detail. Provide safe graceful degradation for unexpectedly invalid legacy JSON; do not silently rewrite it.
@@ -111,7 +111,7 @@ Do not persist raw HTML or arbitrary pasted CSS/styles/embedded content. Paste c
 - Do not promise 1:1 Notion/Obsidian feature parity in #24. The target is comparable interaction for **supported** writing formats, live typing shortcuts and automatic Markdown paste. Advanced block-level/Notes capabilities have explicit future follow-up scope above.
 - Markdown beta parsing can differ from Tiptap nodes in tables/nested lists; test a representative corpus and reject data-loss behavior. If the beta adapter cannot faithfully meet the agreed V1 formats, surface the limitation for owner review rather than quietly degrading.
 - Plain-text clipboard Markdown detection is heuristic. When source is ambiguous, prefer preserving literal content instead of destructive auto-formatting; the owner may later request explicit “Paste Markdown” override if real use cases demand it.
-- Current H2/H3-only proposal is **pending owner approval**. Full Notion/Obsidian Markdown expectations may call for `# ` / H1 within descriptions. Do not infer approval of heading level 1 from general comparison language.
+- Markdown headings preserve the standard `#`/`##`/`###` to heading levels 1/2/3 mapping. Use subtle styles so embedded H1 does not visually compete with the task title; do not collapse heading levels during import, paste or save.
 
 ## Explicit non-goals
 
@@ -121,6 +121,6 @@ Notes editor; attachments/image embeds; import/export endpoints; Markdown editor
 
 Exact small component names, toolbar iconography/grouping, focused styling consistent with approved design, internal hook composition, test utility details, and current Tiptap 3 extension APIs. Decisions must not change the approved interactions, on-wire data contract, validation policy, or scope. Verify extension APIs using up-to-date docs/Context7 before coding.
 
-## Approval gate
+## Approval and handoff
 
-**Owner review required before an execution plan or product code is produced.** In particular, confirm boundaries of Notion/Obsidian parity (whether `# ` headings, slash menus and wiki-links belong to V1), empty structural-content preservation, numeric validation limits, and Markdown paste behavior. After approval write a granular TDD/commits implementation plan in `docs/superpowers/plans/` on this feature branch, then put Luna's branch/plan/spec execution instructions in issue #24 comments.
+The owner confirmed Tiptap JSON, `null` empty storage, visible placeholder, persistent formatting toolbar, supported formatting paste, strict server validation, clickable safe links, Markdown input rules, automatic Markdown paste, and a bounded Notion/Obsidian-inspired V1 scope in conversation through 2026-10-24. This design records **engineering conventions** separately where PRD/owner decisions were not exhaustive (heading level mapping, structural-empty preservation, validation guardrail numbers). Implement these conventions consistently and flag any real conflict to the owner rather than broadening scope silently. The companion implementation plan in `docs/superpowers/plans/` is the Luna execution checklist; keep this spec as contract.
