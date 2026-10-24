@@ -203,6 +203,8 @@ class TaskPersistenceIntegrationTest {
                                                                                 1,
                                                                                 "rowspan",
                                                                                 1,
+                                                                                "align",
+                                                                                "center",
                                                                                 "colwidth",
                                                                                 List.of(80)),
                                                                         "content",

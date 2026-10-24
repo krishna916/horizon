@@ -744,8 +744,8 @@ class TaskControllerIntegrationTest {
                 "{\"title\":\"Rich create\",\"description\":{\"type\":\"doc\",\"content\":["
                     + "{\"type\":\"heading\",\"attrs\":{\"level\":2},\"content\":[{\"type\":\"text\",\"text\":\"Plan\"}]},{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Read\",\"marks\":[{\"type\":\"bold\"}]},{\"type\":\"text\",\"text\":\""
                     + " more\",\"marks\":[{\"type\":\"link\",\"attrs\":{\"href\":\"https://example.com/docs\",\"target\":\"_blank\",\"rel\":\"noopener"
-                    + " noreferrer nofollow\",\"class\":null}}]}]},"
-                    + "{\"type\":\"table\",\"content\":[{\"type\":\"tableRow\",\"content\":[{\"type\":\"tableHeader\",\"attrs\":{\"colspan\":1,\"rowspan\":1,\"colwidth\":null},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Owner\"}]}]},{\"type\":\"tableCell\",\"attrs\":{\"colspan\":1,\"rowspan\":1,\"colwidth\":null},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Mira\"}]}]}]}]},"
+                    + " noreferrer nofollow\",\"class\":null,\"title\":null}}]}]},"
+                    + "{\"type\":\"table\",\"content\":[{\"type\":\"tableRow\",\"content\":[{\"type\":\"tableHeader\",\"attrs\":{\"colspan\":1,\"rowspan\":1,\"colwidth\":null,\"align\":null},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Owner\"}]}]},{\"type\":\"tableCell\",\"attrs\":{\"colspan\":1,\"rowspan\":1,\"colwidth\":null,\"align\":null},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Mira\"}]}]}]}]},"
                     + "{\"type\":\"horizontalRule\"}]}}";
 
         MvcResult created =

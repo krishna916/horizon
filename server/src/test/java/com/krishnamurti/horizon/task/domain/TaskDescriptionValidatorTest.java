@@ -70,6 +70,8 @@ class TaskDescriptionValidatorTest {
                                 "rel",
                                 "noopener noreferrer",
                                 "class",
+                                null,
+                                "title",
                                 null));
         Map<String, Object> table =
                 node(
@@ -142,6 +144,27 @@ class TaskDescriptionValidatorTest {
 
         assertThat(copy).isNotSameAs(sourceDocument);
         assertThat(copy).isEqualTo(doc(paragraph(text("Original", List.of()))));
+    }
+
+    @Test
+    void rejectsLinkTitlesLongerThan512Characters() {
+        Map<String, Object> unsafeTitle =
+                map(
+                        "type",
+                        "link",
+                        "attrs",
+                        map(
+                                "href",
+                                "https://example.com",
+                                "target",
+                                "_blank",
+                                "rel",
+                                "noopener noreferrer",
+                                "class",
+                                null,
+                                "title",
+                                "x".repeat(513)));
+        assertDescriptionInvalid(doc(paragraph(text("docs", List.of(unsafeTitle)))));
     }
 
     @ParameterizedTest(name = "rejects invalid rich-text document: {0}")
@@ -218,26 +241,32 @@ class TaskDescriptionValidatorTest {
                         doc(node("heading", Map.of("level", 4), List.of()))),
                 Arguments.of(
                         "invalid table colspan",
-                        doc(
+                        tableCellDocument(
+                                map("colspan", 0, "rowspan", 1, "colwidth", null, "align", null))),
+                Arguments.of(
+                        "invalid table alignment",
+                        tableCellDocument(
+                                map(
+                                        "align",
+                                        "url(javascript:alert(1))",
+                                        "colspan",
+                                        1,
+                                        "rowspan",
+                                        1,
+                                        "colwidth",
+                                        null))));
+    }
+
+    private static Map<String, Object> tableCellDocument(Map<String, Object> attrs) {
+        return doc(
+                node(
+                        "table",
+                        Map.of(),
+                        List.of(
                                 node(
-                                        "table",
+                                        "tableRow",
                                         Map.of(),
-                                        List.of(
-                                                node(
-                                                        "tableRow",
-                                                        Map.of(),
-                                                        List.of(
-                                                                node(
-                                                                        "tableCell",
-                                                                        map(
-                                                                                "colspan",
-                                                                                0,
-                                                                                "rowspan",
-                                                                                1,
-                                                                                "colwidth",
-                                                                                null),
-                                                                        List.of(
-                                                                                paragraph())))))))));
+                                        List.of(node("tableCell", attrs, List.of(paragraph())))))));
     }
 
     private static Map<String, Object> link(String href) {
@@ -294,7 +323,7 @@ class TaskDescriptionValidatorTest {
     }
 
     private static Map<String, Object> cellAttrs() {
-        return map("colspan", 1, "rowspan", 1, "colwidth", null);
+        return map("colspan", 1, "rowspan", 1, "colwidth", null, "align", null);
     }
 
     private static Map<String, Object> map(Object... values) {

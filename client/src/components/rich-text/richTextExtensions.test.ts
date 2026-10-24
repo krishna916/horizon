@@ -9,7 +9,7 @@ describe('getRichTextExtensions', () => {
       element: document.createElement('div'),
       extensions: getRichTextExtensions(),
       content:
-        '# Heading\n\n**bold** and *italic*\n\n1. one\n2. two\n\n> quote\n\n```\ncode\n```\n\n---\n\n| A | B |\n| --- | --- |\n| 1 | 2 |',
+        '# Heading\n\n**bold** and *italic*\n\n1. one\n2. two\n\n> quote\n\n```\ncode\n```\n\n---\n\n| A | B |\n| :--- | ---: |\n| 1 | 2 |',
       contentType: 'markdown',
     });
 

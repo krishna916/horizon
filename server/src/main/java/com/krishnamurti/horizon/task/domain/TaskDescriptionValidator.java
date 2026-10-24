@@ -217,7 +217,8 @@ public final class TaskDescriptionValidator {
                     case "heading" -> Set.of("level");
                     case "orderedList" -> Set.of("start", "type");
                     case "codeBlock" -> Set.of("language");
-                    case "tableCell", "tableHeader" -> Set.of("colspan", "rowspan", "colwidth");
+                    case "tableCell", "tableHeader" ->
+                            Set.of("colspan", "rowspan", "colwidth", "align");
                     case "paragraph",
                             "bulletList",
                             "listItem",
@@ -267,6 +268,12 @@ public final class TaskDescriptionValidator {
     }
 
     private static void validateCellAttrs(Map<String, Object> attrs) {
+        Object alignment = attrs.get("align");
+        if (alignment != null
+                && !(alignment instanceof String value
+                        && Set.of("left", "center", "right").contains(value))) {
+            invalid("table cell alignment is invalid");
+        }
         if (attrs.containsKey("colspan") && !positiveBoundedInteger(attrs.get("colspan"))) {
             invalid("table colspan must be a positive integer");
         }
@@ -286,7 +293,7 @@ public final class TaskDescriptionValidator {
 
     private static void validateLinkAttrs(Object value) {
         Map<String, Object> attrs = asStringMap(value, "link attributes must be an object");
-        if (!Set.of("href", "target", "rel", "class").containsAll(attrs.keySet())
+        if (!Set.of("href", "target", "rel", "class", "title").containsAll(attrs.keySet())
                 || !attrs.containsKey("href")) {
             invalid("link attributes are invalid");
         }
@@ -304,6 +311,10 @@ public final class TaskDescriptionValidator {
         }
         if (attrs.containsKey("class") && attrs.get("class") != null) {
             invalid("link class must be null");
+        }
+        Object title = attrs.get("title");
+        if (title != null && (!(title instanceof String titleValue) || titleValue.length() > 512)) {
+            invalid("link title must be a short string or null");
         }
     }
 

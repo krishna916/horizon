@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeRichTextDocument, toEditorDocument } from './richTextDocument';
+import {
+  isSupportedRichTextDocument,
+  normalizeRichTextDocument,
+  toEditorDocument,
+} from './richTextDocument';
 
 describe('normalizeRichTextDocument', () => {
   it('converts null and empty documents to null', () => {
@@ -15,6 +19,31 @@ describe('normalizeRichTextDocument', () => {
         content: [{ type: 'paragraph', content: [{ type: 'text', text: ' \n\t ' }] }],
       })
     ).toBeNull();
+  });
+
+  it('rejects unsafe URLs accepted by permissive browser URL normalization', () => {
+    expect(
+      isSupportedRichTextDocument({
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              {
+                type: 'text',
+                text: 'link',
+                marks: [
+                  {
+                    type: 'link',
+                    attrs: { href: 'https://user:password@example.com' },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    ).toBe(false);
   });
 
   it('preserves legacy paragraph documents and content exactly', () => {
@@ -43,6 +72,75 @@ describe('normalizeRichTextDocument', () => {
       ],
     };
     expect(normalizeRichTextDocument(structural)).toEqual(structural);
+  });
+
+  it('accepts nullable Tiptap link titles and table alignments from the pinned schema', () => {
+    const document = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'Docs',
+              marks: [
+                {
+                  type: 'link',
+                  attrs: {
+                    href: 'https://example.com',
+                    target: '_blank',
+                    rel: 'noopener noreferrer nofollow',
+                    class: null,
+                    title: null,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: 'table',
+          content: [
+            {
+              type: 'tableRow',
+              content: [
+                {
+                  type: 'tableCell',
+                  attrs: { colspan: 1, rowspan: 1, colwidth: null, align: null },
+                  content: [{ type: 'paragraph' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(isSupportedRichTextDocument(document)).toBe(true);
+    expect(normalizeRichTextDocument(document)).toEqual(document);
+    expect(
+      isSupportedRichTextDocument({
+        type: 'doc',
+        content: [
+          {
+            type: 'table',
+            content: [
+              {
+                type: 'tableRow',
+                content: [
+                  {
+                    type: 'tableCell',
+                    attrs: { align: 'url(javascript:alert(1))' },
+                    content: [{ type: 'paragraph' }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    ).toBe(false);
   });
 
   it('provides an empty Tiptap document for the editor when the value is null', () => {

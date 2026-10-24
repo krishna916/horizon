@@ -21,13 +21,26 @@ const supportedMarks = new Set(['bold', 'italic', 'code', 'link']);
 const safeProtocols = new Set(['http:', 'https:', 'mailto:']);
 
 export function isSafeRichTextHref(href: unknown): href is string {
-  if (typeof href !== 'string') return false;
+  if (
+    typeof href !== 'string' ||
+    href.trim() !== href ||
+    Array.from(href).some((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined && (codePoint <= 31 || codePoint === 127);
+    })
+  ) {
+    return false;
+  }
 
   try {
     const parsed = new URL(href);
+    if (!safeProtocols.has(parsed.protocol)) return false;
+    if (parsed.protocol === 'mailto:') {
+      const address = href.slice('mailto:'.length);
+      return address.length > 0 && !address.startsWith('//');
+    }
     return (
-      safeProtocols.has(parsed.protocol) &&
-      (parsed.protocol === 'mailto:' || parsed.hostname.length > 0)
+      parsed.hostname.length > 0 && parsed.username.length === 0 && parsed.password.length === 0
     );
   } catch {
     return false;
@@ -44,13 +57,86 @@ function isSupportedMark(mark: unknown): boolean {
   }
   if (mark.type !== 'link') return true;
   const attrs = mark.attrs;
-  return isRecord(attrs) && isSafeRichTextHref(attrs.href);
+  if (!isRecord(attrs) || !isSafeRichTextHref(attrs.href)) return false;
+  if (
+    !Object.keys(attrs).every((key) => ['href', 'target', 'rel', 'class', 'title'].includes(key))
+  ) {
+    return false;
+  }
+  if (attrs.target != null && attrs.target !== '_blank' && attrs.target !== '_self') return false;
+  if (attrs.rel != null && !isSafeRel(attrs.rel)) return false;
+  if (attrs.class != null) return false;
+  return attrs.title == null || (typeof attrs.title === 'string' && attrs.title.length <= 512);
+}
+
+function isSafeRel(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    value.trim().length > 0 &&
+    value.split(/\s+/).every((token) => ['noopener', 'noreferrer', 'nofollow'].includes(token))
+  );
+}
+
+function isSupportedAttrs(type: string, value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+
+  const perNodeAllowed: Record<string, string[]> = {
+    heading: ['level'],
+    orderedList: ['start', 'type'],
+    codeBlock: ['language'],
+    tableCell: ['colspan', 'rowspan', 'colwidth', 'align'],
+    tableHeader: ['colspan', 'rowspan', 'colwidth', 'align'],
+    paragraph: [],
+    bulletList: [],
+    listItem: [],
+    blockquote: [],
+    table: [],
+    tableRow: [],
+    hardBreak: [],
+    horizontalRule: [],
+  };
+  const allowedKeys = perNodeAllowed[type];
+  if (!allowedKeys || !Object.keys(value).every((key) => allowedKeys.includes(key))) return false;
+
+  if (type === 'heading') {
+    return (
+      typeof value.level === 'number' &&
+      Number.isInteger(value.level) &&
+      value.level >= 1 &&
+      value.level <= 3
+    );
+  }
+  if (type === 'orderedList') {
+    return (
+      (value.start === undefined ||
+        (typeof value.start === 'number' && Number.isInteger(value.start) && value.start > 0)) &&
+      (value.type == null || ['1', 'a', 'A', 'i', 'I'].includes(String(value.type)))
+    );
+  }
+  if (type === 'codeBlock')
+    return (
+      value.language == null || (typeof value.language === 'string' && value.language.length <= 100)
+    );
+  if (type === 'tableCell' || type === 'tableHeader') {
+    const isBoundedInteger = (number: unknown) =>
+      typeof number === 'number' && Number.isInteger(number) && number > 0 && number <= 100;
+    return (
+      (value.colspan === undefined || isBoundedInteger(value.colspan)) &&
+      (value.rowspan === undefined || isBoundedInteger(value.rowspan)) &&
+      (value.colwidth == null ||
+        (Array.isArray(value.colwidth) && value.colwidth.every(isBoundedInteger))) &&
+      (value.align == null || ['left', 'center', 'right'].includes(String(value.align)))
+    );
+  }
+  return true;
 }
 
 function isSupportedNode(node: unknown): node is Record<string, unknown> {
   if (!isRecord(node) || typeof node.type !== 'string') return false;
   const type = node.type;
   if (type !== 'doc' && !blockNodes.has(type) && !inlineNodes.has(type)) return false;
+  if (!isSupportedAttrs(type, node.attrs)) return false;
 
   if (type === 'text') {
     return (

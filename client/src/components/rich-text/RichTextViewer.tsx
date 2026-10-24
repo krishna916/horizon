@@ -33,7 +33,7 @@ export function RichTextViewer({ value }: RichTextViewerProps) {
   }
 
   return (
-    <div data-testid="rich-text-viewer">
+    <div className="rich-text-viewer" data-testid="rich-text-viewer">
       <EditorContent editor={editor} />
     </div>
   );
