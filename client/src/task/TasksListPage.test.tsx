@@ -301,12 +301,13 @@ describe('TasksListPage', () => {
       response([task(1, 'First task'), task(2, 'Second task')]) as never
     );
     let resolveFirst!: (value: AxiosResponse<TaskDetail>) => void;
-    const archiveSpy = vi.spyOn(taskApi, 'archive').mockImplementation((id) =>
-      id === 1
-        ? new Promise((resolve) => (resolveFirst = resolve))
-        : Promise.resolve({
-            data: { ...detailResponse(2).data, archivedAt: '2026-10-24' },
-          } as never)
+    let resolveSecond!: (value: AxiosResponse<TaskDetail>) => void;
+    const archiveSpy = vi.spyOn(taskApi, 'archive').mockImplementation(
+      (id) =>
+        new Promise((resolve) => {
+          if (id === 1) resolveFirst = resolve;
+          else resolveSecond = resolve;
+        })
     );
     renderTasks('/tasks');
     await screen.findByRole('button', { name: 'More actions for TASK-1' });
@@ -323,11 +324,18 @@ describe('TasksListPage', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
     await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(2));
     expect(archiveSpy).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByText('Archiving task…')).toHaveLength(2);
 
     await act(async () =>
       resolveFirst({
         ...detailResponse(1),
         data: { ...detailResponse(1).data, archivedAt: '2026-10-24' },
+      })
+    );
+    await act(async () =>
+      resolveSecond({
+        ...detailResponse(2),
+        data: { ...detailResponse(2).data, archivedAt: '2026-10-24' },
       })
     );
   });

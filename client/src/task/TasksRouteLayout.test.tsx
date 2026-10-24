@@ -231,7 +231,9 @@ describe('TasksRouteLayout', () => {
     expect(screen.queryByText('TASK-91 archived')).not.toBeInTheDocument();
     expect(screen.queryByText("Couldn't confirm moving TASK-92 to Trash")).not.toBeInTheDocument();
     await act(async () => router.navigate({ to: '/notes' }));
-    await act(async () => router.navigate({ to: '/tasks' }));
+    await act(async () =>
+      router.navigate({ to: '/tasks', search: { task: undefined, create: undefined } })
+    );
     expect(screen.queryByText('TASK-91 archived')).not.toBeInTheDocument();
   });
 
