@@ -1,0 +1,27 @@
+import { Link } from '@tiptap/extension-link';
+import { Markdown } from '@tiptap/markdown';
+import { TableKit } from '@tiptap/extension-table';
+import { StarterKit } from '@tiptap/starter-kit';
+import type { Extensions } from '@tiptap/react';
+import { isSafeRichTextHref } from './richTextDocument';
+
+export function getRichTextExtensions(): Extensions {
+  return [
+    StarterKit.configure({
+      heading: { levels: [1, 2, 3] },
+      link: false,
+      strike: false,
+      underline: false,
+    }),
+    Link.configure({
+      HTMLAttributes: {
+        target: '_blank',
+        rel: 'noopener noreferrer nofollow',
+      },
+      isAllowedUri: (href) => isSafeRichTextHref(href),
+      protocols: ['http', 'https', 'mailto'],
+    }),
+    TableKit.configure({ table: { resizable: false } }),
+    Markdown,
+  ];
+}
