@@ -150,7 +150,12 @@ const richMarkdown = `### Launch notes
 Intro paragraph with **bold text** and [documentation](https://example.com/docs).
 
 - First bullet
+- Nested bullet
+  - Child bullet
 - Second bullet
+
+1. First ordered item
+2. Second ordered item
 
 \`\`\`ts
 const ready = true;
@@ -174,6 +179,13 @@ test('creates structured Markdown, reloads it, and renders the same content in p
   await pastePlainText(page, editor, richMarkdown);
 
   await expect(page.locator(`${editor} h3`)).toHaveText('Launch notes');
+  await expect
+    .poll(() =>
+      page
+        .locator(`${editor} ul, ${editor} ol`)
+        .evaluateAll((lists) => lists.map((list) => getComputedStyle(list).listStyleType))
+    )
+    .toEqual(['disc', 'disc', 'decimal']);
   await page.locator(editor).press('Control+z');
   await expect(page.locator(`${editor} h3`)).toHaveCount(0);
   await page.locator(editor).press('Control+Shift+z');
@@ -185,6 +197,13 @@ test('creates structured Markdown, reloads it, and renders the same content in p
   await expect(pane.getByRole('heading', { name: 'Task browser document' })).toBeVisible();
   await expect(pane.getByRole('heading', { name: 'Launch notes', level: 3 })).toBeVisible();
   await expect(pane.getByText('First bullet')).toBeVisible();
+  await expect
+    .poll(() =>
+      pane
+        .locator('.rich-text-content ul, .rich-text-content ol')
+        .evaluateAll((lists) => lists.map((list) => getComputedStyle(list).listStyleType))
+    )
+    .toEqual(['disc', 'disc', 'decimal']);
   await expect(pane.locator('pre')).toContainText('const ready = true;');
   await expect(pane.getByRole('table')).toBeVisible();
   await expect(pane.locator('hr')).toHaveCount(1);
