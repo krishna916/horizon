@@ -57,6 +57,208 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void archiveAndRestoreUnfinishedTask() throws Exception {
+        createTask("Archive unfinished", "{\"title\":\"Archive unfinished\"}");
+        Long id = taskIdForTitle("Archive unfinished");
+
+        mockMvc.perform(post("/api/v1/tasks/{id}/archive", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.archivedAt").isNotEmpty())
+                .andExpect(jsonPath("$.completedAt").value(org.hamcrest.Matchers.nullValue()));
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT archived_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isNotNull();
+
+        mockMvc.perform(post("/api/v1/tasks/{id}/restore", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.archivedAt").value(org.hamcrest.Matchers.nullValue()));
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT archived_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isNull();
+    }
+
+    @Test
+    void restoreArchivedCompletedTaskRetainsCompletion() throws Exception {
+        createTask("Restore completed archive", "{\"title\":\"Restore completed archive\"}");
+        Long id = taskIdForTitle("Restore completed archive");
+        OffsetDateTime completedAt = OffsetDateTime.parse("2026-10-20T12:00:00Z");
+        jdbcTemplate.update("UPDATE task SET completed_at = ? WHERE id = ?", completedAt, id);
+
+        mockMvc.perform(post("/api/v1/tasks/{id}/archive", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.completedAt").value(org.hamcrest.Matchers.notNullValue()));
+        mockMvc.perform(post("/api/v1/tasks/{id}/restore", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.archivedAt").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.completedAt").value(org.hamcrest.Matchers.notNullValue()));
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT completed_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isEqualTo(completedAt);
+    }
+
+    @Test
+    void softDeleteHidesFromOrdinaryGetListAndUpdates() throws Exception {
+        createTask("Soft delete target", "{\"title\":\"Soft delete target\"}");
+        Long id = taskIdForTitle("Soft delete target");
+
+        mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                        "/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie))
+                .andExpect(status().isNoContent());
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT deleted_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isNotNull();
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/tasks").cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == " + id + ")]").doesNotExist());
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Must stay hidden\"}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/tasks/{id}/complete", id).cookie(ownerCookie))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void undoDeleteRestoresArchivedCompletedChecklist() throws Exception {
+        createTask(
+                "Undo deleted facts",
+                "{\"title\":\"Undo deleted facts\",\"checklist\":[{\"title\":\"Keep this"
+                        + " item\"}]}");
+        Long id = taskIdForTitle("Undo deleted facts");
+        OffsetDateTime completedAt = OffsetDateTime.parse("2026-10-20T12:00:00Z");
+        OffsetDateTime archivedAt = OffsetDateTime.parse("2026-10-21T12:00:00Z");
+        jdbcTemplate.update(
+                "UPDATE task SET completed_at = ?, archived_at = ? WHERE id = ?",
+                completedAt,
+                archivedAt,
+                id);
+        assertThat(checklistItemCount(id)).isEqualTo(1);
+
+        mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                        "/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/v1/tasks/{id}/restore-deleted", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.archivedAt").isNotEmpty())
+                .andExpect(jsonPath("$.completedAt").isNotEmpty())
+                .andExpect(jsonPath("$.checklist.length()").value(1));
+
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT deleted_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isNull();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT archived_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isEqualTo(archivedAt);
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT completed_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isEqualTo(completedAt);
+        assertThat(checklistItemCount(id)).isEqualTo(1);
+    }
+
+    @Test
+    void repeatDeleteAndRestoreAreSafeForOwner() throws Exception {
+        createTask("Repeat lifecycle", "{\"title\":\"Repeat lifecycle\"}");
+        Long id = taskIdForTitle("Repeat lifecycle");
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(
+                            org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                    .delete("/api/v1/tasks/{id}", id)
+                                    .cookie(ownerCookie))
+                    .andExpect(status().isNoContent());
+        }
+        OffsetDateTime deletedAt =
+                jdbcTemplate.queryForObject(
+                        "SELECT deleted_at FROM task WHERE id = ?", OffsetDateTime.class, id);
+        mockMvc.perform(post("/api/v1/tasks/{id}/restore-deleted", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletedAt").value(org.hamcrest.Matchers.nullValue()));
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT deleted_at FROM task WHERE id = ?",
+                                OffsetDateTime.class,
+                                id))
+                .isNull();
+        assertThat(deletedAt).isNotNull();
+    }
+
+    @Test
+    void otherUserAndMissingLifecycleCommandsReturn404() throws Exception {
+        createTask("Private lifecycle target", "{\"title\":\"Private lifecycle target\"}");
+        Long id = taskIdForTitle("Private lifecycle target");
+        String otherEmail = UUID.randomUUID() + "@example.com";
+        userCommandService.register(otherEmail, PASSWORD);
+        Cookie otherCookie = login(otherEmail);
+
+        mockMvc.perform(post("/api/v1/tasks/{id}/archive", id).cookie(otherCookie))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/tasks/{id}/restore-deleted", id).cookie(otherCookie))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                        "/api/v1/tasks/{id}", id)
+                                .cookie(otherCookie))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/tasks/{id}/archive", -1L).cookie(ownerCookie))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/tasks/{id}/restore", -1L).cookie(ownerCookie))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/tasks/{id}/restore-deleted", -1L).cookie(ownerCookie))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                        "/api/v1/tasks/{id}", -1L)
+                                .cookie(ownerCookie))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void unauthenticatedLifecycleCommandsReturn401() throws Exception {
+        mockMvc.perform(post("/api/v1/tasks/{id}/complete", 1))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/tasks/{id}/reopen", 1)).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/tasks/{id}/archive", 1L))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/tasks/{id}/restore", 1L))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                                "/api/v1/tasks/{id}", 1L))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/tasks/{id}/restore-deleted", 1L))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void completeAndReopenPersistThroughGetAndList() throws Exception {
         createTask(
                 "Complete lifecycle", "{\"title\":\"Complete lifecycle\",\"priority\":\"HIGH\"}");
@@ -214,13 +416,6 @@ class TaskControllerIntegrationTest {
                                 OffsetDateTime.class,
                                 deletedId))
                 .isNull();
-    }
-
-    @Test
-    void unauthenticatedLifecycleCommandsReturn401() throws Exception {
-        mockMvc.perform(post("/api/v1/tasks/{id}/complete", 1))
-                .andExpect(status().isUnauthorized());
-        mockMvc.perform(post("/api/v1/tasks/{id}/reopen", 1)).andExpect(status().isUnauthorized());
     }
 
     @Test

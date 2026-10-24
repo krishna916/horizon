@@ -14,6 +14,8 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     Optional<Task> findByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
 
+    Optional<Task> findByIdAndUserId(Long id, Long userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query(
             "select task from Task task where task.id = :taskId and task.userId = :userId"

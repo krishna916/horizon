@@ -102,6 +102,26 @@ public class Task extends BaseEntity {
         completedAt = null;
     }
 
+    public void archive(OffsetDateTime when) {
+        if (archivedAt == null) {
+            archivedAt = Objects.requireNonNull(when, "when must not be null");
+        }
+    }
+
+    public void restoreArchived() {
+        archivedAt = null;
+    }
+
+    public void softDelete(OffsetDateTime when) {
+        if (deletedAt == null) {
+            deletedAt = Objects.requireNonNull(when, "when must not be null");
+        }
+    }
+
+    public void restoreDeleted() {
+        deletedAt = null;
+    }
+
     /**
      * Returns a defensive copy so nested document edits are persisted only through
      * updateDescription.

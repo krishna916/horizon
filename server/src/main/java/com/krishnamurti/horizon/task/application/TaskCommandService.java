@@ -1,6 +1,8 @@
 package com.krishnamurti.horizon.task.application;
 
 import com.krishnamurti.horizon.shared.security.CurrentUserProvider;
+import com.krishnamurti.horizon.task.api.TaskRecoveryApi;
+import com.krishnamurti.horizon.task.api.TaskRecoverySnapshot;
 import com.krishnamurti.horizon.task.domain.ChecklistItem;
 import com.krishnamurti.horizon.task.domain.Task;
 import com.krishnamurti.horizon.task.domain.TaskPriority;
@@ -18,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** Transactional task write use cases. */
 @Service
-public class TaskCommandService {
+public class TaskCommandService implements TaskRecoveryApi {
 
     private final TaskRepository taskRepository;
     private final TaskKeyAllocator taskKeyAllocator;
@@ -115,6 +117,61 @@ public class TaskCommandService {
                         .findByIdAndUserIdAndDeletedAtIsNull(taskId, userId)
                         .orElseThrow(TaskNotFoundException::new);
         task.reopen();
+        return taskRepository.saveAndFlush(task);
+    }
+
+    @Transactional
+    public Task archive(Long taskId) {
+        Long userId = requireCurrentUserId();
+        Task task =
+                taskRepository
+                        .findByIdAndUserIdAndDeletedAtIsNull(taskId, userId)
+                        .orElseThrow(TaskNotFoundException::new);
+        task.archive(OffsetDateTime.now(ZoneOffset.UTC));
+        return taskRepository.saveAndFlush(task);
+    }
+
+    @Transactional
+    public Task restoreArchived(Long taskId) {
+        Long userId = requireCurrentUserId();
+        Task task =
+                taskRepository
+                        .findByIdAndUserIdAndDeletedAtIsNull(taskId, userId)
+                        .orElseThrow(TaskNotFoundException::new);
+        task.restoreArchived();
+        return taskRepository.saveAndFlush(task);
+    }
+
+    @Transactional
+    public void softDelete(Long taskId) {
+        Long userId = requireCurrentUserId();
+        Task task =
+                taskRepository
+                        .findByIdAndUserId(taskId, userId)
+                        .orElseThrow(TaskNotFoundException::new);
+        task.softDelete(OffsetDateTime.now(ZoneOffset.UTC));
+        taskRepository.saveAndFlush(task);
+    }
+
+    @Override
+    @Transactional
+    public TaskRecoverySnapshot restoreDeletedTask(Long taskId) {
+        Task task = restoreDeleted(taskId);
+        return new TaskRecoverySnapshot(
+                task.getId(),
+                task.getTaskKey(),
+                task.getCompletedAt() != null,
+                task.getArchivedAt() != null);
+    }
+
+    @Transactional
+    public Task restoreDeleted(Long taskId) {
+        Long userId = requireCurrentUserId();
+        Task task =
+                taskRepository
+                        .findByIdAndUserId(taskId, userId)
+                        .orElseThrow(TaskNotFoundException::new);
+        task.restoreDeleted();
         return taskRepository.saveAndFlush(task);
     }
 
