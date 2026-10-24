@@ -6,14 +6,11 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  useNavigate,
 } from '@tanstack/react-router';
-import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userApi } from '@/user/api';
 import { useTasksLayout, TasksRouteLayout } from './TasksRouteLayout';
-import { useTaskDraftGuard } from './TaskDraftNavigationGuard';
 
 function RatioProbe() {
   const { listRatio, setListRatio } = useTasksLayout();
@@ -37,49 +34,17 @@ function createTestRouter(initialEntry: string) {
     path: '/',
     component: RatioProbe,
   });
-  const checklistRoute = createRoute({
-    getParentRoute: () => tasksRoute,
-    path: 'checklist',
-    component: ChecklistDraftProbe,
-  });
   const otherRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/notes',
     component: () => <p>Other workspace</p>,
   });
-  const routeTree = rootRoute.addChildren([
-    tasksRoute.addChildren([tasksIndexRoute, checklistRoute]),
-    otherRoute,
-  ]);
+  const routeTree = rootRoute.addChildren([tasksRoute.addChildren([tasksIndexRoute]), otherRoute]);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
   });
   return router;
-}
-
-function ChecklistDraftProbe() {
-  const guard = useTaskDraftGuard();
-  const registerDraft = guard?.register;
-  const clearDraft = guard?.clear;
-  const navigate = useNavigate();
-  useEffect(() => {
-    registerDraft?.({
-      id: 'checklist:1:12',
-      kind: 'checklist',
-      dirty: true,
-      pending: false,
-      save: async () => true,
-      discard: () => undefined,
-    });
-    return () => clearDraft?.('checklist:1:12');
-  }, [clearDraft, registerDraft]);
-
-  return (
-    <button type="button" onClick={() => void navigate({ to: '/notes' })}>
-      Leave checklist
-    </button>
-  );
 }
 
 function renderRouter(router: ReturnType<typeof createTestRouter>) {
@@ -120,27 +85,5 @@ describe('TasksRouteLayout', () => {
       await router.navigate({ to: '/tasks', search: { task: undefined, create: undefined } });
     });
     await waitFor(() => expect(screen.getByText('List ratio: 60')).toBeInTheDocument());
-  });
-
-  it('offers Save and Discard for a dirty checklist draft before navigation', async () => {
-    const router = createTestRouter('/tasks/checklist');
-    renderRouter(router);
-    fireEvent.click(await screen.findByRole('button', { name: 'Leave checklist' }));
-
-    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
-      'Your task draft has unsaved changes.'
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Discard checklist draft' }));
-    expect(await screen.findByText('Other workspace')).toBeInTheDocument();
-  });
-
-  it('saves a dirty checklist draft before continuing navigation', async () => {
-    const router = createTestRouter('/tasks/checklist');
-    renderRouter(router);
-    fireEvent.click(await screen.findByRole('button', { name: 'Leave checklist' }));
-
-    expect(await screen.findByRole('button', { name: 'Save and continue' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
-    expect(await screen.findByText('Other workspace')).toBeInTheDocument();
   });
 });

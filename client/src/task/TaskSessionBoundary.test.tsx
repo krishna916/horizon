@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
 import { TaskCompletionProvider } from './TaskCompletionProvider';
+import { TaskLifecycleProvider } from './TaskLifecycleProvider';
 import { TaskWorkspace } from './TaskWorkspace';
 import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 import { userApi } from '@/user/api';
@@ -43,7 +44,9 @@ function createWrapper() {
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <TaskCompletionProvider>{children}</TaskCompletionProvider>
+        <TaskCompletionProvider>
+          <TaskLifecycleProvider userId={1}>{children}</TaskLifecycleProvider>
+        </TaskCompletionProvider>
       </QueryClientProvider>
     );
   }
