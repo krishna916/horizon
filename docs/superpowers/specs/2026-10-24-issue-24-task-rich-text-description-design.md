@@ -22,6 +22,24 @@ Create, edit and read formatted task descriptions in both the task side panel an
 
 Round-trip Tiptap JSON for headings, bold, italic, HTTP(S)/mailto links, bullet lists, ordered lists, code blocks, block quotes, and tables. Use only registered and explicitly supported Tiptap nodes, marks, and attributes. Allow ordinary paragraphs/text and hard breaks needed to edit them. Implement link editing and table insertion/basic row/column operations, not just display. A practical editor baseline is headings at levels 2 and 3 so task title retains the page's level-1 heading; this is an implementation proposal for owner review, since PRD names 'headings' without levels. Code mark may be enabled only if configured and validated consistently; PRD explicitly requires code *blocks*.
 
+### Markdown-style typing shortcuts (owner requested, added 2026-10-24)
+
+The editor **must** support immediate Notion/Obsidian-like Markdown input rules **during normal rich-text editing**, in both creation and detail edit mode. This is **not** a Markdown source editor, an import/export format, or a change to the JSON storage contract. Use Tiptap 3 StarterKit's native input rules when supported; add focused custom input rules only if required for confirmed shortcuts. Include component coverage for:
+
+| Input at start of block (followed by Space where applicable) | Result |
+| --- | --- |
+| `## ` and `### ` | Heading 2 / Heading 3 |
+| `- ` or `* ` | Bullet list |
+| `1. ` | Numbered list |
+| `> ` | Blockquote |
+| `--- ` | Horizontal divider |
+| `\`\`\` ` | Code block |
+| `**text**` | Bold mark via supported inline rule |
+
+**Horizontal divider is explicitly requested beyond PRD-004's nine formatting categories.** Include `horizontalRule` in the supported Tiptap document schema, strict backend allowlist, read-only renderer and tests. Check actual Tiptap v3 trigger behavior against its current docs and test it rather than guessing. Honor the agreed H2/H3 design default; do not silently introduce H1 inside task descriptions without owner sign-off.
+
+Plain-text Markdown **pasted as literal source** or loaded via `@tiptap/markdown` is a separate capability from typing shortcuts and is not included merely by enabling input rules. Rich HTML paste still preserves supported formatting as already agreed.
+
 Do not persist raw HTML or arbitrary pasted CSS/styles/embedded content. Paste content from websites/Google Docs/other editors through Tiptap's supported schema: retain supported markup/text, drop unsupported formatting and unsafe content, and never silently lose plain text. Image embeds, attachments, custom node types and Markdown source mode are out of scope.
 
 ## Read and edit UX (owner-confirmed)
@@ -63,8 +81,8 @@ Do not persist raw HTML or arbitrary pasted CSS/styles/embedded content. Paste c
 ## Test and completion contract
 
 - **Document helpers:** null/empty/whitespace normalization, unchanged legacy paragraphs, nested list/table/code/links round-trip, structural blank table preservation, paste filtering/safe-link handling.
-- **Backend unit/integration:** POST and PATCH allow valid supported document; invalid node/mark/attrs/types/depth/link/size return existing 400 shape; clear using null; persistence JSONB round-trip through real Postgres/Testcontainers; ownership and metadata preserved; absent patch does not clear description.
-- **Frontend component:** optional rich create, toolbar formatting and links/table controls, read-only render, empty placeholder single-click vs populated double-click, external links, Save/Cancel/blur, mutation failure retains draft, navigation-guard and mutual exclusion with other fields/checklist, both detail surfaces.
+- **Backend unit/integration:** POST and PATCH allow valid supported document, including horizontalRule; invalid node/mark/attrs/types/depth/link/size return existing 400 shape; clear using null; persistence JSONB round-trip through real Postgres/Testcontainers; ownership and metadata preserved; absent patch does not clear description.
+- **Frontend component:** Markdown-style typing shortcuts (headings, lists, quote, divider, code block, inline bold), optional rich create, toolbar formatting and links/table controls, read-only render, empty placeholder single-click vs populated double-click, external links, Save/Cancel/blur, mutation failure retains draft, navigation-guard and mutual exclusion with other fields/checklist, both detail surfaces.
 - **E2E as applicable:** formatted create/reload/edit, panel-to-page parity, saved vs cancelled content, no rendered script execution, no list-row description preview.
 - Run existing Maven format/static-analysis/test gates and frontend format/lint/typecheck/unit/build/Playwright gates according to the repository workflows. Tests follow Horizon's project conventions.
 
@@ -78,4 +96,4 @@ Exact small component names, toolbar iconography/grouping, focused styling consi
 
 ## Approval gate
 
-**Owner review required before an execution plan or product code is produced.** In particular, check proposed heading levels, empty structural-content preservation and numeric validation limits. After approval write a granular TDD/commits implementation plan in `docs/superpowers/plans/` on this feature branch, then put Luna's branch/plan/spec execution instructions in issue #24 comments.
+**Owner review required before an execution plan or product code is produced.** In particular, check proposed heading levels, empty structural-content preservation, numeric validation limits, and newly specified Markdown-style typing shortcuts (including horizontal divider). After approval write a granular TDD/commits implementation plan in `docs/superpowers/plans/` on this feature branch, then put Luna's branch/plan/spec execution instructions in issue #24 comments.
