@@ -22,6 +22,7 @@ const task = (id: number, title: string): TaskDetail => ({
   updatedAt: '2026-10-18T10:00:00Z',
   description: null,
   deletedAt: null,
+  checklist: [],
 });
 
 const response = (data: TaskDetail) => ({ data }) as AxiosResponse<TaskDetail>;
@@ -65,6 +66,7 @@ describe('task detail query', () => {
         updatedAt: '2026-10-18T10:00:00Z',
         description: null,
         deletedAt: null,
+        checklist: [],
       },
     });
 

@@ -23,6 +23,7 @@ const task: TaskDetail = {
     content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Check the release notes.' }] }],
   },
   deletedAt: null,
+  checklist: [],
 };
 
 function createWrapper() {
@@ -39,7 +40,7 @@ function createWrapper() {
 }
 
 describe('TaskDetailView', () => {
-  it('renders supported task content and optional metadata without invented controls or sections', () => {
+  it('renders task content, checklist, and optional metadata', () => {
     render(<TaskDetailView task={task} userId={1} />, { wrapper: createWrapper() });
 
     expect(screen.getByRole('heading', { name: 'Review the release notes' })).toBeInTheDocument();
@@ -49,7 +50,68 @@ describe('TaskDetailView', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button')).toHaveLength(3);
     expect(screen.getAllByRole('checkbox')).toHaveLength(1);
-    expect(screen.queryByText(/checklist|tags|attachments|activity/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Checklist' })).toBeInTheDocument();
+    expect(screen.queryByText(/tags|attachments|activity/i)).not.toBeInTheDocument();
+  });
+
+  it('renders checklist item controls inside task detail', () => {
+    render(
+      <TaskDetailView
+        task={{
+          ...task,
+          checklist: [
+            { id: 3, title: 'Call florist', dueDate: null, completedAt: null, position: 0 },
+          ],
+        }}
+        userId={1}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.getByText('Call florist')).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: 'Complete checklist item Call florist' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Add checklist item' })).toBeInTheDocument();
+  });
+
+  it('blocks parent field editors during a reorder draft but keeps completion available', async () => {
+    vi.spyOn(taskApi, 'get').mockResolvedValue({
+      data: {
+        ...task,
+        checklist: [
+          { id: 3, title: 'Call florist', dueDate: null, completedAt: null, position: 0 },
+          { id: 4, title: 'Book a table', dueDate: null, completedAt: null, position: 1 },
+        ],
+      },
+    } as never);
+    const completeSpy = vi.spyOn(taskApi, 'complete').mockResolvedValue({
+      data: { ...task, completedAt: '2026-10-23T00:00:00Z' },
+    } as never);
+    render(
+      <TaskDetailView
+        task={{
+          ...task,
+          checklist: [
+            { id: 3, title: 'Call florist', dueDate: null, completedAt: null, position: 0 },
+            { id: 4, title: 'Book a table', dueDate: null, completedAt: null, position: 1 },
+          ],
+        }}
+        userId={1}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder checklist' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move Book a table up' }));
+    fireEvent.doubleClick(
+      screen.getByRole('button', { name: 'Task title: Review the release notes' })
+    );
+    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-7' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete Anyway' }));
+    await waitFor(() => expect(completeSpy).toHaveBeenCalledWith(7));
   });
 
   it('uses subdued strike-through styling for a completed title', () => {
@@ -144,6 +206,7 @@ describe('TaskDetailView', () => {
   });
 
   it('shows completion beside the title and keeps its dirty draft independent', async () => {
+    vi.spyOn(taskApi, 'get').mockResolvedValue({ data: task } as never);
     vi.spyOn(taskApi, 'complete').mockResolvedValue({
       data: { ...task, completedAt: '2026-10-22T10:00:00Z' },
     } as never);
@@ -161,6 +224,7 @@ describe('TaskDetailView', () => {
       checkbox
     );
     await act(async () => fireEvent.click(checkbox));
+    await waitFor(() => expect(onCompletionIntent).toHaveBeenCalledWith(7, true));
 
     expect(screen.getByLabelText('Title')).toHaveValue('Unsaved title draft');
     expect(onCompletionIntent).toHaveBeenCalledWith(7, true);

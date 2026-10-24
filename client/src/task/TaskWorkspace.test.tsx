@@ -37,6 +37,7 @@ const detail = (id: number, title: string, completedAt: string | null = null): T
   ...task(id, title, { completedAt }),
   description: null,
   deletedAt: null,
+  checklist: [],
 });
 
 function deferred<T>() {
@@ -74,6 +75,12 @@ describe('TaskWorkspace', () => {
 
   beforeEach(() => {
     listSpy = vi.spyOn(taskApi, 'list');
+    vi.spyOn(taskApi, 'get').mockImplementation(
+      async (id) =>
+        ({
+          data: detail(id, `Task ${id}`),
+        }) as never
+    );
     authenticateAs(1);
   });
 
@@ -448,6 +455,7 @@ describe('TaskWorkspace', () => {
           content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Private details' }] }],
         },
         deletedAt: null,
+        checklist: [],
       } satisfies TaskDetail,
     } as never);
     const onClose = vi.fn();
@@ -482,6 +490,7 @@ describe('TaskWorkspace', () => {
 
     render(<TaskWorkspace />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledTimes(1));
 
     expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('1');
     expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
@@ -515,6 +524,7 @@ describe('TaskWorkspace', () => {
 
     render(<TaskWorkspace />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1' }));
@@ -542,13 +552,14 @@ describe('TaskWorkspace', () => {
       data: detail(1, active.title, completedAt),
     } as never);
     vi.spyOn(taskApi, 'reopen').mockRejectedValue(new Error('service unavailable'));
-    vi.spyOn(taskApi, 'get').mockResolvedValue({
-      data: detail(1, active.title, completedAt),
-    } as never);
+    vi.spyOn(taskApi, 'get')
+      .mockResolvedValueOnce({ data: detail(1, active.title) } as never)
+      .mockResolvedValueOnce({ data: detail(1, active.title, completedAt) } as never);
     const { Wrapper } = createWrapper();
 
     render(<TaskWorkspace />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1' }));
 
@@ -579,13 +590,15 @@ describe('TaskWorkspace', () => {
     vi.spyOn(taskApi, 'reopen')
       .mockRejectedValueOnce(new Error('service unavailable'))
       .mockResolvedValueOnce({ data: detail(1, active.title) } as never);
-    vi.spyOn(taskApi, 'get').mockResolvedValue({
-      data: detail(1, active.title, completedAt),
-    } as never);
+    vi.spyOn(taskApi, 'get')
+      .mockResolvedValueOnce({ data: detail(1, active.title) } as never)
+      .mockResolvedValueOnce({ data: detail(1, active.title, completedAt) } as never)
+      .mockResolvedValue({ data: detail(1, active.title) } as never);
     const { Wrapper } = createWrapper();
 
     render(<TaskWorkspace />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1' }));
     await screen.findByRole('alert');
@@ -597,6 +610,7 @@ describe('TaskWorkspace', () => {
       'false'
     );
     fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledTimes(2));
     expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
       'aria-checked',
       'true'
@@ -638,12 +652,13 @@ describe('TaskWorkspace', () => {
       data: detail(1, active.title, completedAt),
     } as never);
     vi.spyOn(taskApi, 'reopen').mockRejectedValue(new Error('service unavailable'));
-    vi.spyOn(taskApi, 'get').mockResolvedValue({
-      data: detail(1, active.title, completedAt),
-    } as never);
+    vi.spyOn(taskApi, 'get')
+      .mockResolvedValueOnce({ data: detail(1, active.title) } as never)
+      .mockResolvedValueOnce({ data: detail(1, active.title, completedAt) } as never);
     const { Wrapper } = createWrapper();
     const view = render(<TaskWorkspace />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('checkbox', { name: 'Reopen TASK-1' }));
     await screen.findByRole('alert');
@@ -669,14 +684,12 @@ describe('TaskWorkspace', () => {
     const { Wrapper } = createWrapper();
     const view = render(<TaskWorkspace onClosePanel={vi.fn()} />, { wrapper: Wrapper });
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
 
     view.rerender(<TaskWorkspace selection={{ kind: 'valid', id: 1 }} onClosePanel={vi.fn()} />);
     expect(await screen.findByRole('button', { name: 'Close task details' })).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
+    expect(screen.getAllByRole('checkbox', { name: 'Reopen TASK-1' })).toHaveLength(2);
     view.rerender(<TaskWorkspace onClosePanel={vi.fn()} />);
     expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('1');
     expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toBeInTheDocument();

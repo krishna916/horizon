@@ -1,13 +1,16 @@
 package com.krishnamurti.horizon.task.application;
 
 import com.krishnamurti.horizon.shared.security.CurrentUserProvider;
+import com.krishnamurti.horizon.task.domain.ChecklistItem;
 import com.krishnamurti.horizon.task.domain.Task;
 import com.krishnamurti.horizon.task.domain.TaskPriority;
+import com.krishnamurti.horizon.task.infrastructure.ChecklistItemRepository;
 import com.krishnamurti.horizon.task.infrastructure.TaskKeyAllocator;
 import com.krishnamurti.horizon.task.infrastructure.TaskRepository;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.stereotype.Service;
@@ -19,14 +22,17 @@ public class TaskCommandService {
 
     private final TaskRepository taskRepository;
     private final TaskKeyAllocator taskKeyAllocator;
+    private final ChecklistItemRepository checklistItemRepository;
     private final CurrentUserProvider currentUserProvider;
 
     public TaskCommandService(
             TaskRepository taskRepository,
             TaskKeyAllocator taskKeyAllocator,
+            ChecklistItemRepository checklistItemRepository,
             CurrentUserProvider currentUserProvider) {
         this.taskRepository = taskRepository;
         this.taskKeyAllocator = taskKeyAllocator;
+        this.checklistItemRepository = checklistItemRepository;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -36,10 +42,34 @@ public class TaskCommandService {
             Map<String, Object> description,
             TaskPriority priority,
             LocalDate dueDate) {
+        return create(title, description, priority, dueDate, List.of());
+    }
+
+    @Transactional
+    public Task create(
+            String title,
+            Map<String, Object> description,
+            TaskPriority priority,
+            LocalDate dueDate,
+            List<InitialChecklistItem> checklist) {
         Long userId = requireCurrentUserId();
         long number = taskKeyAllocator.allocateNextNumber(userId);
         Task task = Task.create(userId, "TASK-" + number, title, description, priority, dueDate);
-        return taskRepository.saveAndFlush(task);
+        Task saved = taskRepository.saveAndFlush(task);
+        List<ChecklistItem> items =
+                java.util.stream.IntStream.range(0, checklist.size())
+                        .mapToObj(
+                                position -> {
+                                    InitialChecklistItem draft = checklist.get(position);
+                                    return ChecklistItem.create(
+                                            saved.getId(),
+                                            draft.title(),
+                                            draft.dueDate(),
+                                            position);
+                                })
+                        .toList();
+        checklistItemRepository.saveAllAndFlush(items);
+        return saved;
     }
 
     @Transactional

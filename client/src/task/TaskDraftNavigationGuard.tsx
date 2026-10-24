@@ -15,7 +15,7 @@ import { cancelPendingLogoutNavigations } from '@/user/logoutNavigation';
 
 export interface TaskDraftRegistration {
   id: string;
-  kind: 'create' | 'field';
+  kind: 'create' | 'field' | 'checklist';
   dirty: boolean;
   pending: boolean;
   save?: () => Promise<boolean>;
@@ -174,7 +174,9 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
               {isPending
                 ? current?.kind === 'create'
                   ? 'Creating task…'
-                  : 'Saving field…'
+                  : current?.kind === 'checklist'
+                    ? 'Saving checklist…'
+                    : 'Saving field…'
                 : 'Discard draft?'}
             </Dialog.Title>
             <Dialog.Description
@@ -184,7 +186,9 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
               {isPending
                 ? 'Your changes are being saved. Stay here while the request finishes.'
                 : saveFailed
-                  ? 'Could not save this field. Your draft is still here. Try saving again.'
+                  ? current?.kind === 'checklist'
+                    ? 'Could not save this checklist. Your draft is still here. Try saving again.'
+                    : 'Could not save this field. Your draft is still here. Try saving again.'
                   : 'Your task draft has unsaved changes.'}
             </Dialog.Description>
             <div
@@ -201,7 +205,7 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
                   <Button type="button" variant="outline" onClick={keepEditing}>
                     Keep editing
                   </Button>
-                  {current?.kind === 'field' && current.save && (
+                  {(current?.kind === 'field' || current?.kind === 'checklist') && current.save && (
                     <Button type="button" variant="outline" onClick={() => void saveAndProceed()}>
                       Save and continue
                     </Button>
@@ -211,7 +215,11 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
                     variant="destructive"
                     onClick={() => void discardAndProceed()}
                   >
-                    {current?.kind === 'field' ? 'Discard and continue' : 'Discard draft'}
+                    {current?.kind === 'field'
+                      ? 'Discard and continue'
+                      : current?.kind === 'checklist'
+                        ? 'Discard checklist draft'
+                        : 'Discard draft'}
                   </Button>
                 </>
               )}

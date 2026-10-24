@@ -10,7 +10,12 @@ interface UpdateTaskVariables {
 }
 
 function toSummary(task: TaskDetail): TaskSummary {
-  const { description: _description, deletedAt: _deletedAt, ...summary } = task;
+  const {
+    description: _description,
+    deletedAt: _deletedAt,
+    checklist: _checklist,
+    ...summary
+  } = task;
   return summary;
 }
 

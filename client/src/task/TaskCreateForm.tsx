@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toTaskDescriptionDocument } from './taskDescriptionDocument';
+import { TaskCreateChecklist } from './TaskCreateChecklist';
+import type { CreateChecklistDraft } from './TaskCreateChecklist';
 import type { CreateTaskPayload, TaskDetail } from './types';
 import { useCreateTask } from './useCreateTask';
 
@@ -86,6 +88,7 @@ export function TaskCreateForm({
     defaultValues: { title: '', description: '', priority: '', dueDate: '' },
   });
   const [recovery, setRecovery] = useState<TaskCreateRecovery | null>(null);
+  const [checklistDrafts, setChecklistDrafts] = useState<CreateChecklistDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const currentUserId = useRef<number | undefined>(userId);
@@ -110,8 +113,8 @@ export function TaskCreateForm({
   }, [onDirtyChange]);
 
   useEffect(() => {
-    onDirtyChangeRef.current(form.formState.isDirty);
-  }, [form.formState.isDirty]);
+    onDirtyChangeRef.current(form.formState.isDirty || checklistDrafts.length > 0);
+  }, [checklistDrafts.length, form.formState.isDirty]);
 
   useEffect(() => {
     titleInputRef.current?.focus();
@@ -123,7 +126,20 @@ export function TaskCreateForm({
       values.title !== '' ||
         values.description !== '' ||
         values.priority !== '' ||
-        values.dueDate !== ''
+        values.dueDate !== '' ||
+        checklistDrafts.length > 0
+    );
+  };
+  const handleChecklistDraftChange = (items: CreateChecklistDraft[]) => {
+    setChecklistDrafts(items);
+    setFormError(null);
+    const values = form.getValues();
+    onDirtyChangeRef.current(
+      values.title !== '' ||
+        values.description !== '' ||
+        values.priority !== '' ||
+        values.dueDate !== '' ||
+        items.length > 0
     );
   };
   const titleField = form.register('title');
@@ -186,11 +202,23 @@ export function TaskCreateForm({
   };
 
   const onSubmit = async (values: TaskCreateValues) => {
+    if (
+      checklistDrafts.some((item) => item.title.trim() !== '' && item.title.trim().length > 255)
+    ) {
+      setFormError('Checklist item titles must be 255 characters or fewer.');
+      return;
+    }
     const payload: CreateTaskPayload = { title: values.title };
     const description = toTaskDescriptionDocument(values.description);
     if (description) payload.description = description;
     if (values.priority) payload.priority = values.priority;
     if (values.dueDate) payload.dueDate = values.dueDate;
+    const checklist = checklistDrafts.flatMap((item) => {
+      const title = item.title.trim();
+      if (!title) return [];
+      return [{ title, ...(item.dueDate ? { dueDate: item.dueDate } : {}) }];
+    });
+    if (checklist.length > 0) payload.checklist = checklist;
     const snapshot: TaskCreateRecovery = {
       payload,
       requestKey: globalThis.crypto.randomUUID(),
@@ -326,6 +354,12 @@ export function TaskCreateForm({
             </p>
           )}
         </div>
+
+        <TaskCreateChecklist
+          items={checklistDrafts}
+          onChange={handleChecklistDraftChange}
+          disabled={fieldsDisabled}
+        />
 
         {formError && (
           <p

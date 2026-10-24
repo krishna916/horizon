@@ -13,7 +13,7 @@ type TaskSummary = {
   updatedAt: string;
 };
 
-type TaskDetail = TaskSummary & { description: null; deletedAt: null };
+type TaskDetail = TaskSummary & { description: null; deletedAt: null; checklist: [] };
 
 function task(id: number, title: string): TaskSummary {
   return {
@@ -75,7 +75,7 @@ test('guards, retries, saves, and discards inline field drafts across task navig
 }) => {
   const tasks = [task(1, 'First browser task'), task(2, 'Second browser task')];
   const details = new Map<number, TaskDetail>(
-    tasks.map((item) => [item.id, { ...item, description: null, deletedAt: null }])
+    tasks.map((item) => [item.id, { ...item, description: null, deletedAt: null, checklist: [] }])
   );
   const patches: Array<{ id: number; body: Record<string, unknown> }> = [];
   let failNextPatch = true;
@@ -225,7 +225,7 @@ test('saves a dirty title before continuing to the original sidebar route after 
 }) => {
   const tasks = [task(1, 'First browser task'), task(2, 'Second browser task')];
   const details = new Map<number, TaskDetail>(
-    tasks.map((item) => [item.id, { ...item, description: null, deletedAt: null }])
+    tasks.map((item) => [item.id, { ...item, description: null, deletedAt: null, checklist: [] }])
   );
   let releasePatch!: () => void;
   const patchGate = new Promise<void>((resolve) => (releasePatch = resolve));
@@ -270,7 +270,7 @@ test('saves a dirty title before continuing to the original sidebar route after 
 for (const direction of ['back', 'forward'] as const) {
   test(`saves a dirty title before ${direction} after a deferred PATCH`, async ({ page }) => {
     const details = new Map<number, TaskDetail>([
-      [1, { ...task(1, 'History task'), description: null, deletedAt: null }],
+      [1, { ...task(1, 'History task'), description: null, deletedAt: null, checklist: [] }],
     ]);
     let releasePatch!: () => void;
     const patchGate = new Promise<void>((resolve) => (releasePatch = resolve));
@@ -347,7 +347,7 @@ for (const direction of ['back', 'forward'] as const) {
 
 test('title edit preserves the read-mode geometry and typography in Chromium', async ({ page }) => {
   const tasks = [task(1, 'A long task title that should wrap naturally within the detail pane')];
-  const detail = { ...tasks[0]!, description: null, deletedAt: null };
+  const detail = { ...tasks[0]!, description: null, deletedAt: null, checklist: [] as [] };
   await page.route('**/api/v1/users/me', (route) =>
     route.fulfill({
       status: 200,
@@ -426,7 +426,7 @@ test('title edit preserves the read-mode geometry and typography in Chromium', a
 
 test('title edit preserves whitespace and wrapping for multiline titles', async ({ page }) => {
   const title = 'First part of the title\nSecond part of the title';
-  const detail = { ...task(1, title), description: null, deletedAt: null };
+  const detail = { ...task(1, title), description: null, deletedAt: null, checklist: [] as [] };
   await page.route('**/api/v1/users/me', (route) =>
     route.fulfill({
       status: 200,

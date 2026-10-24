@@ -76,4 +76,37 @@ class TaskCreationFingerprintTest {
                                 LocalDate.parse("2026-10-21")))
                 .isNotEqualTo(baseline);
     }
+
+    @Test
+    void omittedAndEmptyChecklistFingerprintEquivalent() {
+        String omitted = TaskCreationFingerprint.compute("Task", null, null, null, null);
+        String empty = TaskCreationFingerprint.compute("Task", null, null, null, List.of());
+
+        assertThat(omitted).isEqualTo(empty);
+    }
+
+    @Test
+    void checklistDateAndOrderAffectFingerprint() {
+        InitialChecklistItem first =
+                new InitialChecklistItem("First", LocalDate.parse("2026-10-28"));
+        InitialChecklistItem second = new InitialChecklistItem("Second", null);
+        String baseline =
+                TaskCreationFingerprint.compute("Task", null, null, null, List.of(first, second));
+
+        assertThat(
+                        TaskCreationFingerprint.compute(
+                                "Task",
+                                null,
+                                null,
+                                null,
+                                List.of(
+                                        new InitialChecklistItem(
+                                                "First", LocalDate.parse("2026-10-29")),
+                                        second)))
+                .isNotEqualTo(baseline);
+        assertThat(
+                        TaskCreationFingerprint.compute(
+                                "Task", null, null, null, List.of(second, first)))
+                .isNotEqualTo(baseline);
+    }
 }

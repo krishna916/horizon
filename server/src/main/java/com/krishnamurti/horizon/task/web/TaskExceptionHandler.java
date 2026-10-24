@@ -1,5 +1,6 @@
 package com.krishnamurti.horizon.task.web;
 
+import com.krishnamurti.horizon.task.application.ChecklistOrderConflictException;
 import com.krishnamurti.horizon.task.application.TaskCreationConflictException;
 import com.krishnamurti.horizon.task.application.TaskNotFoundException;
 import com.krishnamurti.horizon.task.domain.InvalidTaskException;
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /** Task-controller Problem Details for owner-safe not-found and domain validation failures. */
-@RestControllerAdvice(assignableTypes = TaskController.class)
+@RestControllerAdvice(assignableTypes = {TaskController.class, TaskChecklistController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class TaskExceptionHandler {
 
@@ -35,6 +36,16 @@ public class TaskExceptionHandler {
         detail.setTitle("Task Creation Conflict");
         detail.setDetail("The task creation request cannot be replayed.");
         detail.setInstance(URI.create("/api/v1/tasks"));
+        return detail;
+    }
+
+    @ExceptionHandler(ChecklistOrderConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ProblemDetail handleChecklistOrderConflict(ChecklistOrderConflictException exception) {
+        ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        detail.setTitle("Checklist Order Conflict");
+        detail.setDetail(exception.getMessage());
+        detail.setInstance(URI.create("/api/v1/tasks/checklist-items/order"));
         return detail;
     }
 

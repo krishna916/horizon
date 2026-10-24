@@ -19,6 +19,15 @@ export interface TaskSummary {
 export interface TaskDetail extends TaskSummary {
   description: Record<string, unknown> | null;
   deletedAt: string | null;
+  checklist: ChecklistItem[];
+}
+
+export interface ChecklistItem {
+  id: number;
+  title: string;
+  dueDate: string | null;
+  completedAt: string | null;
+  position: number;
 }
 
 export interface TaskListResponse {
@@ -30,4 +39,5 @@ export interface CreateTaskPayload {
   description?: Record<string, unknown> | null;
   priority?: TaskPriority | null;
   dueDate?: string | null;
+  checklist?: { title: string; dueDate?: string | null }[];
 }

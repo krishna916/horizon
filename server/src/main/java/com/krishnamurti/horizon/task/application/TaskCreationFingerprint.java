@@ -24,11 +24,37 @@ public final class TaskCreationFingerprint {
             Map<String, Object> description,
             TaskPriority priority,
             LocalDate dueDate) {
+        return compute(normalizedTitle, description, priority, dueDate, List.of());
+    }
+
+    public static String compute(
+            String normalizedTitle,
+            Map<String, Object> description,
+            TaskPriority priority,
+            LocalDate dueDate,
+            List<InitialChecklistItem> checklist) {
         Map<String, Object> canonicalRequest = new LinkedHashMap<>();
         canonicalRequest.put("title", normalizedTitle == null ? null : normalizedTitle.strip());
         canonicalRequest.put("description", canonicalize(description));
         canonicalRequest.put("priority", priority == null ? null : priority.name());
         canonicalRequest.put("dueDate", dueDate == null ? null : dueDate.toString());
+        List<Map<String, Object>> canonicalChecklist =
+                checklist == null
+                        ? List.of()
+                        : checklist.stream()
+                                .map(
+                                        item -> {
+                                            Map<String, Object> child = new LinkedHashMap<>();
+                                            child.put("title", item.title().strip());
+                                            child.put(
+                                                    "dueDate",
+                                                    item.dueDate() == null
+                                                            ? null
+                                                            : item.dueDate().toString());
+                                            return child;
+                                        })
+                                .toList();
+        canonicalRequest.put("checklist", canonicalChecklist);
 
         try {
             byte[] canonicalBytes = OBJECT_MAPPER.writeValueAsBytes(canonicalRequest);

@@ -142,6 +142,9 @@ describe('TaskRow', () => {
   });
 
   it('keeps completion independent from the row opener and reports the latest intent', async () => {
+    vi.mocked(taskApi.get).mockResolvedValueOnce({
+      data: { ...task(), description: null, deletedAt: null, checklist: [] },
+    } as never);
     const onOpen = vi.fn();
     const onCompletionIntent = vi.fn();
     renderTaskRow({}, { onOpen, onCompletionIntent });
@@ -149,11 +152,8 @@ describe('TaskRow', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-7' }));
 
     expect(onOpen).not.toHaveBeenCalled();
-    expect(onCompletionIntent).toHaveBeenCalledWith(7, true);
-    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-7' })).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
+    await waitFor(() => expect(onCompletionIntent).toHaveBeenCalledWith(7, true));
+    await waitFor(() => expect(taskApi.complete).toHaveBeenCalledWith(7));
     await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
   });
 
@@ -175,9 +175,11 @@ describe('TaskRow', () => {
 
   it('shows persistent inline retry feedback after a failed save', async () => {
     vi.mocked(taskApi.complete).mockRejectedValueOnce(new Error('offline'));
-    vi.mocked(taskApi.get).mockResolvedValueOnce({
-      data: { ...task(), description: null, deletedAt: null },
-    } as never);
+    vi.mocked(taskApi.get)
+      .mockResolvedValueOnce({
+        data: { ...task(), description: null, deletedAt: null, checklist: [] },
+      } as never)
+      .mockRejectedValueOnce(new Error('offline'));
     renderTaskRow();
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Complete TASK-7' }));

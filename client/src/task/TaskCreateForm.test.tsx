@@ -19,6 +19,7 @@ const createdTask: TaskDetail = {
   updatedAt: '2026-10-20T10:00:00Z',
   description: null,
   deletedAt: null,
+  checklist: [],
 };
 
 function renderForm(props: Partial<React.ComponentProps<typeof TaskCreateForm>> = {}) {
@@ -53,6 +54,71 @@ afterEach(() => {
 });
 
 describe('TaskCreateForm', () => {
+  it('submits ordered checklist drafts atomically with the task and omits local IDs', async () => {
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Plan the reception' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add checklist draft item' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Checklist item 1 title' }), {
+      target: { value: '  Book a table  ' },
+    });
+    fireEvent.change(screen.getByLabelText('Checklist item 1 due date'), {
+      target: { value: '2026-10-28' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add checklist draft item' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Checklist item 2 title' }), {
+      target: { value: 'Call florist' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+    expect(createTask).toHaveBeenCalledWith(
+      {
+        title: 'Plan the reception',
+        checklist: [{ title: 'Book a table', dueDate: '2026-10-28' }, { title: 'Call florist' }],
+      },
+      '11111111-1111-4111-8111-111111111111'
+    );
+    expect(JSON.stringify(createTask.mock.calls[0]?.[0])).not.toContain('localId');
+  });
+
+  it('never submits a blank checklist draft row', async () => {
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Plan the reception' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add checklist draft item' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+    expect(createTask.mock.calls[0]?.[0]).toEqual({ title: 'Plan the reception' });
+  });
+
+  it('shows a form error for a nonblank checklist title longer than 255 characters', async () => {
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Plan the reception' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add checklist draft item' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Checklist item 1 title' }), {
+      target: { value: 'x'.repeat(256) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Checklist item titles must be 255 characters or fewer.'
+    );
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it('marks a checklist-only creation draft dirty for navigation protection', async () => {
+    const { onDirtyChange } = renderForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Add checklist draft item' }));
+
+    await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith(true));
+  });
+
   it('requires a trimmed title and never submits on blur', async () => {
     renderForm();
     expect(globalThis.crypto.randomUUID).not.toHaveBeenCalled();
@@ -145,6 +211,10 @@ describe('TaskCreateForm', () => {
     const description = screen.getByRole('textbox', { name: 'Description (optional)' });
     fireEvent.change(title, { target: { value: 'Write a release note' } });
     fireEvent.change(description, { target: { value: 'Do not lose this draft.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add checklist draft item' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Checklist item 1 title' }), {
+      target: { value: 'Keep this row unchanged.' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     const retry = await screen.findByRole('button', { name: 'Retry creation' });
@@ -287,6 +357,15 @@ describe('TaskCreateForm', () => {
     });
     await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith(true));
 
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it('cancels a local checklist draft without calling a child API', () => {
+    const { onCancel } = renderForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Add checklist draft item' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(onCancel).toHaveBeenCalledTimes(1);

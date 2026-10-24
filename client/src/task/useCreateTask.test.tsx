@@ -22,6 +22,7 @@ const detail = (id: number): TaskDetail => ({
   updatedAt: '2026-10-20T10:00:00Z',
   description: null,
   deletedAt: null,
+  checklist: [],
 });
 
 const summary = (id: number): TaskSummary => ({
@@ -64,6 +65,24 @@ describe('task creation API', () => {
 });
 
 describe('useCreateTask', () => {
+  it('excludes checklist children from the cached task list summary', async () => {
+    const created = {
+      ...detail(41),
+      checklist: [{ id: 91, title: 'Call florist', dueDate: null, completedAt: null, position: 0 }],
+    };
+    vi.spyOn(apiClient, 'post').mockResolvedValue({ data: created } as never);
+    const { Wrapper, queryClient } = createWrapper();
+    queryClient.setQueryData<TaskListResponse>(['tasks', 1], { items: [] });
+
+    const { result } = renderHook(() => useCreateTask(1), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.createTask({ title: 'Created task' }, 'request-uuid');
+    });
+
+    const [createdSummary] = queryClient.getQueryData<TaskListResponse>(['tasks', 1])!.items;
+    expect(createdSummary).not.toHaveProperty('checklist');
+  });
+
   it('resolves creation while the invalidated list refetch is still pending', async () => {
     let finishRefetch!: (response: { data: TaskListResponse }) => void;
     const listSpy = vi

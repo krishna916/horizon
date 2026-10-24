@@ -134,6 +134,51 @@ class IdempotentTaskCreationServiceTest {
                 .isZero();
     }
 
+    @Test
+    void replayedChecklistRequestDoesNotDuplicateChildrenAndChangedDateOrOrderConflicts() {
+        Long userId = createUserId();
+        UUID requestKey = UUID.randomUUID();
+        authenticateAs(userId);
+        List<InitialChecklistItem> items =
+                List.of(
+                        new InitialChecklistItem("First", LocalDate.parse("2026-10-28")),
+                        new InitialChecklistItem("Second", null));
+
+        Task created =
+                idempotentTaskCreationService.create(
+                        requestKey, "Checklist task", null, null, null, items);
+        Task replayed =
+                idempotentTaskCreationService.create(
+                        requestKey, "Checklist task", null, null, null, items);
+
+        assertThat(replayed.getId()).isEqualTo(created.getId());
+        assertThat(checklistItemCount(created.getId())).isEqualTo(2L);
+        assertThatThrownBy(
+                        () ->
+                                idempotentTaskCreationService.create(
+                                        requestKey,
+                                        "Checklist task",
+                                        null,
+                                        null,
+                                        null,
+                                        List.of(
+                                                new InitialChecklistItem(
+                                                        "First", LocalDate.parse("2026-10-29")),
+                                                items.get(1))))
+                .isInstanceOf(TaskCreationConflictException.class);
+        assertThatThrownBy(
+                        () ->
+                                idempotentTaskCreationService.create(
+                                        requestKey,
+                                        "Checklist task",
+                                        null,
+                                        null,
+                                        null,
+                                        List.of(items.get(1), items.get(0))))
+                .isInstanceOf(TaskCreationConflictException.class);
+        assertThat(checklistItemCount(created.getId())).isEqualTo(2L);
+    }
+
     private Long createUserId() {
         return userCommandService.register(UUID.randomUUID() + "@example.com", "Password123!").id();
     }
@@ -155,5 +200,10 @@ class IdempotentTaskCreationServiceTest {
                 "SELECT last_allocated FROM task_key_counter WHERE user_id = ?",
                 Long.class,
                 userId);
+    }
+
+    private Long checklistItemCount(Long taskId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM checklist_item WHERE task_id = ?", Long.class, taskId);
     }
 }

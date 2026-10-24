@@ -19,6 +19,7 @@ const task: TaskDetail = {
   updatedAt: '2026-10-20T10:00:00Z',
   description: null,
   deletedAt: null,
+  checklist: [],
 };
 
 function createWrapper() {
