@@ -190,7 +190,7 @@ function canonicalize(value: unknown, applySchemaDefaults: boolean): unknown {
       ? defaultAttributes[value.type]
       : undefined;
   const canonical: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort()) {
+  for (const key of Object.keys(value).sort((first, second) => first.localeCompare(second, 'en'))) {
     const property = value[key];
     if (key === 'attrs' && isRecord(property) && defaults) {
       const entries = Object.entries(property).filter(
