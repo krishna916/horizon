@@ -35,10 +35,14 @@ function task(id: number, overrides: Partial<Task> = {}): Task {
   };
 }
 
-type ApiControls = { tasks: Task[]; commands: string[] };
+type ApiControls = { tasks: Task[]; commands: string[]; abortDeleteOnce: Set<number> };
 
 async function installTaskApi(page: Page, initial: Task[] = [task(1), task(2)]) {
-  const controls: ApiControls = { tasks: initial.map((item) => ({ ...item })), commands: [] };
+  const controls: ApiControls = {
+    tasks: initial.map((item) => ({ ...item })),
+    commands: [],
+    abortDeleteOnce: new Set(),
+  };
   await page.route('**/api/v1/users/me', (route) =>
     route.fulfill({
       status: 200,
@@ -137,6 +141,10 @@ async function installTaskApi(page: Page, initial: Task[] = [task(1), task(2)]) 
     if (!operation && method === 'DELETE') {
       controls.commands.push(`delete:${id}`);
       controls.tasks[index] = { ...current, deletedAt: new Date().toISOString() };
+      if (controls.abortDeleteOnce.delete(id)) {
+        await route.abort('failed');
+        return;
+      }
       await route.fulfill({ status: 204 });
       return;
     }
@@ -236,6 +244,37 @@ test('confirmed panel delete returns to the list and Undo restores the task', as
   await page.getByRole('button', { name: 'Undo TASK-1 delete' }).click();
   await expect(page.getByRole('button', { name: 'Open TASK-1: Lifecycle task 1' })).toBeVisible();
   await expect.poll(() => api.commands).toEqual(['delete:1', 'restore-deleted:1']);
+});
+
+test('a committed delete with a lost response stays retryable after a later list refetch', async ({
+  page,
+}) => {
+  const api = await installTaskApi(page, [task(1), task(2)]);
+  api.abortDeleteOnce.add(1);
+  await page.goto('/tasks');
+
+  await page.getByRole('button', { name: 'More actions for TASK-1' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
+  await expect(page.getByText("Couldn't confirm moving TASK-1 to Trash")).toBeVisible();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Retry delete for TASK-1' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Undo TASK-1 delete' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'More actions for TASK-2' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
+  await expect(page.getByRole('button', { name: 'Open TASK-1: Lifecycle task 1' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Retry delete for TASK-1' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Undo TASK-1 delete' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Retry delete for TASK-1' }).click();
+  await expect(page.getByText('TASK-1 moved to Trash')).toBeVisible();
+  await page.getByRole('button', { name: 'Undo TASK-1 delete' }).click();
+  await expect(page.getByRole('button', { name: 'Open TASK-1: Lifecycle task 1' })).toBeVisible();
+  await expect
+    .poll(() => api.commands)
+    .toEqual(['delete:1', 'delete:2', 'delete:1', 'restore-deleted:1']);
 });
 
 test('confirmed delete from the canonical page replaces that URL with the list', async ({

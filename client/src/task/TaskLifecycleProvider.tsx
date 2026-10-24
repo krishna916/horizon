@@ -7,15 +7,18 @@ import { taskApi } from './api';
 
 export type LifecycleOperation = 'archive' | 'restore' | 'delete';
 
-export interface LifecycleNotice {
+interface LifecycleNoticeFields {
   id: string;
   userId: number;
   taskId: number;
   taskKey: string;
-  action: 'archive' | 'delete';
   error: string | null;
   retrying: boolean;
 }
+
+export type LifecycleNotice =
+  | (LifecycleNoticeFields & { kind: 'undo'; action: 'archive' | 'delete' })
+  | (LifecycleNoticeFields & { kind: 'delete-unconfirmed'; action: 'delete' });
 
 interface LifecycleState {
   pending: boolean;
@@ -30,6 +33,7 @@ interface RetryIntent {
 interface TaskLifecycleApi {
   run: (userId: number, task: TaskSummary, operation: LifecycleOperation) => Promise<boolean>;
   undo: (noticeId: string) => Promise<boolean>;
+  retryDelete: (noticeId: string) => Promise<boolean>;
   dismiss: (noticeId: string) => void;
   notices: readonly LifecycleNotice[];
   stateFor: (
@@ -195,6 +199,7 @@ export function TaskLifecycleProvider({
                   userId: ownerId,
                   taskId: task.id,
                   taskKey: task.key,
+                  kind: 'undo',
                   action: operation,
                   error: null,
                   retrying: false,
@@ -207,6 +212,42 @@ export function TaskLifecycleProvider({
         } catch {
           if (currentUserIdRef.current === ownerId) {
             publishState(key, { pending: false, error: responseError(operation) });
+            if (operation === 'delete') {
+              publishNotices((current) => {
+                const existing = current.find(
+                  (notice) =>
+                    notice.kind === 'delete-unconfirmed' &&
+                    notice.userId === ownerId &&
+                    notice.taskId === task.id
+                );
+                if (existing) {
+                  return current.map((notice) =>
+                    notice.id === existing.id
+                      ? {
+                          ...notice,
+                          error: 'Retry failed. Deletion is still unconfirmed.',
+                          retrying: false,
+                        }
+                      : notice
+                  );
+                }
+                return [
+                  ...current.filter(
+                    (notice) => notice.userId !== ownerId || notice.taskId !== task.id
+                  ),
+                  {
+                    id: `${ownerId}:${task.id}:delete-unconfirmed`,
+                    userId: ownerId,
+                    taskId: task.id,
+                    taskKey: task.key,
+                    kind: 'delete-unconfirmed',
+                    action: 'delete',
+                    error: null,
+                    retrying: false,
+                  },
+                ];
+              });
+            }
           }
           return false;
         }
@@ -223,7 +264,9 @@ export function TaskLifecycleProvider({
   const undo = useCallback(
     async (noticeId: string): Promise<boolean> => {
       const notice = noticesRef.current.find((item) => item.id === noticeId);
-      if (!notice || currentUserIdRef.current !== notice.userId) return false;
+      if (!notice || notice.kind !== 'undo' || currentUserIdRef.current !== notice.userId) {
+        return false;
+      }
       const key = operationKey(notice.userId, notice.taskId);
       publishNotices((current) =>
         current.map((item) =>
@@ -254,9 +297,40 @@ export function TaskLifecycleProvider({
     [publishNotices, publishState, reconcileTask]
   );
 
+  const retryDelete = useCallback(
+    (noticeId: string): Promise<boolean> => {
+      const notice = noticesRef.current.find((item) => item.id === noticeId);
+      if (
+        !notice ||
+        notice.kind !== 'delete-unconfirmed' ||
+        currentUserIdRef.current !== notice.userId
+      ) {
+        return Promise.resolve(false);
+      }
+      const key = operationKey(notice.userId, notice.taskId);
+      const intent = retryIntentsRef.current.get(key);
+      if (!intent || intent.operation !== 'delete') return Promise.resolve(false);
+
+      publishNotices((current) =>
+        current.map((item) =>
+          item.id === noticeId ? { ...item, error: null, retrying: true } : item
+        )
+      );
+      return run(notice.userId, intent.task, 'delete');
+    },
+    [publishNotices, run]
+  );
+
   const dismiss = useCallback(
-    (noticeId: string) =>
-      publishNotices((current) => current.filter((item) => item.id !== noticeId)),
+    (noticeId: string) => {
+      const notice = noticesRef.current.find((item) => item.id === noticeId);
+      if (notice?.kind === 'delete-unconfirmed') {
+        if (notice.retrying) return;
+        const key = operationKey(notice.userId, notice.taskId);
+        retryIntentsRef.current.delete(key);
+      }
+      publishNotices((current) => current.filter((item) => item.id !== noticeId));
+    },
     [publishNotices]
   );
 
@@ -277,7 +351,7 @@ export function TaskLifecycleProvider({
   );
 
   return (
-    <LifecycleContext.Provider value={{ run, undo, dismiss, notices, stateFor }}>
+    <LifecycleContext.Provider value={{ run, undo, retryDelete, dismiss, notices, stateFor }}>
       {children}
     </LifecycleContext.Provider>
   );

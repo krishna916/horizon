@@ -14,39 +14,52 @@ export function TaskLifecycleNoticeList(): React.JSX.Element | null {
           role="status"
         >
           <p className="min-w-0 flex-1">
-            {notice.taskKey} {notice.action === 'archive' ? 'archived' : 'moved to Trash'}
+            {notice.kind === 'delete-unconfirmed'
+              ? `Couldn't confirm moving ${notice.taskKey} to Trash`
+              : `${notice.taskKey} ${notice.action === 'archive' ? 'archived' : 'moved to Trash'}`}
           </p>
           {notice.error && (
             <p className="w-full text-destructive" role="alert">
               {notice.error}
             </p>
           )}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={notice.retrying}
-            onClick={() => void lifecycle.undo(notice.id)}
-            aria-label={`Undo ${notice.taskKey} ${notice.action}`}
-          >
-            {notice.retrying ? 'Restoring…' : 'Undo'}
-          </Button>
-          {notice.error && (
+          {notice.kind === 'undo' && (
             <Button
               type="button"
               size="sm"
               variant="outline"
               disabled={notice.retrying}
               onClick={() => void lifecycle.undo(notice.id)}
-              aria-label={`Retry undo for ${notice.taskKey}`}
+              aria-label={`Undo ${notice.taskKey} ${notice.action}`}
             >
-              Retry
+              {notice.retrying ? 'Restoring…' : 'Undo'}
+            </Button>
+          )}
+          {(notice.kind === 'delete-unconfirmed' || (notice.kind === 'undo' && notice.error)) && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={notice.retrying}
+              onClick={() =>
+                void (notice.kind === 'delete-unconfirmed'
+                  ? lifecycle.retryDelete(notice.id)
+                  : lifecycle.undo(notice.id))
+              }
+              aria-label={
+                notice.kind === 'delete-unconfirmed'
+                  ? `Retry delete for ${notice.taskKey}`
+                  : `Retry undo for ${notice.taskKey}`
+              }
+            >
+              {notice.retrying ? 'Retrying…' : 'Retry'}
             </Button>
           )}
           <Button
             type="button"
             size="sm"
             variant="ghost"
+            disabled={notice.retrying}
             onClick={() => lifecycle.dismiss(notice.id)}
             aria-label={`Dismiss ${notice.taskKey} notice`}
           >

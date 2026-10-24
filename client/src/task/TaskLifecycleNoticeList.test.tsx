@@ -112,6 +112,28 @@ describe('TaskLifecycleNoticeList', () => {
     expect(taskApi.restoreArchive).toHaveBeenCalledTimes(2);
   });
 
+  it('shows Retry without Undo for an unconfirmed delete, then offers Undo only after confirmation', async () => {
+    vi.mocked(taskApi.softDelete)
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce(response(undefined));
+    vi.mocked(taskApi.restoreDeleted).mockResolvedValue(response(taskDetail(2)));
+    renderNotices();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete second' }));
+
+    expect(await screen.findByText("Couldn't confirm moving TASK-2 to Trash")).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry delete for TASK-2' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo TASK-2 delete' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry delete for TASK-2' }));
+
+    expect(await screen.findByText('TASK-2 moved to Trash')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo TASK-2 delete' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Retry delete for TASK-2' })
+    ).not.toBeInTheDocument();
+  });
+
   it('does not expire notices automatically', async () => {
     vi.useFakeTimers();
     vi.mocked(taskApi.archive).mockResolvedValue(

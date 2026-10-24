@@ -59,6 +59,13 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function retryDelete(lifecycle: ReturnType<typeof useTaskLifecycle>, noticeId: string) {
+  const retry = (lifecycle as unknown as { retryDelete?: (id: string) => Promise<boolean> })
+    .retryDelete;
+  expect(retry).toBeTypeOf('function');
+  return retry?.(noticeId) ?? Promise.resolve(false);
+}
+
 function Probe({
   userId,
   task,
@@ -379,7 +386,9 @@ describe('TaskLifecycleProvider', () => {
       expect(await harness.lifecycle().run(1, task, 'delete')).toBe(false);
     });
     expect(harness.queryClient.getQueryData<TaskListResponse>(listKey)?.items).toHaveLength(1);
-    expect(harness.lifecycle().notices).toHaveLength(0);
+    expect(harness.lifecycle().notices).toMatchObject([
+      { kind: 'delete-unconfirmed', taskId: 10, action: 'delete' },
+    ]);
 
     await act(async () => {
       harness.lifecycle().stateFor(1, 10).retry();
@@ -388,7 +397,144 @@ describe('TaskLifecycleProvider', () => {
       expect(harness.queryClient.getQueryData<TaskListResponse>(listKey)?.items).toEqual([])
     );
     expect(harness.lifecycle().notices).toHaveLength(1);
+    expect(harness.lifecycle().notices[0]?.kind).toBe('undo');
     expect(taskApi.softDelete).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains delete recovery after the server deleted the task and a list refetch removes its row', async () => {
+    const task = taskSummary(20);
+    const harness = createHarness(1, task);
+    const listKey = ['tasks', 1] as const;
+    let serverDeleted = false;
+    harness.queryClient.setQueryData<TaskListResponse>(listKey, { items: [task] });
+    vi.mocked(taskApi.softDelete)
+      .mockImplementationOnce(async () => {
+        serverDeleted = true;
+        throw new Error('response lost after commit');
+      })
+      .mockResolvedValueOnce(response(undefined));
+    vi.mocked(taskApi.restoreDeleted).mockResolvedValue(response(taskDetail(20)));
+
+    await act(async () => {
+      expect(await harness.lifecycle().run(1, task, 'delete')).toBe(false);
+    });
+    await act(async () => {
+      await harness.queryClient.fetchQuery({
+        queryKey: listKey,
+        queryFn: async () => ({ items: serverDeleted ? [] : [task] }),
+      });
+    });
+    expect(harness.queryClient.getQueryData<TaskListResponse>(listKey)?.items).toEqual([]);
+    expect(harness.lifecycle().notices).toHaveLength(1);
+    const unconfirmed = harness.lifecycle().notices[0]!;
+    expect(unconfirmed).toMatchObject({ kind: 'delete-unconfirmed', taskId: 20, action: 'delete' });
+
+    await act(async () => {
+      expect(await retryDelete(harness.lifecycle(), unconfirmed.id)).toBe(true);
+    });
+    expect(harness.queryClient.getQueryData<TaskListResponse>(listKey)?.items).toEqual([]);
+    expect(harness.lifecycle().notices).toHaveLength(1);
+    expect(harness.lifecycle().notices[0]).toMatchObject({
+      kind: 'undo',
+      taskId: 20,
+      action: 'delete',
+    });
+
+    await act(async () => {
+      expect(await harness.lifecycle().undo(harness.lifecycle().notices[0]!.id)).toBe(true);
+    });
+    expect(harness.queryClient.getQueryData<TaskListResponse>(listKey)?.items).toHaveLength(1);
+  });
+
+  it('keeps one unconfirmed delete notice across repeated retry failures and alongside other tasks', async () => {
+    const deletedTask = taskSummary(21);
+    const archivedTask = taskSummary(22);
+    const harness = createHarness(1, deletedTask);
+    vi.mocked(taskApi.softDelete)
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockRejectedValueOnce(new Error('still unavailable'))
+      .mockResolvedValueOnce(response(undefined));
+    vi.mocked(taskApi.archive).mockResolvedValue(
+      response(taskDetail(22, { archivedAt: '2026-10-24T09:00:00Z' }))
+    );
+
+    await act(async () => {
+      expect(await harness.lifecycle().run(1, deletedTask, 'delete')).toBe(false);
+    });
+    const firstNotice = harness.lifecycle().notices[0]!;
+    expect(firstNotice.kind).toBe('delete-unconfirmed');
+    await act(async () => {
+      expect(await retryDelete(harness.lifecycle(), firstNotice.id)).toBe(false);
+    });
+    expect(harness.lifecycle().notices).toHaveLength(1);
+    expect(harness.lifecycle().notices[0]).toMatchObject({
+      id: firstNotice.id,
+      kind: 'delete-unconfirmed',
+      taskId: 21,
+      retrying: false,
+    });
+
+    await act(async () => {
+      expect(await harness.lifecycle().run(1, archivedTask, 'archive')).toBe(true);
+    });
+    expect(harness.lifecycle().notices.map(({ taskId, kind }) => ({ taskId, kind }))).toEqual([
+      { taskId: 21, kind: 'delete-unconfirmed' },
+      { taskId: 22, kind: 'undo' },
+    ]);
+
+    await act(async () => {
+      expect(await retryDelete(harness.lifecycle(), firstNotice.id)).toBe(true);
+    });
+    expect(harness.lifecycle().notices.map(({ taskId, kind }) => ({ taskId, kind }))).toEqual([
+      { taskId: 22, kind: 'undo' },
+      { taskId: 21, kind: 'undo' },
+    ]);
+    expect(taskApi.softDelete).toHaveBeenCalledTimes(3);
+  });
+
+  it('dismisses an unconfirmed delete without presenting it as a successful delete', async () => {
+    const task = taskSummary(23);
+    const harness = createHarness(1, task);
+    vi.mocked(taskApi.softDelete).mockRejectedValueOnce(new Error('response lost'));
+
+    await act(async () => {
+      expect(await harness.lifecycle().run(1, task, 'delete')).toBe(false);
+    });
+    const notice = harness.lifecycle().notices[0]!;
+    expect(notice.kind).toBe('delete-unconfirmed');
+    await act(async () => harness.lifecycle().dismiss(notice.id));
+
+    expect(harness.lifecycle().notices).toEqual([]);
+    expect(taskApi.restoreDeleted).not.toHaveBeenCalled();
+  });
+
+  it('keeps confirmed archive and delete undo flows unchanged', async () => {
+    const archivedTask = taskSummary(24);
+    const deletedTask = taskSummary(25);
+    const harness = createHarness(1, archivedTask);
+    vi.mocked(taskApi.archive).mockResolvedValue(
+      response(taskDetail(24, { archivedAt: '2026-10-24T09:00:00Z' }))
+    );
+    vi.mocked(taskApi.restoreArchive).mockResolvedValue(response(taskDetail(24)));
+    vi.mocked(taskApi.softDelete).mockResolvedValue(response(undefined));
+    vi.mocked(taskApi.restoreDeleted).mockResolvedValue(response(taskDetail(25)));
+
+    await act(async () => {
+      await harness.lifecycle().run(1, archivedTask, 'archive');
+    });
+    const archiveNotice = harness.lifecycle().notices[0]!;
+    expect(archiveNotice.kind).toBe('undo');
+    await act(async () => {
+      expect(await harness.lifecycle().undo(archiveNotice.id)).toBe(true);
+      await harness.lifecycle().run(1, deletedTask, 'delete');
+    });
+    const deleteNotice = harness.lifecycle().notices[0]!;
+    expect(deleteNotice).toMatchObject({ kind: 'undo', action: 'delete', taskId: 25 });
+    await act(async () => {
+      expect(await harness.lifecycle().undo(deleteNotice.id)).toBe(true);
+    });
+    expect(harness.lifecycle().notices).toEqual([]);
+    expect(taskApi.restoreDeleted).toHaveBeenCalledWith(25);
   });
 
   it('retains a failed Undo notice with retry feedback', async () => {
