@@ -8,9 +8,68 @@ import {
   createRouter,
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userApi } from '@/user/api';
+import { taskApi } from './api';
+import { useTaskLifecycle } from './TaskLifecycleProvider';
 import { useTasksLayout, TasksRouteLayout } from './TasksRouteLayout';
+import type { TaskSummary } from './types';
+import { useEffect, useState } from 'react';
+
+const lifecycleTask: TaskSummary = {
+  id: 91,
+  key: 'TASK-91',
+  title: 'Lifecycle test task',
+  priority: null,
+  dueDate: null,
+  inbox: false,
+  completedAt: null,
+  archivedAt: null,
+  createdAt: '2026-10-24T10:00:00Z',
+  updatedAt: '2026-10-24T10:00:00Z',
+};
+const retryTask: TaskSummary = { ...lifecycleTask, id: 92, key: 'TASK-92' };
+
+function LifecycleProbe() {
+  const lifecycle = useTaskLifecycle();
+  const queryClient = useQueryClient();
+  const [userLoaded, setUserLoaded] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [revalidationFinished, setRevalidationFinished] = useState(false);
+  async function revalidate() {
+    setVerifying(true);
+    await queryClient.refetchQueries({ queryKey: ['me'], exact: true });
+    setRevalidationFinished(true);
+    setVerifying(false);
+  }
+  useEffect(
+    () =>
+      queryClient.getQueryCache().subscribe(() => {
+        setUserLoaded(Boolean(queryClient.getQueryData(['me'])));
+      }),
+    [queryClient]
+  );
+  return (
+    <div>
+      {verifying && <span>Verifying session…</span>}
+      {revalidationFinished && <span>Revalidation finished</span>}
+      <button
+        disabled={!userLoaded}
+        onClick={() => void lifecycle.run(1, lifecycleTask, 'archive')}
+      >
+        Archive test task
+      </button>
+      <button disabled={!userLoaded} onClick={() => void lifecycle.run(1, retryTask, 'delete')}>
+        Create retry test notice
+      </button>
+      <button onClick={() => void revalidate()}>Revalidate session</button>
+      <button onClick={() => void lifecycle.undo(lifecycle.notices[0]?.id ?? '')}>
+        Try old Undo
+      </button>
+    </div>
+  );
+}
 
 function RatioProbe() {
   const { listRatio, setListRatio } = useTasksLayout();
@@ -32,7 +91,12 @@ function createTestRouter(initialEntry: string) {
   const tasksIndexRoute = createRoute({
     getParentRoute: () => tasksRoute,
     path: '/',
-    component: RatioProbe,
+    component: () => (
+      <>
+        <RatioProbe />
+        <LifecycleProbe />
+      </>
+    ),
   });
   const otherRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -47,11 +111,13 @@ function createTestRouter(initialEntry: string) {
   return router;
 }
 
-function renderRouter(router: ReturnType<typeof createTestRouter>) {
+function renderRouter(router: ReturnType<typeof createTestRouter>, setupUserMock = true) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  vi.spyOn(userApi, 'getCurrentUser').mockResolvedValue({
-    data: { id: 1, email: 'tasks@example.com' },
-  } as never);
+  if (setupUserMock && !vi.isMockFunction(userApi.getCurrentUser)) {
+    vi.spyOn(userApi, 'getCurrentUser').mockResolvedValue({
+      data: { id: 1, email: 'tasks@example.com' },
+    } as never);
+  }
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -85,5 +151,128 @@ describe('TasksRouteLayout', () => {
       await router.navigate({ to: '/tasks', search: { task: undefined, create: undefined } });
     });
     await waitFor(() => expect(screen.getByText('List ratio: 60')).toBeInTheDocument());
+  });
+
+  it('hides an existing notice during same-owner verification and restores it after success', async () => {
+    let resolveRevalidation!: (value: { data: { id: number; email: string } }) => void;
+    vi.spyOn(userApi, 'getCurrentUser')
+      .mockResolvedValueOnce({ data: { id: 1, email: 'tasks@example.com' } } as never)
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (resolveRevalidation = resolve)) as never
+      );
+    vi.spyOn(taskApi, 'archive').mockResolvedValue({
+      data: {
+        ...lifecycleTask,
+        archivedAt: '2026-10-24T11:00:00Z',
+        description: null,
+        deletedAt: null,
+        checklist: [],
+      },
+    } as never);
+    const deleteSpy = vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
+    const restoreSpy = vi.spyOn(taskApi, 'restoreArchive');
+    const router = createTestRouter('/tasks');
+    renderRouter(router);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Archive test task' })).toBeEnabled()
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive test task' }));
+    expect(await screen.findByText('TASK-91 archived')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create retry test notice' }));
+    expect(await screen.findByText("Couldn't confirm moving TASK-92 to Trash")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revalidate session' }));
+    await waitFor(() => expect(userApi.getCurrentUser).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Verifying session…')).toBeInTheDocument();
+    expect(screen.queryByText('TASK-91 archived')).not.toBeInTheDocument();
+    expect(screen.queryByText("Couldn't confirm moving TASK-92 to Trash")).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo TASK-91 archive' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Retry delete for TASK-92' })
+    ).not.toBeInTheDocument();
+    expect(deleteSpy).toHaveBeenCalledTimes(1);
+    expect(restoreSpy).not.toHaveBeenCalled();
+
+    await act(async () => resolveRevalidation({ data: { id: 1, email: 'tasks@example.com' } }));
+    expect(await screen.findByText('TASK-91 archived')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry delete for TASK-92' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo TASK-91 archive' })).toBeInTheDocument();
+  });
+
+  it('clears old notices after account change or failed session verification', async () => {
+    let resolveSwitch!: (value: { data: { id: number; email: string } }) => void;
+    const currentUserSpy = vi
+      .spyOn(userApi, 'getCurrentUser')
+      .mockResolvedValueOnce({ data: { id: 1, email: 'tasks@example.com' } } as never)
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSwitch = resolve)) as never)
+      .mockResolvedValue({ data: { id: 2, email: 'other@example.com' } } as never);
+    vi.spyOn(taskApi, 'archive').mockResolvedValue({
+      data: {
+        ...lifecycleTask,
+        archivedAt: '2026-10-24T11:00:00Z',
+        description: null,
+        deletedAt: null,
+        checklist: [],
+      },
+    } as never);
+    vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
+    const router = createTestRouter('/tasks');
+    renderRouter(router);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Archive test task' })).toBeEnabled()
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive test task' }));
+    expect(await screen.findByText('TASK-91 archived')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create retry test notice' }));
+    expect(await screen.findByText("Couldn't confirm moving TASK-92 to Trash")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Revalidate session' }));
+    await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(2));
+    await act(async () => resolveSwitch({ data: { id: 2, email: 'other@example.com' } }));
+    expect(screen.queryByText('TASK-91 archived')).not.toBeInTheDocument();
+    expect(screen.queryByText("Couldn't confirm moving TASK-92 to Trash")).not.toBeInTheDocument();
+    await act(async () => router.navigate({ to: '/notes' }));
+    await act(async () => router.navigate({ to: '/tasks' }));
+    expect(screen.queryByText('TASK-91 archived')).not.toBeInTheDocument();
+  });
+
+  it('clears old notices after failed verification and does not restore them on recovery', async () => {
+    const currentUserSpy = vi
+      .spyOn(userApi, 'getCurrentUser')
+      .mockResolvedValueOnce({ data: { id: 1, email: 'tasks@example.com' } } as never)
+      .mockRejectedValueOnce(new Error('session expired'))
+      .mockResolvedValueOnce({ data: { id: 1, email: 'tasks@example.com' } } as never);
+    vi.spyOn(taskApi, 'archive').mockResolvedValue({
+      data: {
+        ...lifecycleTask,
+        archivedAt: '2026-10-24T11:00:00Z',
+        description: null,
+        deletedAt: null,
+        checklist: [],
+      },
+    } as never);
+    vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
+    renderRouter(createTestRouter('/tasks'));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Archive test task' })).toBeEnabled()
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive test task' }));
+    expect(await screen.findByText('TASK-91 archived')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create retry test notice' }));
+    expect(await screen.findByText("Couldn't confirm moving TASK-92 to Trash")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revalidate session' }));
+    await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('TASK-91 archived')).not.toBeInTheDocument();
+    expect(screen.queryByText("Couldn't confirm moving TASK-92 to Trash")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revalidate session' }));
+    await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(3));
+    expect(await screen.findByText('List ratio: 60')).toBeInTheDocument();
+    expect(screen.queryByText('TASK-91 archived')).not.toBeInTheDocument();
+    expect(screen.queryByText("Couldn't confirm moving TASK-92 to Trash")).not.toBeInTheDocument();
   });
 });

@@ -16,13 +16,19 @@ const TasksLayoutContext = createContext<TasksLayoutState | null>(null);
 export function TasksRouteLayout() {
   const [listRatio, setListRatio] = useState(60);
   const currentUser = useCurrentUser();
+  const sessionVerified =
+    currentUser.data !== undefined &&
+    !currentUser.isPending &&
+    !currentUser.isFetching &&
+    !currentUser.isError;
+  const lifecycleOwnerKey = currentUser.isError ? 'no-user' : (currentUser.data?.id ?? 'no-user');
 
   return (
     <TaskDraftNavigationGuard>
-      <TaskLifecycleProvider key={currentUser.data?.id ?? 'no-user'} userId={currentUser.data?.id}>
+      <TaskLifecycleProvider key={lifecycleOwnerKey} userId={currentUser.data?.id}>
         <TasksLayoutContext.Provider value={{ listRatio, setListRatio }}>
           <div className="h-full min-h-0 w-full">
-            <TaskLifecycleNoticeList />
+            {sessionVerified && <TaskLifecycleNoticeList />}
             <Outlet />
           </div>
         </TasksLayoutContext.Provider>
