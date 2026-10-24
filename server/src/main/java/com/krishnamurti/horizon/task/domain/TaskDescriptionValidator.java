@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /** Validates and normalizes the supported Tiptap JSON schema for a Task description. */
 public final class TaskDescriptionValidator {
@@ -302,7 +303,7 @@ public final class TaskDescriptionValidator {
             invalid("link href must use an absolute http, https, or mailto URL");
         }
         Object target = attrs.get("target");
-        if (target != null && !"_blank".equals(target) && !"_self".equals(target)) {
+        if (target != null && !"_blank".equals(target)) {
             invalid("link target is invalid");
         }
         Object rel = attrs.get("rel");
@@ -348,10 +349,13 @@ public final class TaskDescriptionValidator {
         if (!(value instanceof String rel) || rel.isBlank()) {
             return false;
         }
-        return REL_TOKEN_SEPARATOR
-                .splitAsStream(rel)
-                .filter(token -> !token.isEmpty())
-                .allMatch(SAFE_REL_TOKENS::contains);
+        Set<String> tokens =
+                REL_TOKEN_SEPARATOR
+                        .splitAsStream(rel)
+                        .filter(token -> !token.isEmpty())
+                        .collect(Collectors.toSet());
+        return SAFE_REL_TOKENS.containsAll(tokens)
+                && tokens.containsAll(Set.of("noopener", "noreferrer"));
     }
 
     private static boolean isSemanticallyEmpty(Map<String, Object> document) {

@@ -46,6 +46,36 @@ describe('normalizeRichTextDocument', () => {
     ).toBe(false);
   });
 
+  it('accepts compatible href-only links and rejects outbound-policy overrides', () => {
+    const withLink = (attrs: Record<string, unknown>) => ({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Docs', marks: [{ type: 'link', attrs }] }],
+        },
+      ],
+    });
+
+    expect(isSupportedRichTextDocument(withLink({ href: 'https://example.com' }))).toBe(true);
+    expect(
+      isSupportedRichTextDocument(
+        withLink({
+          href: 'https://example.com',
+          target: '_blank',
+          rel: 'noopener noreferrer nofollow',
+        })
+      )
+    ).toBe(true);
+    for (const attrs of [
+      { href: 'https://example.com', target: '_self', rel: 'noopener noreferrer' },
+      { href: 'https://example.com', rel: 'nofollow' },
+      { href: 'https://example.com', rel: 'noopener' },
+    ]) {
+      expect(isSupportedRichTextDocument(withLink(attrs))).toBe(false);
+    }
+  });
+
   it('preserves legacy paragraph documents and content exactly', () => {
     const legacy = {
       type: 'doc',

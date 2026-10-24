@@ -134,6 +134,39 @@ class TaskDescriptionValidatorTest {
     }
 
     @Test
+    void rejectsOutboundLinkPolicyOverridesAndAcceptsCompatibleAttributes() {
+        assertThat(
+                        TaskDescriptionValidator.validateAndCopy(
+                                linkDocument(map("href", "https://example.com"))))
+                .isEqualTo(linkDocument(map("href", "https://example.com")));
+        assertThat(
+                        TaskDescriptionValidator.validateAndCopy(
+                                linkDocument(
+                                        map(
+                                                "href",
+                                                "https://example.com",
+                                                "target",
+                                                "_blank",
+                                                "rel",
+                                                "noopener noreferrer nofollow"))))
+                .isNotNull();
+
+        for (Map<String, Object> attrs :
+                List.of(
+                        map(
+                                "href",
+                                "https://example.com",
+                                "target",
+                                "_self",
+                                "rel",
+                                "noopener noreferrer"),
+                        map("href", "https://example.com", "rel", "nofollow"),
+                        map("href", "https://example.com", "rel", "noopener"))) {
+            assertDescriptionInvalid(linkDocument(attrs));
+        }
+    }
+
+    @Test
     void returnsDefensiveNestedCopy() {
         Map<String, Object> sourceText = text("Original", List.of());
         Map<String, Object> sourceParagraph = paragraph(sourceText);
@@ -275,6 +308,10 @@ class TaskDescriptionValidatorTest {
                 "link",
                 "attrs",
                 map("href", href, "target", "_blank", "rel", "noopener noreferrer", "class", null));
+    }
+
+    private static Map<String, Object> linkDocument(Map<String, Object> attrs) {
+        return doc(paragraph(text("documentation", List.of(map("type", "link", "attrs", attrs)))));
     }
 
     private static void assertDescriptionInvalid(Map<String, Object> document) {

@@ -19,6 +19,8 @@ const blockNodes = new Set([
 const inlineNodes = new Set(['hardBreak', 'text']);
 const supportedMarks = new Set(['bold', 'italic', 'code', 'link']);
 const safeProtocols = new Set(['http:', 'https:', 'mailto:']);
+const safeRelTokens = new Set(['noopener', 'noreferrer', 'nofollow']);
+const requiredRelTokens = new Set(['noopener', 'noreferrer']);
 
 export function isSafeRichTextHref(href: unknown): href is string {
   if (
@@ -63,17 +65,18 @@ function isSupportedMark(mark: unknown): boolean {
   ) {
     return false;
   }
-  if (attrs.target != null && attrs.target !== '_blank' && attrs.target !== '_self') return false;
+  if (attrs.target != null && attrs.target !== '_blank') return false;
   if (attrs.rel != null && !isSafeRel(attrs.rel)) return false;
   if (attrs.class != null) return false;
   return attrs.title == null || (typeof attrs.title === 'string' && attrs.title.length <= 512);
 }
 
 function isSafeRel(value: unknown): boolean {
+  if (typeof value !== 'string' || value.trim().length === 0) return false;
+  const tokens = new Set(value.trim().split(/\s+/));
   return (
-    typeof value === 'string' &&
-    value.trim().length > 0 &&
-    value.split(/\s+/).every((token) => ['noopener', 'noreferrer', 'nofollow'].includes(token))
+    [...tokens].every((token) => safeRelTokens.has(token)) &&
+    [...requiredRelTokens].every((token) => tokens.has(token))
   );
 }
 

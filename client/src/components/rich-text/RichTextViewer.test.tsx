@@ -88,6 +88,63 @@ describe('RichTextViewer', () => {
     expect(container.querySelector('script')).toBeNull();
   });
 
+  it('applies the safe outbound policy to compatible href-only legacy links', () => {
+    render(
+      <RichTextViewer
+        value={{
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Legacy link',
+                  marks: [{ type: 'link', attrs: { href: 'https://example.com' } }],
+                },
+              ],
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.getByRole('link', { name: 'Legacy link' })).toHaveAttribute('target', '_blank');
+    expect(screen.getByRole('link', { name: 'Legacy link' })).toHaveAttribute(
+      'rel',
+      'noopener noreferrer nofollow'
+    );
+  });
+
+  it.each([
+    { href: 'https://example.com', target: '_self', rel: 'noopener noreferrer' },
+    { href: 'https://example.com', rel: 'nofollow' },
+    { href: 'https://example.com', rel: 'noopener' },
+  ])('does not render an anchor for unsafe persisted link attrs: %o', (attrs) => {
+    const { container } = render(
+      <RichTextViewer
+        value={{
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Unsafe legacy link',
+                  marks: [{ type: 'link', attrs }],
+                },
+              ],
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(container.querySelector('a')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('This description can’t be displayed.');
+  });
+
   it('does not render an unsafe legacy link or crash on malformed legacy JSON', () => {
     const unsafe = {
       type: 'doc',
