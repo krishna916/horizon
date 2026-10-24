@@ -18,6 +18,16 @@ Create, edit and read formatted task descriptions in both the task side panel an
 
 **Architectural boundary:** Task-specific editing integration stays in `client/src/task` and validation inside the server's Task module. Small rich-text document/editor helpers may be cleanly separated within that feature for later extraction if Notes needs the same contract; no cross-feature RichText platform, export adapters, document-version registry, or database migration in #24.
 
+## Editor foundation and future compatibility (owner clarified 2026-10-24)
+
+Horizon should feel as close as practical to Notion/Obsidian for the **supported formatting features**, with a Markdown-first authoring experience. The Task implementation is the first consumer of a foundation needed later by Notes, not a one-off textarea replacement.
+
+**Small reusable frontend boundary (proposed for approval):** extract the document schema/Tiptap extension configuration, canonical JSON normalization, view-only rendering, editor presentation and Markdown parsing/paste behavior into cohesive frontend rich-text components/helpers (e.g. `client/src/components/rich-text/`), with task-specific Save/Cancel, navigation guard, creation snapshots and API update logic remaining inside `client/src/task`. Do not expose a generic plugin registry, export service, abstract document repository or backend platform in V1.
+
+**Future revisit list (deferred until Notes or a specifically approved editor enhancement):** slash commands, block drag/reorder, nested document links and `[[wikilinks]]`, backlinks, callouts, attachments/embeds, note-level Markdown import/export workflows, collaborative editing, and richer keyboard navigation. Capture these as *future candidates*, not silent V1 features. Any future Markdown import/export should consume the same approved JSON schema and adapter; do not add exporters in #24.
+
+**Library reality:** Tiptap 3 `@tiptap/markdown` offers Markdown parse/serialize but is currently documented as beta. Integrating it for paste does not automatically implement automatic paste conversion. Verify runtime behavior against actual locked Tiptap version; keep parser behind a local adapter and test core syntax and failure fallback. Avoid paid Tiptap-pro paste-handler dependency unless separately approved.
+
 ## Required formatting contract
 
 Round-trip Tiptap JSON for headings, bold, italic, HTTP(S)/mailto links, bullet lists, ordered lists, code blocks, block quotes, and tables. Use only registered and explicitly supported Tiptap nodes, marks, and attributes. Allow ordinary paragraphs/text and hard breaks needed to edit them. Implement link editing and table insertion/basic row/column operations, not just display. A practical editor baseline is headings at levels 2 and 3 so task title retains the page's level-1 heading; this is an implementation proposal for owner review, since PRD names 'headings' without levels. Code mark may be enabled only if configured and validated consistently; PRD explicitly requires code *blocks*.
@@ -38,7 +48,17 @@ The editor **must** support immediate Notion/Obsidian-like Markdown input rules 
 
 **Horizontal divider is explicitly requested beyond PRD-004's nine formatting categories.** Include `horizontalRule` in the supported Tiptap document schema, strict backend allowlist, read-only renderer and tests. Check actual Tiptap v3 trigger behavior against its current docs and test it rather than guessing. Honor the agreed H2/H3 design default; do not silently introduce H1 inside task descriptions without owner sign-off.
 
-Plain-text Markdown **pasted as literal source** or loaded via `@tiptap/markdown` is a separate capability from typing shortcuts and is not included merely by enabling input rules. Rich HTML paste still preserves supported formatting as already agreed.
+### Automatic Markdown-to-rich-text paste (owner confirmed for V1)
+
+- **Required:** When a user pastes recognizable Markdown source, parse it into the same Tiptap JSON nodes/marks as typing/toolbar formatting, and insert it at the current cursor/selection position (not by resetting the entire document). No intermediate Markdown source screen.
+- Scope of Markdown structures: headings, bold/italic, safe Markdown links, unordered/ordered/nested lists, fenced code blocks (including multi-line code), blockquotes, horizontal rules and GitHub-flavored Markdown tables. Preserve ordinary line breaks and literal content. Markdown link URLs still pass the safe URL policy.
+- Clipboard precedence must avoid destroying meaningful rich HTML: keep supported formatted HTML from rich sources; use Markdown parsing for detected Markdown *source text* in `text/plain`, including common code/plain-text clipboard representations. Do not process the same paste twice.
+- Determine whether plain text is Markdown conservatively. Ordinary prose, punctuation and non-Markdown lists must remain ordinary pasted text; for uncertain cases, retain literal text. Include regression examples for literal asterisks, URLs and `---` mid-paragraph. Provide ordinary Undo to reverse conversion and a plain-text paste fallback through the browser/editor keyboard behavior.
+- Reuse `@tiptap/markdown` (beta) if it proves compatible and reliable with Horizon's schema; an isolated adapter and tests are mandatory to avoid binding future import/export to a beta API. Tiptap's paste-rule helpers alone are not enough for full multiline Markdown blocks/tables; use schema-aware parser rather than ad hoc regex conversions.
+- **Both** creation and detail editor must share this behavior; do not duplicate clipboard handling.
+- Invalid/unrecognized input must not crash, run scripts, silently drop content, or corrupt existing document; fall back to safe plain text if parsing fails. Do not weaken the server validator to allow parser output it cannot validate.
+
+Rich HTML paste still preserves supported formatting as already agreed. Paste functionality does **not** imply file-level Notes Markdown import/export in V1.
 
 Do not persist raw HTML or arbitrary pasted CSS/styles/embedded content. Paste content from websites/Google Docs/other editors through Tiptap's supported schema: retain supported markup/text, drop unsupported formatting and unsafe content, and never silently lose plain text. Image embeds, attachments, custom node types and Markdown source mode are out of scope.
 
@@ -80,11 +100,18 @@ Do not persist raw HTML or arbitrary pasted CSS/styles/embedded content. Paste c
 
 ## Test and completion contract
 
-- **Document helpers:** null/empty/whitespace normalization, unchanged legacy paragraphs, nested list/table/code/links round-trip, structural blank table preservation, paste filtering/safe-link handling.
+- **Document helpers:** null/empty/whitespace normalization, unchanged legacy paragraphs, nested list/table/code/links round-trip, structural blank table preservation, native formatting paste, multiline Markdown source paste with nested lists/fenced code/GFM table/link/divider, conservative detection, plain-text fallback and safe-link handling.
 - **Backend unit/integration:** POST and PATCH allow valid supported document, including horizontalRule; invalid node/mark/attrs/types/depth/link/size return existing 400 shape; clear using null; persistence JSONB round-trip through real Postgres/Testcontainers; ownership and metadata preserved; absent patch does not clear description.
-- **Frontend component:** Markdown-style typing shortcuts (headings, lists, quote, divider, code block, inline bold), optional rich create, toolbar formatting and links/table controls, read-only render, empty placeholder single-click vs populated double-click, external links, Save/Cancel/blur, mutation failure retains draft, navigation-guard and mutual exclusion with other fields/checklist, both detail surfaces.
+- **Frontend component:** Markdown-source paste conversion plus precedence over rich HTML/plain text and Undo coverage, Markdown-style typing shortcuts (headings, lists, quote, divider, code block, inline bold), optional rich create, toolbar formatting and links/table controls, read-only render, empty placeholder single-click vs populated double-click, external links, Save/Cancel/blur, mutation failure retains draft, navigation-guard and mutual exclusion with other fields/checklist, both detail surfaces.
 - **E2E as applicable:** formatted create/reload/edit, panel-to-page parity, saved vs cancelled content, no rendered script execution, no list-row description preview.
 - Run existing Maven format/static-analysis/test gates and frontend format/lint/typecheck/unit/build/Playwright gates according to the repository workflows. Tests follow Horizon's project conventions.
+
+## Compatibility and risk review
+
+- Do not promise 1:1 Notion/Obsidian feature parity in #24. The target is comparable interaction for **supported** writing formats, live typing shortcuts and automatic Markdown paste. Advanced block-level/Notes capabilities have explicit future follow-up scope above.
+- Markdown beta parsing can differ from Tiptap nodes in tables/nested lists; test a representative corpus and reject data-loss behavior. If the beta adapter cannot faithfully meet the agreed V1 formats, surface the limitation for owner review rather than quietly degrading.
+- Plain-text clipboard Markdown detection is heuristic. When source is ambiguous, prefer preserving literal content instead of destructive auto-formatting; the owner may later request explicit “Paste Markdown” override if real use cases demand it.
+- Current H2/H3-only proposal is **pending owner approval**. Full Notion/Obsidian Markdown expectations may call for `# ` / H1 within descriptions. Do not infer approval of heading level 1 from general comparison language.
 
 ## Explicit non-goals
 
@@ -96,4 +123,4 @@ Exact small component names, toolbar iconography/grouping, focused styling consi
 
 ## Approval gate
 
-**Owner review required before an execution plan or product code is produced.** In particular, check proposed heading levels, empty structural-content preservation, numeric validation limits, and newly specified Markdown-style typing shortcuts (including horizontal divider). After approval write a granular TDD/commits implementation plan in `docs/superpowers/plans/` on this feature branch, then put Luna's branch/plan/spec execution instructions in issue #24 comments.
+**Owner review required before an execution plan or product code is produced.** In particular, confirm boundaries of Notion/Obsidian parity (whether `# ` headings, slash menus and wiki-links belong to V1), empty structural-content preservation, numeric validation limits, and Markdown paste behavior. After approval write a granular TDD/commits implementation plan in `docs/superpowers/plans/` on this feature branch, then put Luna's branch/plan/spec execution instructions in issue #24 comments.
