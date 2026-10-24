@@ -122,7 +122,8 @@ function isSupportedAttrs(type: string, value: unknown): boolean {
     return (
       (value.start === undefined ||
         (typeof value.start === 'number' && Number.isInteger(value.start) && value.start > 0)) &&
-      (value.type == null || ['1', 'a', 'A', 'i', 'I'].includes(String(value.type)))
+      (value.type == null ||
+        (typeof value.type === 'string' && ['1', 'a', 'A', 'i', 'I'].includes(value.type)))
     );
   }
   if (type === 'codeBlock')
@@ -137,7 +138,8 @@ function isSupportedAttrs(type: string, value: unknown): boolean {
       (value.rowspan === undefined || isBoundedInteger(value.rowspan)) &&
       (value.colwidth == null ||
         (Array.isArray(value.colwidth) && value.colwidth.every(isBoundedInteger))) &&
-      (value.align == null || ['left', 'center', 'right'].includes(String(value.align)))
+      (value.align == null ||
+        (typeof value.align === 'string' && ['left', 'center', 'right'].includes(value.align)))
     );
   }
   return true;
@@ -173,12 +175,7 @@ function hasMeaningfulContent(node: Record<string, unknown>): boolean {
 export function normalizeRichTextDocument(
   document: RichTextDocument | null
 ): RichTextDocument | null {
-  if (
-    document === null ||
-    document.type !== 'doc' ||
-    !Array.isArray(document.content) ||
-    !isSupportedNode(document)
-  ) {
+  if (document?.type !== 'doc' || !Array.isArray(document.content) || !isSupportedNode(document)) {
     return null;
   }
   return hasMeaningfulContent(document) ? document : null;

@@ -279,6 +279,7 @@ code {
   .rich-text-link-dialog {
     position: absolute;
     z-index: 10;
+    margin: 0;
     top: calc(100% + 0.5rem);
     left: 0;
     display: grid;

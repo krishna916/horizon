@@ -29,7 +29,7 @@ export function RichTextViewer({ value }: RichTextViewerProps) {
   );
 
   if (!supported) {
-    return <p role="status">This description can’t be displayed.</p>;
+    return <output aria-live="polite">This description can’t be displayed.</output>;
   }
 
   return (

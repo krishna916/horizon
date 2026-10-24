@@ -44,11 +44,9 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
     saveRef.current = descriptionEdit.editing ? descriptionEdit.save : edit.save;
     cancelRef.current = descriptionEdit.editing ? descriptionEdit.cancel : edit.cancel;
   });
-  const fieldId = edit.activeField
-    ? `field:${userId}:${task.id}:${edit.activeField}`
-    : descriptionEdit.editing
-      ? `field:${userId}:${task.id}:description`
-      : null;
+  let fieldId: string | null = null;
+  if (edit.activeField) fieldId = `field:${userId}:${task.id}:${edit.activeField}`;
+  else if (descriptionEdit.editing) fieldId = `field:${userId}:${task.id}:description`;
   const activeDirty = descriptionEdit.editing ? descriptionEdit.dirty : edit.dirty;
   const activePending = descriptionEdit.editing ? descriptionEdit.pending : edit.pending;
   useEffect(() => {

@@ -30,10 +30,9 @@ export function RichTextToolbar({ editor, disabled }: RichTextToolbarProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [href, setHref] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [selectionVersion, setSelectionVersion] = useState(0);
+  const [, setSelectionVersion] = useState(0);
   const linkInputRef = useRef<HTMLInputElement>(null);
   const linkActive = editor.isActive('link');
-  void selectionVersion;
 
   function openLinkDialog() {
     setHref(String(editor.getAttributes('link').href ?? ''));
@@ -198,7 +197,7 @@ export function RichTextToolbar({ editor, disabled }: RichTextToolbarProps) {
         !editor.isActive('table')
       )}
       {linkDialogOpen && (
-        <div className="rich-text-link-dialog" role="dialog" aria-label="Edit link">
+        <dialog open className="rich-text-link-dialog" aria-label="Edit link">
           <label htmlFor="rich-text-link-url" className="text-xs font-medium text-foreground">
             Link URL
           </label>
@@ -254,7 +253,7 @@ export function RichTextToolbar({ editor, disabled }: RichTextToolbarProps) {
               Cancel link
             </Button>
           </div>
-        </div>
+        </dialog>
       )}
     </div>
   );

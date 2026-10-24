@@ -119,7 +119,7 @@ describe('TaskDetailView', () => {
     const updateSpy = vi.spyOn(taskApi, 'update').mockResolvedValue({ data: linkedTask } as never);
     render(<TaskDetailView task={linkedTask} userId={1} />, { wrapper: createWrapper() });
 
-    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit task description' }));
     const editor = await screen.findByLabelText('Task description editor');
     fireEvent.keyDown(editor, { key: 'a', ctrlKey: true });
     fireEvent.paste(editor, {
@@ -135,7 +135,7 @@ describe('TaskDetailView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(updateSpy).not.toHaveBeenCalled();
 
-    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit task description' }));
     const formattingEditor = await screen.findByLabelText('Task description editor');
     fireEvent.keyDown(formattingEditor, { key: 'a', ctrlKey: true });
     fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
@@ -187,7 +187,7 @@ describe('TaskDetailView', () => {
     const view = render(<TaskDetailView task={task} userId={1} />, { wrapper });
 
     const readView = screen.getByRole('button', { name: 'Edit task description' });
-    fireEvent.doubleClick(readView);
+    fireEvent.click(readView);
     const editor = await screen.findByLabelText('Task description editor');
     expect(screen.getByRole('textbox', { name: 'Add checklist item' })).toBeDisabled();
     fireEvent.keyDown(editor, { key: 'a', ctrlKey: true });
@@ -209,7 +209,7 @@ describe('TaskDetailView', () => {
       <TaskDetailView task={{ ...task, description: updatedDescription }} userId={1} />
     );
 
-    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit task description' }));
     const cancelEditor = await screen.findByLabelText('Task description editor');
     fireEvent.paste(cancelEditor, {
       clipboardData: {
@@ -225,10 +225,7 @@ describe('TaskDetailView', () => {
 
     fireEvent.doubleClick(screen.getByRole('button', { name: 'Priority: High' }));
     expect(screen.getByLabelText('Priority')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit task description' })).toHaveAttribute(
-      'aria-disabled',
-      'true'
-    );
+    expect(screen.getByRole('button', { name: 'Edit task description' })).toBeDisabled();
   });
 
   it('retains the description draft and offers Save retry after a failed PATCH', async () => {
@@ -238,7 +235,7 @@ describe('TaskDetailView', () => {
       .mockResolvedValueOnce({ data: task } as never);
     render(<TaskDetailView task={task} userId={1} />, { wrapper: createWrapper() });
 
-    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit task description' }));
     const editor = await screen.findByLabelText('Task description editor');
     fireEvent.keyDown(editor, { key: 'a', ctrlKey: true });
     fireEvent.paste(editor, {
@@ -277,7 +274,7 @@ describe('TaskDetailView', () => {
       { wrapper: createWrapper() }
     );
 
-    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit task description' }));
 
     expect(await screen.findByLabelText('Task description editor')).toBeInTheDocument();
   });
@@ -285,7 +282,7 @@ describe('TaskDetailView', () => {
   it('discards an old description draft when task or user identity changes', async () => {
     const wrapper = createWrapper();
     const view = render(<TaskDetailView task={task} userId={1} />, { wrapper });
-    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit task description' }));
     const editor = await screen.findByLabelText('Task description editor');
     fireEvent.paste(editor, {
       clipboardData: {

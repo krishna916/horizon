@@ -12,6 +12,7 @@ describe('looksLikeMarkdown', () => {
     ['**bold**', 'bold'],
     ['*italic*', 'italic'],
     ['[docs](https://example.com)', 'link'],
+    ['[docs](https://example.com "documentation")', 'link with title'],
     ['- first\n- second', 'bullet list'],
     ['1. first\n2. second', 'ordered list'],
     ['- parent\n  - child', 'nested list'],

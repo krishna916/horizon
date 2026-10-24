@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent } from 'react';
+import type { MouseEvent } from 'react';
 import { RichTextEditor } from '@/components/rich-text/RichTextEditor';
 import type { RichTextDocument } from '@/components/rich-text/richTextDocument';
 import { RichTextViewer } from '@/components/rich-text/RichTextViewer';
@@ -94,16 +94,22 @@ export function TaskDescriptionField({
   }
 
   return (
-    <div
-      role="button"
-      aria-label="Edit task description"
-      aria-disabled={blocked}
-      tabIndex={blocked ? -1 : 0}
-      onDoubleClick={(event) => handleActivationMouse(event, onActivate, blocked)}
-      onKeyDown={(event) => handleActivationKey(event, onActivate, blocked)}
-      className="cursor-text rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <RichTextViewer value={value} />
+    <div className="space-y-2">
+      <div
+        onDoubleClick={(event) => handleActivationMouse(event, onActivate, blocked)}
+        className="cursor-text rounded-sm"
+      >
+        <RichTextViewer value={value} />
+      </div>
+      <button
+        type="button"
+        aria-label="Edit task description"
+        onClick={onActivate}
+        disabled={blocked}
+        className="rounded-sm text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Edit description
+      </button>
     </div>
   );
 }
@@ -118,16 +124,4 @@ function handleActivationMouse(
   blocked: boolean
 ) {
   if (!blocked && !isLinkTarget(event.target)) activate();
-}
-
-function handleActivationKey(
-  event: KeyboardEvent<HTMLButtonElement | HTMLDivElement>,
-  activate: () => void,
-  blocked: boolean
-) {
-  if (blocked || isLinkTarget(event.target)) return;
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    activate();
-  }
 }

@@ -59,18 +59,27 @@ describe('TaskDescriptionField', () => {
     expect(onActivate).toHaveBeenCalledOnce();
   });
 
-  it('does not activate on a single click, but opens populated content on double click', () => {
+  it('provides a separate edit button for populated content', () => {
     const { onActivate } = renderField({ value });
-    const description = screen.getByRole('button', { name: 'Edit task description' });
+    const editButton = screen.getByRole('button', { name: 'Edit task description' });
 
-    fireEvent.click(description);
-    expect(onActivate).not.toHaveBeenCalled();
-    fireEvent.doubleClick(description);
+    fireEvent.click(editButton);
 
     expect(onActivate).toHaveBeenCalledOnce();
     expect(screen.getByRole('link', { name: 'release notes' }).getAttribute('rel')).toContain(
       'noopener noreferrer'
     );
+  });
+
+  it('still activates on double-clicking non-link description text', () => {
+    const { onActivate } = renderField({ value });
+    const text = screen.getByText('Read the');
+
+    fireEvent.click(text);
+    expect(onActivate).not.toHaveBeenCalled();
+    fireEvent.doubleClick(text);
+
+    expect(onActivate).toHaveBeenCalledOnce();
   });
 
   it('keeps safe links clickable without starting description editing', () => {
@@ -82,6 +91,15 @@ describe('TaskDescriptionField', () => {
     fireEvent.click(link);
 
     expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it('keeps embedded links outside the keyboard edit control', () => {
+    renderField({ value });
+    const link = screen.getByRole('link', { name: 'release notes' });
+    const editButton = screen.getByRole('button', { name: 'Edit task description' });
+
+    expect(link.closest('[role="button"]')).toBeNull();
+    expect(editButton.tagName).toBe('BUTTON');
   });
 
   it('disables the placeholder while another task editor is active', () => {

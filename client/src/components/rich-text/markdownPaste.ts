@@ -6,7 +6,6 @@ const headingPattern = /^#{1,3}\s+\S/m;
 const listPattern = /^\s{0,6}(?:[-*+]\s+\S|\d+[.)]\s+\S)/m;
 const quotePattern = /^\s{0,3}>\s+\S/m;
 const fencedCodePattern = /^\s{0,3}```[^\n]*\n[\s\S]*?^\s{0,3}```\s*$/m;
-const linkPattern = /\[[^\]\n]+\]\([^\s)]+(?:\s+"[^"]*")?\)/;
 const boldPattern = /\*\*[^*\n]+\*\*|__[^_\n]+__/;
 const italicPattern = /\*(?!\s)[^*\n]+(?<!\s)\*|_(?!\s)[^_\n]+(?<!\s)_/;
 const horizontalRulePattern = /^\s{0,3}(?:---+|___+|\*\*\*+)\s*$/m;
@@ -36,6 +35,40 @@ function hasGfmTable(lines: string[]): boolean {
   });
 }
 
+function hasMarkdownLink(source: string): boolean {
+  let openBracket = source.indexOf('[');
+  while (openBracket >= 0) {
+    const closeLabel = source.indexOf('](', openBracket + 1);
+    if (closeLabel > openBracket + 1) {
+      const closeLink = source.indexOf(')', closeLabel + 2);
+      if (closeLink > closeLabel + 2) {
+        const destinationAndTitle = source.slice(closeLabel + 2, closeLink);
+        let destinationEnd = 0;
+        while (
+          destinationEnd < destinationAndTitle.length &&
+          !/\s/.test(destinationAndTitle[destinationEnd] ?? '')
+        ) {
+          destinationEnd += 1;
+        }
+        if (destinationEnd > 0) {
+          const title = destinationAndTitle.slice(destinationEnd).trim();
+          if (
+            title.length === 0 ||
+            (title.length >= 2 &&
+              title.startsWith('"') &&
+              title.endsWith('"') &&
+              !title.slice(1, -1).includes('"'))
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+    openBracket = source.indexOf('[', openBracket + 1);
+  }
+  return false;
+}
+
 export function looksLikeMarkdown(text: string): boolean {
   const source = text.replace(/\r\n?/g, '\n').trim();
   if (source.length === 0) return false;
@@ -47,7 +80,7 @@ export function looksLikeMarkdown(text: string): boolean {
     listPattern.test(source) ||
     quotePattern.test(source) ||
     fencedCodePattern.test(source) ||
-    linkPattern.test(source) ||
+    hasMarkdownLink(source) ||
     boldPattern.test(source) ||
     italicPattern.test(source) ||
     horizontalRulePattern.test(source) ||

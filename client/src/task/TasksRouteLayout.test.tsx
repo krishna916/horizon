@@ -209,7 +209,7 @@ describe('TasksRouteLayout', () => {
     renderRouter(createDescriptionRouter());
     await screen.findByRole('heading', { name: 'Lifecycle test task' });
 
-    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit task description' }));
     const editor = await screen.findByLabelText('Task description editor');
     fireEvent.keyDown(editor, { key: 'a', ctrlKey: true });
     fireEvent.paste(editor, {

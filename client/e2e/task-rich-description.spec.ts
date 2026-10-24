@@ -253,7 +253,7 @@ test('description editing is explicit, guarded, cancellable, and retryable after
   await expect(safeLink).toHaveAttribute('target', '_blank');
   await safeLink.click({ modifiers: ['Alt'] });
   await expect(page.getByLabel('Task description editor')).toHaveCount(0);
-  await readView.dblclick();
+  await readView.click();
 
   const editor = '[aria-label="Task description editor"]';
   await page.locator(editor).waitFor();
@@ -263,7 +263,7 @@ test('description editing is explicit, guarded, cancellable, and retryable after
   await expect(page.getByText('Saved notes')).toBeVisible();
   expect(fixture.patches).toHaveLength(0);
 
-  await page.getByRole('button', { name: 'Edit task description' }).dblclick();
+  await page.getByRole('button', { name: 'Edit task description' }).click();
   await page.locator(editor).waitFor();
   await page.locator(editor).press('Control+a');
   await pastePlainText(page, editor, 'Keep this draft after a failed save');
@@ -285,7 +285,7 @@ test('description editing is explicit, guarded, cancellable, and retryable after
   await expect(page.getByText('Keep this draft after a failed save')).toBeVisible();
 
   await page.getByRole('button', { name: 'Open full page' }).click();
-  await page.getByRole('button', { name: 'Edit task description' }).dblclick();
+  await page.getByRole('button', { name: 'Edit task description' }).click();
   await page.locator(editor).waitFor();
   await page.locator(editor).press('Control+a');
   await pastePlainText(page, editor, 'Guarded draft');
@@ -328,4 +328,40 @@ test('keyboard activates an empty description and completed archived tasks remai
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('button', { name: 'Edit task description' })).toBeVisible();
   await expect(page.getByText('Completed task notes')).toBeVisible();
+});
+
+test('keeps embedded links and keyboard description editing separately reachable', async ({
+  page,
+}) => {
+  const task = detail(summary(89, 'Accessible description'), {
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'Read ' },
+          {
+            type: 'text',
+            text: 'the docs',
+            marks: [{ type: 'link', attrs: { href: 'https://example.com/docs' } }],
+          },
+        ],
+      },
+    ],
+  });
+  await installApi(page, [task]);
+  await page.goto('/tasks?task=89');
+
+  const link = page.getByRole('link', { name: 'the docs' });
+  const editButton = page.getByRole('button', { name: 'Edit task description' });
+  await link.focus();
+  await page.keyboard.press('Tab');
+  await expect(editButton).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('Task description editor')).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  await editButton.focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByLabel('Task description editor')).toBeVisible();
 });
