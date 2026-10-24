@@ -196,7 +196,7 @@ function canonicalize(value: unknown, applySchemaDefaults: boolean): unknown {
       const entries = Object.entries(property).filter(
         ([name, attr]) => !Object.hasOwn(defaults, name) || defaults[name] !== attr
       );
-      entries.sort(([first], [second]) => first.localeCompare(second));
+      entries.sort(([first], [second]) => first.localeCompare(second, 'en'));
       const attrs: Record<string, unknown> = {};
       for (const [name, attr] of entries) {
         attrs[name] = canonicalize(attr, applySchemaDefaults);

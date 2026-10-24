@@ -15,7 +15,7 @@ import {
   Trash2,
   Unlink,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ export function RichTextToolbar({ editor, disabled }: RichTextToolbarProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [href, setHref] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [, setSelectionVersion] = useState(0);
+  const [, rerenderForSelection] = useReducer((version: number) => version + 1, 0);
   const linkInputRef = useRef<HTMLInputElement>(null);
   const linkActive = editor.isActive('link');
 
@@ -41,7 +41,7 @@ export function RichTextToolbar({ editor, disabled }: RichTextToolbarProps) {
   }
 
   useEffect(() => {
-    const updateSelection = () => setSelectionVersion((version) => version + 1);
+    const updateSelection = () => rerenderForSelection();
     editor.on('selectionUpdate', updateSelection);
     editor.on('transaction', updateSelection);
     return () => {

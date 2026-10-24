@@ -27,12 +27,22 @@ describe('looksLikeMarkdown', () => {
     expect(looksLikeMarkdown(text)).toBe(true);
   });
 
-  it.each(['Ordinary words and punctuation.', 'literal *asterisk', 'A separator --- mid-sentence'])(
-    'leaves ambiguous prose literal: %s',
-    (text) => {
-      expect(looksLikeMarkdown(text)).toBe(false);
-    }
-  );
+  it.each([
+    'Ordinary words and punctuation.',
+    'literal *asterisk',
+    'A separator --- mid-sentence',
+    '[malformed](https://example.com "bad"title)',
+  ])('leaves ambiguous prose literal: %s', (text) => {
+    expect(looksLikeMarkdown(text)).toBe(false);
+  });
+
+  it('finds a valid Markdown link after a malformed link candidate', () => {
+    expect(
+      looksLikeMarkdown(
+        '[malformed](https://example.com "bad"title) then [docs](https://docs.example)'
+      )
+    ).toBe(true);
+  });
 
   it.each(['A | B', '| --- |', 'Name |\nA |'])(
     'leaves incomplete pipe table syntax literal: %s',

@@ -35,35 +35,37 @@ function hasGfmTable(lines: string[]): boolean {
   });
 }
 
+function hasValidMarkdownLinkAt(source: string, openBracket: number): boolean {
+  const closeLabel = source.indexOf('](', openBracket + 1);
+  if (closeLabel <= openBracket + 1) return false;
+
+  const closeLink = source.indexOf(')', closeLabel + 2);
+  if (closeLink <= closeLabel + 2) return false;
+
+  const destinationAndTitle = source.slice(closeLabel + 2, closeLink);
+  let destinationEnd = 0;
+  while (
+    destinationEnd < destinationAndTitle.length &&
+    !/\s/.test(destinationAndTitle[destinationEnd] ?? '')
+  ) {
+    destinationEnd += 1;
+  }
+  if (destinationEnd === 0) return false;
+
+  const title = destinationAndTitle.slice(destinationEnd).trim();
+  return (
+    title.length === 0 ||
+    (title.length >= 2 &&
+      title.startsWith('"') &&
+      title.endsWith('"') &&
+      !title.slice(1, -1).includes('"'))
+  );
+}
+
 function hasMarkdownLink(source: string): boolean {
   let openBracket = source.indexOf('[');
   while (openBracket >= 0) {
-    const closeLabel = source.indexOf('](', openBracket + 1);
-    if (closeLabel > openBracket + 1) {
-      const closeLink = source.indexOf(')', closeLabel + 2);
-      if (closeLink > closeLabel + 2) {
-        const destinationAndTitle = source.slice(closeLabel + 2, closeLink);
-        let destinationEnd = 0;
-        while (
-          destinationEnd < destinationAndTitle.length &&
-          !/\s/.test(destinationAndTitle[destinationEnd] ?? '')
-        ) {
-          destinationEnd += 1;
-        }
-        if (destinationEnd > 0) {
-          const title = destinationAndTitle.slice(destinationEnd).trim();
-          if (
-            title.length === 0 ||
-            (title.length >= 2 &&
-              title.startsWith('"') &&
-              title.endsWith('"') &&
-              !title.slice(1, -1).includes('"'))
-          ) {
-            return true;
-          }
-        }
-      }
-    }
+    if (hasValidMarkdownLinkAt(source, openBracket)) return true;
     openBracket = source.indexOf('[', openBracket + 1);
   }
   return false;
