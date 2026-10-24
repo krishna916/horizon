@@ -47,7 +47,6 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
   const registrationRef = useRef<TaskDraftRegistration | null>(null);
   const registrationGenerationRef = useRef(0);
   const queuedActionRef = useRef<QueuedAction | null>(null);
-  const actionInProgressRef = useRef(false);
   const saveInProgressRef = useRef(false);
   const skipBlocker = useRef(false);
   const [registrationState, setRegistrationState] = useState<TaskDraftRegistration | null>(null);
@@ -113,26 +112,15 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
     }
   }, []);
 
-  const runAction = useCallback(async (action: () => void | Promise<void>) => {
-    if (actionInProgressRef.current) return;
-    actionInProgressRef.current = true;
-    try {
-      await action();
-    } finally {
-      actionInProgressRef.current = false;
-    }
-  }, []);
-
   const requestAction = useCallback(
     (action: () => void | Promise<void>, context?: { ownerId: number; taskId: number }) => {
-      if (actionInProgressRef.current) return;
       const active = registrationRef.current;
       const registrationMatchesContext =
         !context ||
         active?.id.startsWith(`field:${context.ownerId}:${context.taskId}:`) ||
         active?.id === `checklist:${context.ownerId}:${context.taskId}`;
       if (!registrationMatchesContext || (!active?.dirty && !active?.pending)) {
-        void runAction(action);
+        void action();
         return;
       }
       if (queuedActionRef.current) return;
@@ -145,27 +133,24 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
       setQueuedAction(queued);
       setSaveFailed(false);
     },
-    [runAction]
+    []
   );
 
-  const takeQueuedAction = useCallback(
-    (allowSavedDraftClear = false) => {
-      const queued = queuedActionRef.current;
-      queuedActionRef.current = null;
-      setQueuedAction(null);
-      if (
-        queued &&
-        ((registrationRef.current?.id === queued.registrationId &&
-          registrationGenerationRef.current === queued.generation) ||
-          (allowSavedDraftClear &&
-            registrationRef.current === null &&
-            registrationGenerationRef.current === queued.generation + 1))
-      ) {
-        void runAction(queued.action);
-      }
-    },
-    [runAction]
-  );
+  const takeQueuedAction = useCallback((allowSavedDraftClear = false) => {
+    const queued = queuedActionRef.current;
+    queuedActionRef.current = null;
+    setQueuedAction(null);
+    if (
+      queued &&
+      ((registrationRef.current?.id === queued.registrationId &&
+        registrationGenerationRef.current === queued.generation) ||
+        (allowSavedDraftClear &&
+          registrationRef.current === null &&
+          registrationGenerationRef.current === queued.generation + 1))
+    ) {
+      void queued.action();
+    }
+  }, []);
 
   const current = registrationState;
   const isPending = Boolean(current?.pending);
@@ -208,7 +193,7 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
     registrationRef.current = null;
     setRegistrationState(null);
     if (blocker.status === 'blocked') blocker.proceed();
-    if (queuedAction && queuedActionIsCurrent) void runAction(queuedAction.action);
+    if (queuedAction && queuedActionIsCurrent) void queuedAction.action();
   }
 
   function keepEditing() {

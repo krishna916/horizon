@@ -296,6 +296,90 @@ describe('TasksListPage', () => {
     expect(router.state.location.search).toEqual({ task: 1, create: true });
   });
 
+  it('archiveTaskBWhileArchiveTaskAIsPendingIsNotDropped', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'First task'), task(2, 'Second task')]) as never
+    );
+    let resolveFirst!: (value: AxiosResponse<TaskDetail>) => void;
+    const archiveSpy = vi.spyOn(taskApi, 'archive').mockImplementation((id) =>
+      id === 1
+        ? new Promise((resolve) => (resolveFirst = resolve))
+        : Promise.resolve({
+            data: { ...detailResponse(2).data, archivedAt: '2026-10-24' },
+          } as never)
+    );
+    renderTasks('/tasks');
+    await screen.findByRole('button', { name: 'More actions for TASK-1' });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-1' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(1));
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-2' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(2));
+    expect(archiveSpy).toHaveBeenCalledTimes(2);
+
+    await act(async () =>
+      resolveFirst({
+        ...detailResponse(1),
+        data: { ...detailResponse(1).data, archivedAt: '2026-10-24' },
+      })
+    );
+  });
+
+  it('queuedDirtyActionRunsExactlyOnceAfterSaveAndDoesNotBlockOtherTask', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'First task'), task(2, 'Second task')]) as never
+    );
+    vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+    let resolveSecond!: (value: AxiosResponse<TaskDetail>) => void;
+    const archiveSpy = vi.spyOn(taskApi, 'archive').mockImplementation((id) =>
+      id === 2
+        ? new Promise((resolve) => (resolveSecond = resolve))
+        : Promise.resolve({
+            data: { ...detailResponse(1).data, archivedAt: '2026-10-24' },
+          } as never)
+    );
+    const updateSpy = vi.spyOn(taskApi, 'update').mockImplementation(
+      async (id, patch) =>
+        ({
+          data: { ...detailResponse(id).data, ...patch },
+        }) as never
+    );
+    const { router } = renderTasks('/tasks?task=1');
+    await screen.findByRole('button', { name: 'Task title: Task 1' });
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Task title: Task 1' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Saved title' },
+    });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-2' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(2));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive task' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('unsaved changes');
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { title: 'Saved title' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(1));
+    expect(archiveSpy).toHaveBeenCalledTimes(2);
+
+    await act(async () =>
+      resolveSecond({
+        ...detailResponse(2),
+        data: { ...detailResponse(2).data, archivedAt: '2026-10-24' },
+      })
+    );
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 1 }));
+  });
+
   it('guards dirty X dismissal and resumes the original destination after Discard draft', async () => {
     vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
     vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
