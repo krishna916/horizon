@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AxiosResponse } from 'axios';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { taskApi } from './api';
 import { TaskCompletionProvider } from './TaskCompletionProvider';
+import { TaskLifecycleProvider } from './TaskLifecycleProvider';
 import { TaskDetailSurface } from './TaskDetailSurface';
 import type { TaskDetail } from './types';
 
@@ -43,7 +44,9 @@ function createWrapper() {
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <TaskCompletionProvider>{children}</TaskCompletionProvider>
+        <TaskCompletionProvider>
+          <TaskLifecycleProvider userId={1}>{children}</TaskLifecycleProvider>
+        </TaskCompletionProvider>
       </QueryClientProvider>
     );
   }
@@ -69,6 +72,76 @@ describe('TaskDetailSurface', () => {
   });
 
   afterEach(() => vi.restoreAllMocks());
+
+  it.each(['panel', 'page'] as const)(
+    'shows Archive and Delete actions in the %s detail header',
+    async (surface) => {
+      getSpy.mockResolvedValue(response(detail(7, 'Lifecycle task')) as never);
+      const { Wrapper } = createWrapper();
+      render(<TaskDetailSurface taskId={7} surface={surface} />, { wrapper: Wrapper });
+
+      expect(await screen.findByRole('button', { name: 'Archive task' })).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Move to Trash' })).toBeVisible();
+    }
+  );
+
+  it('keeps detail open and changes the header to Restore after Archive', async () => {
+    getSpy.mockResolvedValue(response(detail(7, 'Lifecycle task')) as never);
+    vi.spyOn(taskApi, 'archive').mockResolvedValue(
+      response({ ...detail(7, 'Lifecycle task'), archivedAt: '2026-10-24T12:00:00Z' }) as never
+    );
+    const onDeleted = vi.fn();
+    const { Wrapper } = createWrapper();
+    render(<TaskDetailSurface taskId={7} surface="panel" onDeleted={onDeleted} />, {
+      wrapper: Wrapper,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive task' }));
+
+    expect(await screen.findByRole('button', { name: 'Restore task' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Lifecycle task' })).toBeInTheDocument();
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  it('does not delete or navigate when the Trash confirmation is canceled', async () => {
+    getSpy.mockResolvedValue(response(detail(7, 'Lifecycle task')) as never);
+    const deleteSpy = vi
+      .spyOn(taskApi, 'softDelete')
+      .mockResolvedValue({ data: undefined } as never);
+    const onDeleted = vi.fn();
+    const { Wrapper } = createWrapper();
+    render(<TaskDetailSurface taskId={7} surface="panel" onDeleted={onDeleted} />, {
+      wrapper: Wrapper,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(onDeleted).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Lifecycle task' })).toBeInTheDocument();
+  });
+
+  it('moves a task to Trash and calls onDeleted once after confirmation', async () => {
+    getSpy.mockResolvedValue(response(detail(7, 'Lifecycle task')) as never);
+    const deleteSpy = vi
+      .spyOn(taskApi, 'softDelete')
+      .mockResolvedValue({ data: undefined } as never);
+    const onDeleted = vi.fn();
+    const { Wrapper } = createWrapper();
+    render(<TaskDetailSurface taskId={7} surface="panel" onDeleted={onDeleted} />, {
+      wrapper: Wrapper,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(within(dialog).getByRole('heading', { name: /move .* to Trash/i })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Move to Trash' }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(7));
+    expect(onDeleted).toHaveBeenCalledTimes(1);
+  });
 
   it('shows loading then server data and working panel navigation controls', async () => {
     let resolveDetail!: (value: AxiosResponse<TaskDetail>) => void;

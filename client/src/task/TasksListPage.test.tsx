@@ -428,6 +428,32 @@ describe('TasksListPage', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
+  it('saves a dirty title before archiving that same task from its detail header', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'Task 1')]) as never);
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const updatedTask = { ...detailResponse(1).data, title: 'Saved title' };
+    const updateSpy = vi.spyOn(taskApi, 'update').mockResolvedValue({ data: updatedTask } as never);
+    const archiveSpy = vi.spyOn(taskApi, 'archive').mockResolvedValue({
+      data: { ...updatedTask, archivedAt: '2026-10-24T12:00:00Z' },
+    } as never);
+    renderTasks('/tasks?task=1');
+
+    fireEvent.doubleClick(await screen.findByRole('button', { name: 'Task title: Task 1' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Saved title' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Archive task' }));
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('unsaved changes');
+    expect(archiveSpy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { title: 'Saved title' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(1));
+    expect(await screen.findByRole('button', { name: 'Restore task' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Saved title' })).toBeInTheDocument();
+  });
+
   it('blocks task navigation during a create POST and restores the dirty guard after failure', async () => {
     vi.spyOn(taskApi, 'list').mockResolvedValue(
       response([task(1, 'First task'), task(2, 'Second task')]) as never

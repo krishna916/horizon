@@ -21,7 +21,7 @@ export function TaskDetailPage({ rawId, onBack }: TaskDetailPageProps): React.JS
         <ArrowLeft aria-hidden="true" className="size-4" />
         Back to Tasks
       </button>
-      <TaskDetailSurface taskId={taskId} surface="page" />
+      <TaskDetailSurface taskId={taskId} surface="page" onDeleted={onBack} />
     </div>
   );
 }

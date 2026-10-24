@@ -3,7 +3,9 @@ import { isAxiosError } from 'axios';
 import type { JSX } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { TaskDetailView } from './TaskDetailView';
+import { TaskLifecycleActions } from './TaskLifecycleActions';
 import { TaskPanelShell } from './TaskPanelShell';
+import type { TaskDetail } from './types';
 import { useTaskDetail } from './useTaskDetail';
 
 interface TaskDetailSurfaceProps {
@@ -12,6 +14,7 @@ interface TaskDetailSurfaceProps {
   readonly onClose?: () => void;
   readonly onOpenFullPage?: () => void;
   readonly onCompletionIntent?: (taskId: number, completed: boolean) => void;
+  readonly onDeleted?: () => void;
 }
 
 export function TaskDetailSurface({
@@ -20,6 +23,7 @@ export function TaskDetailSurface({
   onClose,
   onOpenFullPage,
   onCompletionIntent,
+  onDeleted,
 }: TaskDetailSurfaceProps): JSX.Element {
   const currentUser = useCurrentUser();
   const userId = currentUser.isPending || currentUser.isError ? undefined : currentUser.data?.id;
@@ -37,6 +41,7 @@ export function TaskDetailSurface({
 
   let content: JSX.Element;
   let taskKey: string | undefined;
+  let taskForActions: TaskDetail | undefined;
   if (currentUser.isPending) {
     content = <output className="text-sm text-muted-foreground">Loading task details…</output>;
   } else if (currentUser.isFetching) {
@@ -88,6 +93,7 @@ export function TaskDetailSurface({
     content = <UnavailableTask />;
   } else {
     taskKey = taskQuery.data.key;
+    taskForActions = taskQuery.data;
     content = (
       <div>
         <div>{cachedDetailView ?? <UnavailableTask />}</div>
@@ -98,8 +104,18 @@ export function TaskDetailSurface({
   if (surface === 'page') {
     return (
       <div className="min-h-0">
-        <div className="border-b border-border px-6 py-4 text-sm font-medium text-muted-foreground">
-          {taskKey ?? 'Task details'}
+        <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-3">
+          <p className="min-w-0 truncate text-sm font-medium text-muted-foreground">
+            {taskKey ?? 'Task details'}
+          </p>
+          {taskForActions && userId !== undefined && (
+            <TaskLifecycleActions
+              task={taskForActions}
+              userId={userId}
+              placement="header"
+              onDeleted={onDeleted}
+            />
+          )}
         </div>
         <div className="overflow-y-auto">{content}</div>
       </div>
@@ -113,6 +129,14 @@ export function TaskDetailSurface({
           {taskKey ?? 'Task details'}
         </p>
         <div className="flex shrink-0 items-center gap-1">
+          {taskForActions && userId !== undefined && (
+            <TaskLifecycleActions
+              task={taskForActions}
+              userId={userId}
+              placement="header"
+              onDeleted={onDeleted ?? onClose}
+            />
+          )}
           {onOpenFullPage && (
             <button
               type="button"

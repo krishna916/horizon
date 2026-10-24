@@ -235,6 +235,7 @@ export function TaskWorkspace({
           taskId={selection.kind === 'valid' ? selection.id : null}
           surface="panel"
           onClose={onClosePanel}
+          onDeleted={onClosePanel}
           onCompletionIntent={onCompletionIntent}
           onOpenFullPage={
             selection.kind === 'valid' && onOpenFullPage

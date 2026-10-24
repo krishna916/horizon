@@ -4,6 +4,7 @@ import { useTaskCompletion } from './TaskCompletionProvider';
 import { TaskCompletionToggle } from './TaskCompletionToggle';
 import { TaskCompletionFeedback } from './TaskCompletionFeedback';
 import { TaskCompletionGateControls, useTaskCompletionGate } from './TaskCompletionGate';
+import { TaskLifecycleActions } from './TaskLifecycleActions';
 import type { TaskPriority, TaskSummary } from './types';
 
 interface TaskRowProps {
@@ -84,6 +85,7 @@ export function TaskRow({ task, now, userId, onCompletionIntent, onOpen, selecte
         />
         <TaskCompletionGateControls taskKey={task.key} gate={gate} />
       </div>
+      <TaskLifecycleActions task={task} userId={userId} placement="row" />
     </li>
   );
 }
