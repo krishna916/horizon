@@ -52,7 +52,7 @@ class TaskTest {
                                         "type",
                                         "paragraph",
                                         "content",
-                                        List.of(Map.of("text", "Hi")))));
+                                        List.of(Map.of("type", "text", "text", "Hi")))));
         Task task = Task.create(7L, "TASK-1", "Title", content, null, null);
 
         assertThat(task.getDescription()).isEqualTo(content);
@@ -65,8 +65,9 @@ class TaskTest {
                                         Map.of("type", "paragraph", "content", List.of()),
                                         null,
                                         null))
-                .isInstanceOf(InvalidTaskException.class)
-                .hasMessageContaining("description");
+                .isInstanceOfSatisfying(
+                        InvalidTaskException.class,
+                        exception -> assertThat(exception.getField()).isEqualTo("description"));
         assertThatThrownBy(
                         () ->
                                 Task.create(
@@ -76,8 +77,9 @@ class TaskTest {
                                         Map.of("type", "doc", "content", "not-an-array"),
                                         null,
                                         null))
-                .isInstanceOf(InvalidTaskException.class)
-                .hasMessageContaining("description");
+                .isInstanceOfSatisfying(
+                        InvalidTaskException.class,
+                        exception -> assertThat(exception.getField()).isEqualTo("description"));
     }
 
     @Test
