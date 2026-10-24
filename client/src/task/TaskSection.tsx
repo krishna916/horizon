@@ -8,6 +8,7 @@ interface TaskSectionProps {
   readonly userId: number;
   readonly onCompletionIntent?: (taskId: number, completed: boolean) => void;
   readonly onOpen: (taskId: number) => void;
+  readonly onDeleted?: (taskId: number) => void;
   readonly selectedTaskId: number | null;
 }
 
@@ -18,6 +19,7 @@ export function TaskSection({
   userId,
   onCompletionIntent,
   onOpen,
+  onDeleted,
   selectedTaskId,
 }: TaskSectionProps) {
   const headingId = `task-section-${title.toLowerCase()}`;
@@ -46,6 +48,7 @@ export function TaskSection({
               userId={userId}
               onCompletionIntent={handleCompletionIntent}
               onOpen={onOpen}
+              onDeleted={onDeleted}
               selected={task.id === selectedTaskId}
             />
           ))}

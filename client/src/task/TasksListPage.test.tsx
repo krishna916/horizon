@@ -60,36 +60,61 @@ const detailResponse = (id: number, completedAt: string | null = null): AxiosRes
     },
   }) as unknown as AxiosResponse<TaskDetail>;
 
-let registerProbeDraft: (() => void) | undefined;
+let registerProbeDraft: ((pending?: boolean) => void) | undefined;
+let registerProbeChecklist: (() => void) | undefined;
 let replaceProbeDraft: (() => void) | undefined;
+let requestProbeAction:
+  ((action: () => void, context?: { ownerId: number; taskId: number }) => void) | undefined;
+let probeDiscard: (() => void) | undefined;
+let clearProbeDraftAfterSave = false;
 
 function DraftGuardProbe() {
   const guard = useTaskDraftGuard();
   const register = useCallback(
-    (pending: boolean, save: () => Promise<boolean>) =>
+    (pending: boolean, save: () => Promise<boolean>, kind: 'field' | 'checklist' = 'field') =>
       guard?.register({
-        id: 'field:probe:1:title',
-        kind: 'field',
+        id: kind === 'field' ? 'field:1:1:title' : 'checklist:1:1',
+        kind,
         dirty: true,
         pending,
         save,
-        discard: () => undefined,
+        discard: () => probeDiscard?.(),
       }),
     [guard]
   );
   useEffect(() => {
+    let probeKind: 'field' | 'checklist' = 'field';
     function save(): Promise<boolean> {
-      register(true, save);
-      return new Promise<boolean>((resolve) => (probeSaveResolver = resolve));
+      register(true, save, probeKind);
+      return new Promise<boolean>((resolve) => {
+        probeSaveResolver = (saved) => {
+          if (saved && clearProbeDraftAfterSave) {
+            guard?.clear(probeKind === 'field' ? 'field:1:1:title' : 'checklist:1:1');
+          } else {
+            register(false, save, probeKind);
+          }
+          resolve(saved);
+        };
+      });
     }
-    registerProbeDraft = () => register(false, save);
+    registerProbeDraft = (pending = false) => {
+      probeKind = 'field';
+      register(pending, save, probeKind);
+    };
+    registerProbeChecklist = () => {
+      probeKind = 'checklist';
+      register(false, save, probeKind);
+    };
     replaceProbeDraft = () => {
-      guard?.clear('field:probe:1:title');
+      guard?.clear('field:1:1:title');
       register(false, save);
     };
+    requestProbeAction = (action, context) => guard?.requestAction(action, context);
     return () => {
       registerProbeDraft = undefined;
+      registerProbeChecklist = undefined;
       replaceProbeDraft = undefined;
+      requestProbeAction = undefined;
     };
   }, [guard, register]);
   return null;
@@ -156,8 +181,23 @@ function renderTasks(initialEntry: string, probe = false) {
   return { router };
 }
 
+async function confirmRowDelete(taskId: number) {
+  fireEvent.keyDown(
+    await screen.findByRole('button', { name: `More actions for TASK-${taskId}` }),
+    {
+      key: 'Enter',
+    }
+  );
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+}
+
 describe('TasksListPage', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    clearProbeDraftAfterSave = false;
+    probeDiscard = undefined;
+    vi.restoreAllMocks();
+  });
 
   it('pushes the first selection, replaces task switches, and supports Back and Forward', async () => {
     vi.spyOn(taskApi, 'list').mockResolvedValue(
@@ -267,6 +307,98 @@ describe('TasksListPage', () => {
     expect(router.state.location.search).toEqual({ task: 1, create: true });
   });
 
+  it('archiveTaskBWhileArchiveTaskAIsPendingIsNotDropped', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'First task'), task(2, 'Second task')]) as never
+    );
+    let resolveFirst!: (value: AxiosResponse<TaskDetail>) => void;
+    let resolveSecond!: (value: AxiosResponse<TaskDetail>) => void;
+    const archiveSpy = vi.spyOn(taskApi, 'archive').mockImplementation(
+      (id) =>
+        new Promise((resolve) => {
+          if (id === 1) resolveFirst = resolve;
+          else resolveSecond = resolve;
+        })
+    );
+    renderTasks('/tasks');
+    await screen.findByRole('button', { name: 'More actions for TASK-1' });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-1' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(1));
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-2' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(2));
+    expect(archiveSpy).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByText('Archiving task…')).toHaveLength(2);
+
+    await act(async () =>
+      resolveFirst({
+        ...detailResponse(1),
+        data: { ...detailResponse(1).data, archivedAt: '2026-10-24' },
+      })
+    );
+    await act(async () =>
+      resolveSecond({
+        ...detailResponse(2),
+        data: { ...detailResponse(2).data, archivedAt: '2026-10-24' },
+      })
+    );
+  });
+
+  it('queuedDirtyActionRunsExactlyOnceAfterSaveAndDoesNotBlockOtherTask', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'First task'), task(2, 'Second task')]) as never
+    );
+    vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
+    let resolveSecond!: (value: AxiosResponse<TaskDetail>) => void;
+    const archiveSpy = vi.spyOn(taskApi, 'archive').mockImplementation((id) =>
+      id === 2
+        ? new Promise((resolve) => (resolveSecond = resolve))
+        : Promise.resolve({
+            data: { ...detailResponse(1).data, archivedAt: '2026-10-24' },
+          } as never)
+    );
+    const updateSpy = vi.spyOn(taskApi, 'update').mockImplementation(
+      async (id, patch) =>
+        ({
+          data: { ...detailResponse(id).data, ...patch },
+        }) as never
+    );
+    const { router } = renderTasks('/tasks?task=1');
+    await screen.findByRole('button', { name: 'Task title: Task 1' });
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Task title: Task 1' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Saved title' },
+    });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-2' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(2));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive task' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('unsaved changes');
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { title: 'Saved title' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(1));
+    expect(archiveSpy).toHaveBeenCalledTimes(2);
+
+    await act(async () =>
+      resolveSecond({
+        ...detailResponse(2),
+        data: { ...detailResponse(2).data, archivedAt: '2026-10-24' },
+      })
+    );
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 1 }));
+  });
+
   it('guards dirty X dismissal and resumes the original destination after Discard draft', async () => {
     vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
     vi.spyOn(taskApi, 'get').mockImplementation(async (id) => detailResponse(id));
@@ -287,6 +419,219 @@ describe('TasksListPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Discard draft' }));
     await waitFor(() => expect(router.state.location.search).toEqual({}));
     expect(screen.queryByRole('textbox', { name: 'Title' })).not.toBeInTheDocument();
+  });
+
+  it('queues an explicit action behind the draft dialog and runs it after Save succeeds', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    renderTasks('/tasks', true);
+    await screen.findByRole('button', { name: 'Open TASK-1: First task' });
+    clearProbeDraftAfterSave = true;
+    act(() => registerProbeDraft?.());
+    const action = vi.fn();
+    act(() => requestProbeAction?.(action));
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save and continue' })).toBeInTheDocument();
+    expect(action).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() => expect(probeSaveResolver).toBeDefined());
+    act(() => requestProbeAction?.(action));
+    await act(async () => probeSaveResolver?.(true));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not run a queued action when Save fails and cancels it when keeping editing', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    renderTasks('/tasks', true);
+    await screen.findByRole('button', { name: 'Open TASK-1: First task' });
+    act(() => registerProbeDraft?.());
+    const action = vi.fn();
+    act(() => requestProbeAction?.(action));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() => expect(probeSaveResolver).toBeDefined());
+    await act(async () => probeSaveResolver?.(false));
+    expect(action).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(action).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('discards the registered draft before running the queued action', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    renderTasks('/tasks', true);
+    await screen.findByRole('button', { name: 'Open TASK-1: First task' });
+    const order: string[] = [];
+    probeDiscard = () => order.push('discard');
+    act(() => {
+      registerProbeDraft?.();
+      requestProbeAction?.(() => order.push('action'));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and continue' }));
+    expect(order).toEqual(['discard', 'action']);
+    probeDiscard = undefined;
+  });
+
+  it('uses the same Save and continue gate for a checklist draft', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    renderTasks('/tasks', true);
+    await screen.findByRole('button', { name: 'Open TASK-1: First task' });
+    act(() => registerProbeChecklist?.());
+    const action = vi.fn();
+    act(() => requestProbeAction?.(action));
+
+    expect(screen.getByRole('button', { name: 'Save and continue' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() => expect(probeSaveResolver).toBeDefined());
+    await act(async () => probeSaveResolver?.(true));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps an explicit action queued during a pending save and cancels it on Stay here', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    renderTasks('/tasks', true);
+    await screen.findByRole('button', { name: 'Open TASK-1: First task' });
+    act(() => registerProbeDraft?.(true));
+    const action = vi.fn();
+    act(() => requestProbeAction?.(action));
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Saving field…');
+    expect(action).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Stay here' }));
+    expect(action).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('drops a queued action when the guarded draft context is replaced', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    renderTasks('/tasks', true);
+    await screen.findByRole('button', { name: 'Open TASK-1: First task' });
+    act(() => registerProbeDraft?.());
+    const action = vi.fn();
+    act(() => requestProbeAction?.(action));
+
+    act(() => replaceProbeDraft?.());
+    expect(action).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('does not discard a draft for a different task when an action is requested', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'First task')]) as never);
+    renderTasks('/tasks', true);
+    await screen.findByRole('button', { name: 'Open TASK-1: First task' });
+    act(() => registerProbeDraft?.());
+    const action = vi.fn();
+
+    act(() => requestProbeAction?.(action, { ownerId: 1, taskId: 2 }));
+
+    expect(action).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('saves a dirty title before archiving that same task from its detail header', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'Task 1')]) as never);
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const updatedTask = { ...detailResponse(1).data, title: 'Saved title' };
+    const updateSpy = vi.spyOn(taskApi, 'update').mockResolvedValue({ data: updatedTask } as never);
+    const archiveSpy = vi.spyOn(taskApi, 'archive').mockResolvedValue({
+      data: { ...updatedTask, archivedAt: '2026-10-24T12:00:00Z' },
+    } as never);
+    renderTasks('/tasks?task=1');
+
+    fireEvent.doubleClick(await screen.findByRole('button', { name: 'Task title: Task 1' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Saved title' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Archive task' }));
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('unsaved changes');
+    expect(archiveSpy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith(1, { title: 'Saved title' }));
+    await waitFor(() => expect(archiveSpy).toHaveBeenCalledWith(1));
+    expect(await screen.findByRole('button', { name: 'Restore task' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Saved title' })).toBeInTheDocument();
+  });
+
+  it('replaces the panel selection with the Tasks list after confirmed soft-delete', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'Task 1')]) as never);
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const deleteSpy = vi
+      .spyOn(taskApi, 'softDelete')
+      .mockResolvedValue({ data: undefined } as never);
+    const { router } = renderTasks('/tasks');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-1: Task 1' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 1 }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Move TASK-1 to Trash?');
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Trash' }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(router.state.location.pathname).toBe('/tasks');
+    expect(screen.getByText('TASK-1 moved to Trash')).toBeInTheDocument();
+    await act(async () => router.history.back());
+    expect(router.state.location.pathname).toBe('/tasks');
+  });
+
+  it('deletingSelectedTaskFromRowClosesItsDetailSelection', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'Task 1')]) as never);
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const deleteSpy = vi
+      .spyOn(taskApi, 'softDelete')
+      .mockResolvedValue({ data: undefined } as never);
+    const { router } = renderTasks('/tasks?task=1');
+
+    await confirmRowDelete(1);
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(screen.queryByRole('region', { name: 'Task details' })).not.toBeInTheDocument();
+  });
+
+  it('deletingDifferentRowKeepsCurrentDetailOpen', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(
+      response([task(1, 'Task 1'), task(2, 'Task 2')]) as never
+    );
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const deleteSpy = vi
+      .spyOn(taskApi, 'softDelete')
+      .mockResolvedValue({ data: undefined } as never);
+    const { router } = renderTasks('/tasks?task=1');
+
+    await confirmRowDelete(2);
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(2));
+    expect(router.state.location.search).toEqual({ task: 1 });
+    expect(screen.getByRole('heading', { name: 'Task 1' })).toBeInTheDocument();
+  });
+
+  it('keeps the selected detail open when row deletion is cancelled or fails', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'Task 1')]) as never);
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const deleteSpy = vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
+    const { router } = renderTasks('/tasks?task=1');
+
+    fireEvent.keyDown(await screen.findByRole('button', { name: 'More actions for TASK-1' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(router.state.location.search).toEqual({ task: 1 });
+    expect(deleteSpy).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-1' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1));
+    expect(router.state.location.search).toEqual({ task: 1 });
   });
 
   it('blocks task navigation during a create POST and restores the dirty guard after failure', async () => {

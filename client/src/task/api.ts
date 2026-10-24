@@ -14,6 +14,10 @@ export const taskApi = {
     apiClient.patch<TaskDetail>(`/tasks/${id}`, patch),
   complete: (id: number) => apiClient.post<TaskDetail>(`/tasks/${id}/complete`),
   reopen: (id: number) => apiClient.post<TaskDetail>(`/tasks/${id}/reopen`),
+  archive: (id: number) => apiClient.post<TaskDetail>(`/tasks/${id}/archive`),
+  restoreArchive: (id: number) => apiClient.post<TaskDetail>(`/tasks/${id}/restore`),
+  softDelete: (id: number) => apiClient.delete<void>(`/tasks/${id}`),
+  restoreDeleted: (id: number) => apiClient.post<TaskDetail>(`/tasks/${id}/restore-deleted`),
   create: (payload: CreateTaskPayload, requestKey: string) =>
     apiClient.post<TaskDetail>('/tasks', payload, {
       headers: { 'Idempotency-Key': requestKey },

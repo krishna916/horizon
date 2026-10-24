@@ -4,6 +4,7 @@ import { useTaskCompletion } from './TaskCompletionProvider';
 import { TaskCompletionToggle } from './TaskCompletionToggle';
 import { TaskCompletionFeedback } from './TaskCompletionFeedback';
 import { TaskCompletionGateControls, useTaskCompletionGate } from './TaskCompletionGate';
+import { TaskLifecycleActions } from './TaskLifecycleActions';
 import type { TaskPriority, TaskSummary } from './types';
 
 interface TaskRowProps {
@@ -12,6 +13,7 @@ interface TaskRowProps {
   readonly userId: number;
   readonly onCompletionIntent?: (taskId: number, completed: boolean) => void;
   readonly onOpen: (taskId: number) => void;
+  readonly onDeleted?: (taskId: number) => void;
   readonly selected: boolean;
 }
 
@@ -22,7 +24,15 @@ const priorityLabels: Record<TaskPriority, string> = {
   LOW: 'Low',
 };
 
-export function TaskRow({ task, now, userId, onCompletionIntent, onOpen, selected }: TaskRowProps) {
+export function TaskRow({
+  task,
+  now,
+  userId,
+  onCompletionIntent,
+  onOpen,
+  onDeleted,
+  selected,
+}: TaskRowProps) {
   const completion = useTaskCompletion(userId, task);
   const gate = useTaskCompletionGate(userId, task, completion.completed, () => {
     const completed = completion.toggle();
@@ -84,6 +94,12 @@ export function TaskRow({ task, now, userId, onCompletionIntent, onOpen, selecte
         />
         <TaskCompletionGateControls taskKey={task.key} gate={gate} />
       </div>
+      <TaskLifecycleActions
+        task={task}
+        userId={userId}
+        placement="row"
+        onDeleted={() => onDeleted?.(task.id)}
+      />
     </li>
   );
 }

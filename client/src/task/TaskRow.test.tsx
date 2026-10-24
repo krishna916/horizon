@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
 import { TaskCompletionProvider } from './TaskCompletionProvider';
+import { TaskLifecycleProvider } from './TaskLifecycleProvider';
 import type { TaskSummary } from './types';
 import { TaskRow } from './TaskRow';
 import { TaskSection } from './TaskSection';
@@ -13,6 +14,10 @@ vi.mock('./api', () => ({
     get: vi.fn(),
     complete: vi.fn(),
     reopen: vi.fn(),
+    archive: vi.fn(),
+    restoreArchive: vi.fn(),
+    softDelete: vi.fn(),
+    restoreDeleted: vi.fn(),
     update: vi.fn(),
     create: vi.fn(),
   },
@@ -44,16 +49,18 @@ function renderTaskRow(
   return render(
     <QueryClientProvider client={queryClient}>
       <TaskCompletionProvider>
-        <ul>
-          <TaskRow
-            task={task(changes)}
-            now={new Date(2026, 9, 18, 12)}
-            userId={1}
-            onCompletionIntent={props.onCompletionIntent}
-            onOpen={props.onOpen ?? vi.fn()}
-            selected={props.selected ?? false}
-          />
-        </ul>
+        <TaskLifecycleProvider userId={1}>
+          <ul>
+            <TaskRow
+              task={task(changes)}
+              now={new Date(2026, 9, 18, 12)}
+              userId={1}
+              onCompletionIntent={props.onCompletionIntent}
+              onOpen={props.onOpen ?? vi.fn()}
+              selected={props.selected ?? false}
+            />
+          </ul>
+        </TaskLifecycleProvider>
       </TaskCompletionProvider>
     </QueryClientProvider>
   );
@@ -67,9 +74,57 @@ beforeEach(() => {
   vi.mocked(taskApi.reopen).mockResolvedValue({
     data: { ...task(), completedAt: null, description: null, deletedAt: null },
   } as never);
+  vi.mocked(taskApi.archive).mockResolvedValue({
+    data: { ...task(), archivedAt: '2026-10-24T12:00:00Z', description: null, deletedAt: null },
+  } as never);
+  vi.mocked(taskApi.restoreArchive).mockResolvedValue({
+    data: { ...task(), description: null, deletedAt: null },
+  } as never);
+  vi.mocked(taskApi.softDelete).mockResolvedValue({ data: undefined } as never);
+  vi.mocked(taskApi.restoreDeleted).mockResolvedValue({
+    data: { ...task(), description: null, deletedAt: null },
+  } as never);
 });
 
 describe('TaskRow', () => {
+  it('opens row actions independently from the row opener and completion control', () => {
+    const onOpen = vi.fn();
+    const onCompletionIntent = vi.fn();
+    renderTaskRow({}, { onOpen, onCompletionIntent });
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-7' }), {
+      key: 'Enter',
+    });
+
+    expect(screen.getByRole('menuitem', { name: 'Archive' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Move to Trash' })).toBeInTheDocument();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onCompletionIntent).not.toHaveBeenCalled();
+  });
+
+  it('closes the row menu on Escape and restores focus to its trigger', async () => {
+    renderTaskRow();
+    const trigger = screen.getByRole('button', { name: 'More actions for TASK-7' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    expect(screen.getByRole('menuitem', { name: 'Archive' })).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('starts Archive from the row menu without a confirmation dialog', async () => {
+    renderTaskRow();
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for TASK-7' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+
+    await waitFor(() => expect(taskApi.archive).toHaveBeenCalledWith(7));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
   it('renders title and available metadata in the approved two-line order', () => {
     const { container } = renderTaskRow();
     const row = screen.getByRole('listitem');
@@ -88,7 +143,7 @@ describe('TaskRow', () => {
     ).toBeTruthy();
     expect(container.querySelectorAll('li')).toHaveLength(1);
     expect(row.querySelector('svg')).toBeInTheDocument();
-    expect(row.querySelectorAll('button')).toHaveLength(2);
+    expect(row.querySelectorAll('button')).toHaveLength(3);
     expect(within(row).getByRole('checkbox', { name: 'Complete TASK-7' })).toBeInTheDocument();
     expect(row.textContent).not.toContain('description');
     expect(row.textContent).not.toContain('Engineering');
@@ -110,7 +165,7 @@ describe('TaskRow', () => {
 
     expect(screen.getByText('TASK-7')).toBeInTheDocument();
     expect(screen.queryByText(/Today|Oct|Critical|High|Medium|Low/)).not.toBeInTheDocument();
-    expect(container.querySelector('svg')).toBeNull();
+    expect(container.querySelector('.lucide-calendar-days')).toBeNull();
   });
 
   it.each([
@@ -225,14 +280,16 @@ describe('TaskSection', () => {
     render(
       <QueryClientProvider client={queryClient}>
         <TaskCompletionProvider>
-          <TaskSection
-            title="Completed"
-            tasks={[task({ completedAt: '2026-10-22T01:00:00Z' })]}
-            now={new Date(2026, 9, 18, 12)}
-            userId={1}
-            onOpen={vi.fn()}
-            selectedTaskId={null}
-          />
+          <TaskLifecycleProvider userId={1}>
+            <TaskSection
+              title="Completed"
+              tasks={[task({ completedAt: '2026-10-22T01:00:00Z' })]}
+              now={new Date(2026, 9, 18, 12)}
+              userId={1}
+              onOpen={vi.fn()}
+              selectedTaskId={null}
+            />
+          </TaskLifecycleProvider>
         </TaskCompletionProvider>
       </QueryClientProvider>
     );
@@ -254,14 +311,16 @@ describe('TaskSection', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <TaskCompletionProvider>
-          <TaskSection
-            title="Active"
-            tasks={[]}
-            now={new Date(2026, 9, 18)}
-            userId={1}
-            onOpen={vi.fn()}
-            selectedTaskId={null}
-          />
+          <TaskLifecycleProvider userId={1}>
+            <TaskSection
+              title="Active"
+              tasks={[]}
+              now={new Date(2026, 9, 18)}
+              userId={1}
+              onOpen={vi.fn()}
+              selectedTaskId={null}
+            />
+          </TaskLifecycleProvider>
         </TaskCompletionProvider>
       </QueryClientProvider>
     );

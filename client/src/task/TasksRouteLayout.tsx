@@ -1,7 +1,10 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Outlet } from '@tanstack/react-router';
 import { createContext, useContext, useState } from 'react';
+import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { TaskDraftNavigationGuard } from './TaskDraftNavigationGuard';
+import { TaskLifecycleProvider } from './TaskLifecycleProvider';
+import { TaskLifecycleNoticeList } from './TaskLifecycleNoticeList';
 
 interface TasksLayoutState {
   listRatio: number;
@@ -12,14 +15,24 @@ const TasksLayoutContext = createContext<TasksLayoutState | null>(null);
 
 export function TasksRouteLayout() {
   const [listRatio, setListRatio] = useState(60);
+  const currentUser = useCurrentUser();
+  const sessionVerified =
+    currentUser.data !== undefined &&
+    !currentUser.isPending &&
+    !currentUser.isFetching &&
+    !currentUser.isError;
+  const lifecycleOwnerKey = currentUser.isError ? 'no-user' : (currentUser.data?.id ?? 'no-user');
 
   return (
     <TaskDraftNavigationGuard>
-      <TasksLayoutContext.Provider value={{ listRatio, setListRatio }}>
-        <div className="h-full min-h-0 w-full">
-          <Outlet />
-        </div>
-      </TasksLayoutContext.Provider>
+      <TaskLifecycleProvider key={lifecycleOwnerKey} userId={currentUser.data?.id}>
+        <TasksLayoutContext.Provider value={{ listRatio, setListRatio }}>
+          <div className="h-full min-h-0 w-full">
+            {sessionVerified && <TaskLifecycleNoticeList />}
+            <Outlet />
+          </div>
+        </TasksLayoutContext.Provider>
+      </TaskLifecycleProvider>
     </TaskDraftNavigationGuard>
   );
 }

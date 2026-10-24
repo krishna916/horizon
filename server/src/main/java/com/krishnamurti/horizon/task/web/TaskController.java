@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -109,6 +110,27 @@ public class TaskController {
     @PostMapping("/{id}/reopen")
     public TaskDetailResponse reopen(@PathVariable Long id) {
         return toDetail(taskCommandService.reopen(id));
+    }
+
+    @PostMapping("/{id}/archive")
+    public TaskDetailResponse archive(@PathVariable Long id) {
+        return toDetail(taskCommandService.archive(id));
+    }
+
+    @PostMapping("/{id}/restore")
+    public TaskDetailResponse restoreArchived(@PathVariable Long id) {
+        return toDetail(taskCommandService.restoreArchived(id));
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void softDelete(@PathVariable Long id) {
+        taskCommandService.softDelete(id);
+    }
+
+    @PostMapping("/{id}/restore-deleted")
+    public TaskDetailResponse restoreDeleted(@PathVariable Long id) {
+        return toDetail(taskCommandService.restoreDeleted(id));
     }
 
     @GetMapping

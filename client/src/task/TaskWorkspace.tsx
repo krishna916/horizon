@@ -21,6 +21,7 @@ interface TaskWorkspaceProps {
   readonly onSelectTask?: (id: number) => void;
   readonly onOpenCreate?: () => void;
   readonly onClosePanel?: () => void;
+  readonly onDeleted?: () => void;
   readonly onOpenFullPage?: (id: number) => void;
   readonly onCreationDirtyChange?: (dirty: boolean) => void;
   readonly onCreationSubmittingChange?: (pending: boolean) => void;
@@ -35,6 +36,7 @@ export function TaskWorkspace({
   onSelectTask = () => {},
   onOpenCreate = () => {},
   onClosePanel,
+  onDeleted,
   onOpenFullPage,
   onCreationDirtyChange = () => {},
   onCreationSubmittingChange = () => {},
@@ -110,6 +112,12 @@ export function TaskWorkspace({
     },
     [reopenRevisionSnapshot, sections, userId]
   );
+  const handleRowDeleted = useCallback(
+    (taskId: number) => {
+      if (selection.kind === 'valid' && selection.id === taskId) onDeleted?.();
+    },
+    [onDeleted, selection]
+  );
   let workspaceContent;
 
   if (currentUser.isPending) {
@@ -162,6 +170,7 @@ export function TaskWorkspace({
           userId={userId ?? 0}
           onCompletionIntent={onCompletionIntent}
           onOpen={onSelectTask}
+          onDeleted={handleRowDeleted}
           selectedTaskId={selection.kind === 'valid' ? selection.id : null}
         />
         {sections.completed.length > 0 && (
@@ -172,6 +181,7 @@ export function TaskWorkspace({
             userId={userId ?? 0}
             onCompletionIntent={onCompletionIntent}
             onOpen={onSelectTask}
+            onDeleted={handleRowDeleted}
             selectedTaskId={selection.kind === 'valid' ? selection.id : null}
           />
         )}
@@ -235,6 +245,7 @@ export function TaskWorkspace({
           taskId={selection.kind === 'valid' ? selection.id : null}
           surface="panel"
           onClose={onClosePanel}
+          onDeleted={onDeleted ?? onClosePanel}
           onCompletionIntent={onCompletionIntent}
           onOpenFullPage={
             selection.kind === 'valid' && onOpenFullPage

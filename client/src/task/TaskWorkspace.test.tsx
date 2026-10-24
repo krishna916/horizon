@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
 import { TaskCompletionProvider } from './TaskCompletionProvider';
+import { TaskLifecycleProvider } from './TaskLifecycleProvider';
 import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 import { TaskWorkspace } from './TaskWorkspace';
 
@@ -55,7 +56,11 @@ function createWrapper() {
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <TaskCompletionProvider>{children}</TaskCompletionProvider>
+        <TaskCompletionProvider>
+          <TaskLifecycleProvider userId={mockUseCurrentUser().data?.id}>
+            {children}
+          </TaskLifecycleProvider>
+        </TaskCompletionProvider>
       </QueryClientProvider>
     );
   }
@@ -315,11 +320,13 @@ describe('TaskWorkspace', () => {
     expect(screen.queryByText('Archived task')).not.toBeInTheDocument();
     expect(screen.queryByText('Archived completed task')).not.toBeInTheDocument();
     expect(screen.queryByText(/description/i)).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(3);
+    expect(screen.getAllByRole('button')).toHaveLength(5);
     expect(screen.getByRole('button', { name: 'Open TASK-1: Renew passport' })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Open TASK-2: Send signed agreement' })
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More actions for TASK-1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More actions for TASK-2' })).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.getAllByRole('checkbox')).toHaveLength(2);
     expect(listSpy).toHaveBeenCalledTimes(1);

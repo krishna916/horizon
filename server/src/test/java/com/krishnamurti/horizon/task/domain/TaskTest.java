@@ -128,4 +128,57 @@ class TaskTest {
         assertThat(converter.convertToDatabaseColumn(TaskPriority.MEDIUM)).isEqualTo((short) 3);
         assertThat(converter.convertToDatabaseColumn(TaskPriority.LOW)).isEqualTo((short) 4);
     }
+
+    @Test
+    void archiveAndRestorePreserveCompletionAndOtherTaskFacts() {
+        Task task =
+                Task.create(
+                        7L,
+                        "TASK-1",
+                        "Preserved",
+                        null,
+                        TaskPriority.HIGH,
+                        LocalDate.of(2026, 10, 24));
+        OffsetDateTime completedAt = OffsetDateTime.parse("2026-10-20T12:00:00Z");
+        OffsetDateTime archivedAt = OffsetDateTime.parse("2026-10-21T12:00:00Z");
+        task.complete(completedAt);
+
+        task.archive(archivedAt);
+        task.archive(archivedAt.plusDays(1));
+
+        assertThat(task.getArchivedAt()).isEqualTo(archivedAt);
+        assertThat(task.getCompletedAt()).isEqualTo(completedAt);
+        assertThat(task.getTitle()).isEqualTo("Preserved");
+        assertThat(task.getPriority()).isEqualTo(TaskPriority.HIGH);
+        assertThat(task.getDueDate()).isEqualTo(LocalDate.of(2026, 10, 24));
+
+        task.restoreArchived();
+
+        assertThat(task.getArchivedAt()).isNull();
+        assertThat(task.getCompletedAt()).isEqualTo(completedAt);
+    }
+
+    @Test
+    void softDeleteAndRestorePreserveArchiveCompletionAndTaskFacts() {
+        Task task = Task.create(7L, "TASK-1", "Preserved", null, null, null);
+        OffsetDateTime completedAt = OffsetDateTime.parse("2026-10-20T12:00:00Z");
+        OffsetDateTime archivedAt = OffsetDateTime.parse("2026-10-21T12:00:00Z");
+        OffsetDateTime deletedAt = OffsetDateTime.parse("2026-10-22T12:00:00Z");
+        task.complete(completedAt);
+        task.archive(archivedAt);
+
+        task.softDelete(deletedAt);
+        task.softDelete(deletedAt.plusDays(1));
+
+        assertThat(task.getDeletedAt()).isEqualTo(deletedAt);
+        assertThat(task.getArchivedAt()).isEqualTo(archivedAt);
+        assertThat(task.getCompletedAt()).isEqualTo(completedAt);
+        assertThat(task.getTitle()).isEqualTo("Preserved");
+
+        task.restoreDeleted();
+
+        assertThat(task.getDeletedAt()).isNull();
+        assertThat(task.getArchivedAt()).isEqualTo(archivedAt);
+        assertThat(task.getCompletedAt()).isEqualTo(completedAt);
+    }
 }
