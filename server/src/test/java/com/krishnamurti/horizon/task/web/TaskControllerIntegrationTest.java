@@ -729,12 +729,170 @@ class TaskControllerIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         "{\"title\":\"Write"
-                                            + " docs\",\"description\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"text\":\"Nested\"}]}]},\"priority\":\"HIGH\",\"dueDate\":\"2026-10-20\"}"))
+                                            + " docs\",\"description\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Nested\"}]}]},\"priority\":\"HIGH\",\"dueDate\":\"2026-10-20\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.description.type").value("doc"))
                 .andExpect(jsonPath("$.description.content[0].content[0].text").value("Nested"))
                 .andExpect(jsonPath("$.priority").value("HIGH"))
                 .andExpect(jsonPath("$.dueDate").value("2026-10-20"));
+    }
+
+    @Test
+    void richDescriptionCreatesReplaysAndReloadsWithoutLeakingIntoList() throws Exception {
+        String requestKey = UUID.randomUUID().toString();
+        String body =
+                "{\"title\":\"Rich create\",\"description\":{\"type\":\"doc\",\"content\":["
+                    + "{\"type\":\"heading\",\"attrs\":{\"level\":2},\"content\":[{\"type\":\"text\",\"text\":\"Plan\"}]},{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Read\",\"marks\":[{\"type\":\"bold\"}]},{\"type\":\"text\",\"text\":\""
+                    + " more\",\"marks\":[{\"type\":\"link\",\"attrs\":{\"href\":\"https://example.com/docs\",\"target\":\"_blank\",\"rel\":\"noopener"
+                    + " noreferrer nofollow\",\"class\":null}}]}]},"
+                    + "{\"type\":\"table\",\"content\":[{\"type\":\"tableRow\",\"content\":[{\"type\":\"tableHeader\",\"attrs\":{\"colspan\":1,\"rowspan\":1,\"colwidth\":null},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Owner\"}]}]},{\"type\":\"tableCell\",\"attrs\":{\"colspan\":1,\"rowspan\":1,\"colwidth\":null},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Mira\"}]}]}]}]},"
+                    + "{\"type\":\"horizontalRule\"}]}}";
+
+        MvcResult created =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", requestKey)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.description.content[0].type").value("heading"))
+                        .andExpect(
+                                jsonPath("$.description.content[1].content[0].marks[0].type")
+                                        .value("bold"))
+                        .andExpect(jsonPath("$.description.content[2].type").value("table"))
+                        .andExpect(
+                                jsonPath("$.description.content[3].type").value("horizontalRule"))
+                        .andReturn();
+        Long id =
+                JsonPath.parse(created.getResponse().getContentAsString()).read("$.id", Long.class);
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", requestKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(id));
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.description.content[1].content[1].marks[0].attrs.href")
+                                .value("https://example.com/docs"))
+                .andExpect(
+                        jsonPath("$.description.content[2].content[0].content[0].type")
+                                .value("tableHeader"));
+        mockMvc.perform(get("/api/v1/tasks").cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].description").doesNotExist());
+    }
+
+    @Test
+    void richDescriptionPatchReplacesClearsAndAllowsCompletedArchivedTasks() throws Exception {
+        createTask(
+                "Rich patch",
+                "{\"title\":\"Rich"
+                    + " patch\",\"description\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Before\"}]}]}}");
+        Long id = taskIdForTitle("Rich patch");
+        jdbcTemplate.update(
+                "UPDATE task SET completed_at = ?, archived_at = ? WHERE id = ?",
+                OffsetDateTime.now(ZoneOffset.UTC),
+                OffsetDateTime.now(ZoneOffset.UTC),
+                id);
+        String replacement =
+                "{\"type\":\"doc\",\"content\":[{\"type\":\"bulletList\",\"content\":[{\"type\":\"listItem\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"After\",\"marks\":[{\"type\":\"italic\"}]}]}]}]}]}";
+        MvcResult before =
+                mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        String oldUpdatedAt =
+                JsonPath.parse(before.getResponse().getContentAsString())
+                        .read("$.updatedAt", String.class);
+        Thread.sleep(10);
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"description\":" + replacement + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.description.content[0].type").value("bulletList"))
+                .andExpect(jsonPath("$.updatedAt").value(org.hamcrest.Matchers.not(oldUpdatedAt)));
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.description.content[0].content[0].content[0].content[0].text")
+                                .value("After"));
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"description\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.description").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    void invalidRichDescriptionsReturnFieldErrorsAndPatchDoesNotMutateTask() throws Exception {
+        createTask(
+                "Invalid rich patch",
+                "{\"title\":\"Invalid rich"
+                    + " patch\",\"description\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Keep\"}]}]}}");
+        Long id = taskIdForTitle("Invalid rich patch");
+        MvcResult before =
+                mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        String beforeJson = before.getResponse().getContentAsString();
+        String beforeDescription = JsonPath.parse(beforeJson).read("$.description").toString();
+        String beforeUpdatedAt = JsonPath.parse(beforeJson).read("$.updatedAt", String.class);
+        String deeplyNested =
+                "{\"type\":\"doc\",\"content\":["
+                        + "{\"type\":\"blockquote\",\"content\":[".repeat(32)
+                        + "{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}"
+                        + "]}".repeat(32)
+                        + "]}";
+        String[] invalidDocuments = {
+            "{\"type\":\"doc\",\"content\":[{\"type\":\"unknown\"}]}",
+            "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"x\",\"marks\":[{\"type\":\"strike\"}]}]}]}",
+            "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"x\",\"marks\":[{\"type\":\"link\",\"attrs\":{\"href\":\"javascript:alert(1)\"}}]}]}]}",
+            deeplyNested,
+            "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\""
+                    + "x".repeat(270_000)
+                    + "\"}]}]}"
+        };
+
+        for (String invalidDocument : invalidDocuments) {
+            mockMvc.perform(
+                            post("/api/v1/tasks")
+                                    .cookie(ownerCookie)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(
+                                            "{\"title\":\"Invalid posted doc\",\"description\":"
+                                                    + invalidDocument
+                                                    + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errors.description").exists());
+            mockMvc.perform(
+                            patch("/api/v1/tasks/{id}", id)
+                                    .cookie(ownerCookie)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\"description\":" + invalidDocument + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errors.description").exists());
+        }
+
+        MvcResult after =
+                mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        String afterJson = after.getResponse().getContentAsString();
+        assertThat(JsonPath.parse(afterJson).read("$.description").toString())
+                .isEqualTo(beforeDescription);
+        assertThat(JsonPath.parse(afterJson).read("$.updatedAt", String.class))
+                .isEqualTo(beforeUpdatedAt);
+        assertThat(taskIdCountForTitle("Invalid posted doc")).isZero();
     }
 
     @Test
@@ -1039,7 +1197,7 @@ class TaskControllerIntegrationTest {
         createTask(
                 "Priority patch",
                 "{\"title\":\"Priority"
-                    + " patch\",\"description\":{\"type\":\"doc\",\"content\":[]},\"dueDate\":\"2026-10-20\"}");
+                    + " patch\",\"description\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Keep\"}]}]},\"dueDate\":\"2026-10-20\"}");
         Long id = taskIdForTitle("Priority patch");
 
         mockMvc.perform(
@@ -1058,7 +1216,8 @@ class TaskControllerIntegrationTest {
         createTask(
                 "Clear optional",
                 "{\"title\":\"Clear"
-                    + " optional\",\"description\":{\"type\":\"doc\",\"content\":[]},\"priority\":\"HIGH\",\"dueDate\":\"2026-10-20\"}");
+                    + " optional\",\"description\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Clear"
+                    + " me\"}]}]},\"priority\":\"HIGH\",\"dueDate\":\"2026-10-20\"}");
         Long id = taskIdForTitle("Clear optional");
 
         mockMvc.perform(
@@ -1078,7 +1237,8 @@ class TaskControllerIntegrationTest {
         createTask(
                 "Keep description",
                 "{\"title\":\"Keep"
-                    + " description\",\"description\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\"}]}}");
+                    + " description\",\"description\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Preserve"
+                    + " this\"}]}]}}");
         Long id = taskIdForTitle("Keep description");
 
         mockMvc.perform(
