@@ -1,10 +1,10 @@
 # Issue #23 — Task Archive, Restore and Soft Delete: design specification
 
-**Date:** 2026-10-24  
-**Status:** Owner decisions confirmed in planning conversation; consolidated document for final owner review before Luna implements  
-**Story:** https://github.com/krishna916/horizon/issues/23  
-**Intended implementer:** Luna  
-**Approved visual baseline:** `docs/design/tasks-workspace/DESIGN-SPEC.md` (2026-10-10)  
+**Date:** 2026-10-24
+**Status:** Owner decisions confirmed in planning conversation; consolidated document for final owner review before Luna implements
+**Story:** https://github.com/krishna916/horizon/issues/23
+**Intended implementer:** Luna
+**Approved visual baseline:** `docs/design/tasks-workspace/DESIGN-SPEC.md` (2026-10-10)
 **References:** PRD-004 Tasks, SPEC-001 Shared Concepts, PRD-003 Inbox, Horizon Constitution, #21 completion design, #22 checklist behavior, #25 visibility, #9 global Trash
 
 ## 1. Purpose and story boundary
@@ -120,7 +120,7 @@ PRD-004 currently describes “Archived → Restore → Active” and its archiv
 
 > Restoring a task clears `archived_at` only. If `completed_at` is null, the task is Active; otherwise it remains Completed and follows completed-history visibility rules.
 
-This correction is specifically approved by the owner; the uploaded authoritative PRD is not located at a verified editable path in this GitHub repository. **Do not fabricate a PRD file or silently alter the knowledge store.** Record the reconciliation here and apply to the authoritative PRD through its own owner-controlled documentation workflow.
+This correction is specifically approved by the owner. The product source was located during implementation at `../horizon-product-knowledge/10-Product/V1/PRD-004 Tasks.md`, alongside PRD-008 Trash, which requires restore to preserve the exact prior lifecycle state. This PRD copy is outside this repository and remains unmodified; **do not fabricate a PRD file or silently alter the knowledge store.** Apply the reconciliation through its owner-controlled documentation workflow.
 
 Other shared rules remain intact: `SPEC-001` says archive is independent of Inbox/review and Trash restoration preserves lifecycle context. No new task status field is justified.
 
