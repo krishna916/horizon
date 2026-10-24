@@ -1,0 +1,120 @@
+import type { KeyboardEvent, MouseEvent } from 'react';
+import { RichTextEditor } from '@/components/rich-text/RichTextEditor';
+import type { RichTextDocument } from '@/components/rich-text/richTextDocument';
+import { RichTextViewer } from '@/components/rich-text/RichTextViewer';
+
+interface TaskDescriptionFieldProps {
+  readonly value: RichTextDocument | null;
+  readonly editing: boolean;
+  readonly draft: RichTextDocument | null;
+  readonly dirty: boolean;
+  readonly pending: boolean;
+  readonly blocked: boolean;
+  readonly error: string | null;
+  readonly onActivate: () => void;
+  readonly onChange: (value: RichTextDocument | null) => void;
+  readonly onSave: () => void;
+  readonly onCancel: () => void;
+}
+
+export function TaskDescriptionField({
+  value,
+  editing,
+  draft,
+  dirty,
+  pending,
+  blocked,
+  error,
+  onActivate,
+  onChange,
+  onSave,
+  onCancel,
+}: TaskDescriptionFieldProps) {
+  if (editing) {
+    return (
+      <section aria-label="Edit task description" className="space-y-3">
+        <RichTextEditor
+          value={draft}
+          onChange={onChange}
+          disabled={pending}
+          ariaLabel="Task description"
+        />
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={pending}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {pending ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={pending}
+            className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          {!dirty && <span className="text-xs text-muted-foreground">No changes</span>}
+        </div>
+      </section>
+    );
+  }
+
+  if (!value) {
+    return (
+      <button
+        type="button"
+        onClick={onActivate}
+        disabled={blocked}
+        className="rounded-sm text-left text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Add description…
+      </button>
+    );
+  }
+
+  return (
+    <div
+      role="button"
+      aria-label="Edit task description"
+      aria-disabled={blocked}
+      tabIndex={blocked ? -1 : 0}
+      onDoubleClick={(event) => handleActivationMouse(event, onActivate, blocked)}
+      onKeyDown={(event) => handleActivationKey(event, onActivate, blocked)}
+      className="cursor-text rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <RichTextViewer value={value} />
+    </div>
+  );
+}
+
+function isLinkTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('a') !== null;
+}
+
+function handleActivationMouse(
+  event: MouseEvent<HTMLDivElement>,
+  activate: () => void,
+  blocked: boolean
+) {
+  if (!blocked && !isLinkTarget(event.target)) activate();
+}
+
+function handleActivationKey(
+  event: KeyboardEvent<HTMLButtonElement | HTMLDivElement>,
+  activate: () => void,
+  blocked: boolean
+) {
+  if (blocked || isLinkTarget(event.target)) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    activate();
+  }
+}

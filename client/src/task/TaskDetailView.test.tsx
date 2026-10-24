@@ -48,10 +48,137 @@ describe('TaskDetailView', () => {
     expect(screen.getByText('High')).toBeInTheDocument();
     expect(screen.getByText(/Oct 25/)).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(3);
+    expect(screen.getAllByRole('button')).toHaveLength(4);
     expect(screen.getAllByRole('checkbox')).toHaveLength(1);
     expect(screen.getByRole('heading', { name: 'Checklist' })).toBeInTheDocument();
     expect(screen.queryByText(/tags|attachments|activity/i)).not.toBeInTheDocument();
+  });
+
+  it('saves descriptions explicitly, blocks concurrent scalar edits, and cancels without PATCH', async () => {
+    const updatedDescription = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated release notes.' }] }],
+    };
+    const updateSpy = vi
+      .spyOn(taskApi, 'update')
+      .mockResolvedValue({ data: { ...task, description: updatedDescription } } as never);
+    const wrapper = createWrapper();
+    const view = render(<TaskDetailView task={task} userId={1} />, { wrapper });
+
+    const readView = screen.getByRole('button', { name: 'Edit task description' });
+    fireEvent.doubleClick(readView);
+    const editor = await screen.findByLabelText('Task description editor');
+    expect(screen.getByRole('textbox', { name: 'Add checklist item' })).toBeDisabled();
+    fireEvent.keyDown(editor, { key: 'a', ctrlKey: true });
+    fireEvent.paste(editor, {
+      clipboardData: {
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? 'Updated release notes.' : ''),
+      },
+    });
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Priority: High' }));
+    expect(screen.queryByLabelText('Priority')).not.toBeInTheDocument();
+    expect(updateSpy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+    expect(updateSpy).toHaveBeenCalledWith(7, { description: updatedDescription });
+    await waitFor(() => expect(screen.queryByLabelText('Task description editor')).toBeNull());
+    view.rerender(
+      <TaskDetailView task={{ ...task, description: updatedDescription }} userId={1} />
+    );
+
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    const cancelEditor = await screen.findByLabelText('Task description editor');
+    fireEvent.paste(cancelEditor, {
+      clipboardData: {
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? 'Discard this draft.' : ''),
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(await screen.findByText('Updated release notes.')).toBeInTheDocument();
+    expect(screen.queryByText('Discard this draft.')).not.toBeInTheDocument();
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Priority: High' }));
+    expect(screen.getByLabelText('Priority')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit task description' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
+  });
+
+  it('retains the description draft and offers Save retry after a failed PATCH', async () => {
+    const updateSpy = vi
+      .spyOn(taskApi, 'update')
+      .mockRejectedValueOnce(new Error('network failure'))
+      .mockResolvedValueOnce({ data: task } as never);
+    render(<TaskDetailView task={task} userId={1} />, { wrapper: createWrapper() });
+
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    const editor = await screen.findByLabelText('Task description editor');
+    fireEvent.keyDown(editor, { key: 'a', ctrlKey: true });
+    fireEvent.paste(editor, {
+      clipboardData: {
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? 'Keep this draft after failure.' : ''),
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your draft is still here');
+    expect(screen.getByLabelText('Task description editor')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(2));
+    expect(updateSpy.mock.calls[0]?.[1]).toEqual({
+      description: expect.objectContaining({
+        content: [
+          expect.objectContaining({
+            content: [expect.objectContaining({ text: 'Keep this draft after failure.' })],
+          }),
+        ],
+      }),
+    });
+  });
+
+  it('keeps descriptions editable for completed and archived tasks', async () => {
+    render(
+      <TaskDetailView
+        task={{
+          ...task,
+          completedAt: '2026-10-22T10:00:00Z',
+          archivedAt: '2026-10-23T10:00:00Z',
+        }}
+        userId={1}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+
+    expect(await screen.findByLabelText('Task description editor')).toBeInTheDocument();
+  });
+
+  it('discards an old description draft when task or user identity changes', async () => {
+    const wrapper = createWrapper();
+    const view = render(<TaskDetailView task={task} userId={1} />, { wrapper });
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    const editor = await screen.findByLabelText('Task description editor');
+    fireEvent.paste(editor, {
+      clipboardData: {
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? 'User one private draft.' : ''),
+      },
+    });
+
+    view.rerender(
+      <TaskDetailView task={{ ...task, id: 8, key: 'TASK-8', description: null }} userId={2} />
+    );
+
+    expect(await screen.findByRole('button', { name: 'Add description…' })).toBeInTheDocument();
+    expect(screen.queryByText('User one private draft.')).not.toBeInTheDocument();
   });
 
   it('renders checklist item controls inside task detail', () => {
