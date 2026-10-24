@@ -5,6 +5,7 @@ import { RichTextViewer } from '@/components/rich-text/RichTextViewer';
 
 interface TaskDescriptionFieldProps {
   readonly value: RichTextDocument | null;
+  readonly unavailable?: boolean;
   readonly editing: boolean;
   readonly draft: RichTextDocument | null;
   readonly dirty: boolean;
@@ -19,6 +20,7 @@ interface TaskDescriptionFieldProps {
 
 export function TaskDescriptionField({
   value,
+  unavailable = false,
   editing,
   draft,
   dirty,
@@ -64,6 +66,17 @@ export function TaskDescriptionField({
           {!dirty && <span className="text-xs text-muted-foreground">No changes</span>}
         </div>
       </section>
+    );
+  }
+
+  if (unavailable) {
+    return (
+      <div aria-label="Unavailable task description" className="space-y-2">
+        <RichTextViewer value={value} />
+        <p className="text-sm text-muted-foreground">
+          This saved description is unavailable in this version and has been preserved.
+        </p>
+      </div>
     );
   }
 

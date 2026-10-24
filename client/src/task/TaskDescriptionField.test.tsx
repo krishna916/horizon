@@ -19,6 +19,10 @@ const value: RichTextDocument = {
     },
   ],
 };
+const unsupportedValue: RichTextDocument = {
+  type: 'doc',
+  content: [{ type: 'futureWidget', attrs: { label: 'Legacy content' } }],
+};
 
 function renderField(overrides: Partial<React.ComponentProps<typeof TaskDescriptionField>> = {}) {
   const onActivate = vi.fn();
@@ -86,6 +90,20 @@ describe('TaskDescriptionField', () => {
 
     expect(placeholder).toBeDisabled();
     fireEvent.click(placeholder);
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it('shows unsupported stored content as unavailable without offering editing', () => {
+    const { onActivate } = renderField({ value: unsupportedValue, unavailable: true });
+
+    expect(screen.queryByRole('button', { name: 'Add description…' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit task description' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/can’t be displayed/i);
+    expect(screen.getByText(/preserved/i)).toBeInTheDocument();
+
+    fireEvent.doubleClick(screen.getByRole('status'));
+    fireEvent.keyDown(screen.getByRole('status'), { key: 'Enter' });
+
     expect(onActivate).not.toHaveBeenCalled();
   });
 });

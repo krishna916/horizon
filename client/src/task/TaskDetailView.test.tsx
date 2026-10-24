@@ -40,6 +40,52 @@ function createWrapper() {
 }
 
 describe('TaskDetailView', () => {
+  it('keeps unsupported stored descriptions visible and prevents accidental editing', () => {
+    const updateSpy = vi.spyOn(taskApi, 'update').mockResolvedValue({ data: task } as never);
+    const view = render(
+      <TaskDetailView
+        task={{
+          ...task,
+          description: {
+            type: 'doc',
+            content: [{ type: 'futureWidget', attrs: { label: 'Legacy content' } }],
+          },
+        }}
+        userId={1}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.queryByRole('button', { name: 'Add description…' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/can’t be displayed/i);
+    expect(screen.getByText(/preserved/i)).toBeInTheDocument();
+    fireEvent.doubleClick(screen.getByRole('status'));
+    fireEvent.keyDown(screen.getByRole('status'), { key: 'Enter' });
+    expect(screen.queryByLabelText('Task description editor')).not.toBeInTheDocument();
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    view.unmount();
+    updateSpy.mockRestore();
+  });
+
+  it('treats a valid whitespace-only description as absent', () => {
+    render(
+      <TaskDetailView
+        task={{
+          ...task,
+          description: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: '  ' }] }],
+          },
+        }}
+        userId={1}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.getByRole('button', { name: 'Add description…' })).toBeInTheDocument();
+  });
+
   it('renders task content, checklist, and optional metadata', () => {
     render(<TaskDetailView task={task} userId={1} />, { wrapper: createWrapper() });
 

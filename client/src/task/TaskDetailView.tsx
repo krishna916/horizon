@@ -5,6 +5,7 @@ import type { TaskDetail } from './types';
 import { TaskDescriptionField } from './TaskDescriptionField';
 import { useTaskDescriptionEdit } from './useTaskDescriptionEdit';
 import {
+  isSupportedRichTextDocument,
   normalizeRichTextDocument,
   type RichTextDocument,
 } from '@/components/rich-text/richTextDocument';
@@ -22,7 +23,10 @@ interface TaskDetailViewProps {
 }
 
 export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailViewProps) {
-  const description = normalizeRichTextDocument(task.description as RichTextDocument | null);
+  const rawDescription = task.description as RichTextDocument | null;
+  const unsupportedDescription =
+    rawDescription !== null && !isSupportedRichTextDocument(rawDescription);
+  const description = normalizeRichTextDocument(rawDescription);
   const edit = useTaskFieldEdit(task, userId);
   const descriptionEdit = useTaskDescriptionEdit(task, userId);
   const draftGuard = useTaskDraftGuard();
@@ -122,7 +126,8 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
         </h1>
       )}
       <TaskDescriptionField
-        value={description}
+        value={unsupportedDescription ? rawDescription : description}
+        unavailable={unsupportedDescription}
         editing={descriptionEdit.editing}
         draft={descriptionEdit.draft}
         dirty={descriptionEdit.dirty}
