@@ -21,6 +21,14 @@ const supportedMarks = new Set(['bold', 'italic', 'code', 'link']);
 const safeProtocols = new Set(['http:', 'https:', 'mailto:']);
 const safeRelTokens = new Set(['noopener', 'noreferrer', 'nofollow']);
 const requiredRelTokens = new Set(['noopener', 'noreferrer']);
+const defaultAttributes: Record<string, Record<string, unknown>> = {
+  codeBlock: { language: null },
+  heading: { level: 1 },
+  link: { target: null, rel: null, class: null, title: null },
+  orderedList: { start: 1, type: null },
+  tableCell: { colspan: 1, rowspan: 1, colwidth: null, align: null },
+  tableHeader: { colspan: 1, rowspan: 1, colwidth: null, align: null },
+};
 
 export function isSafeRichTextHref(href: unknown): href is string {
   if (
@@ -174,6 +182,48 @@ export function normalizeRichTextDocument(
     return null;
   }
   return hasMeaningfulContent(document) ? document : null;
+}
+
+function canonicalize(value: unknown, applySchemaDefaults: boolean): unknown {
+  if (Array.isArray(value)) return value.map((item) => canonicalize(item, applySchemaDefaults));
+  if (!isRecord(value)) return value;
+
+  const defaults =
+    applySchemaDefaults && typeof value.type === 'string'
+      ? defaultAttributes[value.type]
+      : undefined;
+  const canonical: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) {
+    const property = value[key];
+    if (key === 'attrs' && isRecord(property) && defaults) {
+      const entries = Object.entries(property).filter(
+        ([name, attr]) => !Object.hasOwn(defaults, name) || defaults[name] !== attr
+      );
+      entries.sort(([first], [second]) => first.localeCompare(second));
+      const attrs: Record<string, unknown> = {};
+      for (const [name, attr] of entries) {
+        attrs[name] = canonicalize(attr, applySchemaDefaults);
+      }
+      if (Object.keys(attrs).length > 0) canonical.attrs = attrs;
+      continue;
+    }
+    canonical[key] = canonicalize(property, applySchemaDefaults);
+  }
+  return canonical;
+}
+
+function canonicalDocument(document: RichTextDocument | null): unknown {
+  if (document === null) return null;
+  if (!isSupportedRichTextDocument(document)) return canonicalize(document, false);
+  const normalized = normalizeRichTextDocument(document);
+  return normalized === null ? null : canonicalize(normalized, true);
+}
+
+export function richTextDocumentsEqual(
+  first: RichTextDocument | null,
+  second: RichTextDocument | null
+): boolean {
+  return JSON.stringify(canonicalDocument(first)) === JSON.stringify(canonicalDocument(second));
 }
 
 export function toEditorDocument(document: RichTextDocument | null): RichTextDocument {

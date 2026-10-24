@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   normalizeRichTextDocument,
+  richTextDocumentsEqual,
   type RichTextDocument,
 } from '@/components/rich-text/richTextDocument';
 import { useUpdateTask } from './useUpdateTask';
@@ -10,28 +11,24 @@ function normalize(value: Record<string, unknown> | null): RichTextDocument | nu
   return normalizeRichTextDocument(value as RichTextDocument | null);
 }
 
-function serialize(value: RichTextDocument | null): string {
-  return JSON.stringify(value);
-}
-
 export function useTaskDescriptionEdit(task: TaskDetail, userId: number) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<RichTextDocument | null>(null);
-  const [baseline, setBaseline] = useState(() => serialize(normalize(task.description)));
+  const [baseline, setBaseline] = useState(() => normalize(task.description));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const identityRef = useRef({ taskId: task.id, userId });
   const generationRef = useRef(0);
   const { updateTask } = useUpdateTask(userId);
-  const dirty = editing && serialize(draft) !== baseline;
+  const dirty = editing && !richTextDocumentsEqual(draft, baseline);
 
   useEffect(() => {
     if (identityRef.current.taskId === task.id && identityRef.current.userId === userId) return;
     identityRef.current = { taskId: task.id, userId };
     generationRef.current += 1;
     pendingRef.current = false;
-    setBaseline(serialize(normalize(task.description)));
+    setBaseline(normalize(task.description));
     setEditing(false);
     setDraft(null);
     setPending(false);
@@ -40,7 +37,7 @@ export function useTaskDescriptionEdit(task: TaskDetail, userId: number) {
 
   function activate() {
     if (pendingRef.current) return;
-    setBaseline(serialize(normalize(task.description)));
+    setBaseline(normalize(task.description));
     setDraft(normalize(task.description));
     setError(null);
     setEditing(true);
@@ -66,7 +63,7 @@ export function useTaskDescriptionEdit(task: TaskDetail, userId: number) {
       const updated = await updateTask(task.id, { description: draft });
       if (generationRef.current === generation) {
         const saved = normalize(updated.description);
-        setBaseline(serialize(saved));
+        setBaseline(saved);
         setDraft(saved);
         setEditing(false);
       }
@@ -86,7 +83,7 @@ export function useTaskDescriptionEdit(task: TaskDetail, userId: number) {
 
   function cancel() {
     if (pendingRef.current) return;
-    setBaseline(serialize(normalize(task.description)));
+    setBaseline(normalize(task.description));
     setDraft(null);
     setEditing(false);
     setError(null);

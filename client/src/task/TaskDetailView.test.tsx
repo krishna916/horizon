@@ -86,6 +86,81 @@ describe('TaskDetailView', () => {
     expect(screen.getByRole('button', { name: 'Add description…' })).toBeInTheDocument();
   });
 
+  it('does not mark an undone rich-text edit dirty when JSON key order changes', async () => {
+    const linkedTask = {
+      ...task,
+      description: {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              {
+                type: 'text',
+                text: 'Docs',
+                marks: [
+                  {
+                    type: 'link',
+                    attrs: {
+                      title: null,
+                      class: null,
+                      rel: null,
+                      target: null,
+                      href: 'https://example.com',
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const updateSpy = vi.spyOn(taskApi, 'update').mockResolvedValue({ data: linkedTask } as never);
+    render(<TaskDetailView task={linkedTask} userId={1} />, { wrapper: createWrapper() });
+
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    const editor = await screen.findByLabelText('Task description editor');
+    fireEvent.keyDown(editor, { key: 'a', ctrlKey: true });
+    fireEvent.paste(editor, {
+      clipboardData: {
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? 'Changed' : ''),
+      },
+    });
+    fireEvent.keyDown(editor, { key: 'z', ctrlKey: true });
+
+    expect(editor).toHaveTextContent('Docs');
+    expect(screen.getByText('No changes')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'Edit task description' }));
+    const formattingEditor = await screen.findByLabelText('Task description editor');
+    fireEvent.keyDown(formattingEditor, { key: 'a', ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
+    expect(screen.queryByText('No changes')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledOnce());
+    expect(updateSpy).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({
+        description: expect.objectContaining({
+          content: [
+            expect.objectContaining({
+              content: [
+                expect.objectContaining({
+                  marks: expect.arrayContaining([expect.objectContaining({ type: 'bold' })]),
+                }),
+              ],
+            }),
+          ],
+        }),
+      })
+    );
+  });
+
   it('renders task content, checklist, and optional metadata', () => {
     render(<TaskDetailView task={task} userId={1} />, { wrapper: createWrapper() });
 

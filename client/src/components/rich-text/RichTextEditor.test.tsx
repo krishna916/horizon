@@ -9,6 +9,90 @@ const initialDocument: RichTextDocument = {
 };
 
 describe('RichTextEditor', () => {
+  it('keeps the selection when equivalent parent content changes only key order', async () => {
+    const onChange = vi.fn();
+    const stored = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'Docs',
+              marks: [
+                {
+                  type: 'link',
+                  attrs: {
+                    title: null,
+                    class: null,
+                    rel: null,
+                    target: null,
+                    href: 'https://example.com',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const reordered = {
+      content: [
+        {
+          content: [
+            {
+              marks: [
+                {
+                  attrs: {
+                    href: 'https://example.com',
+                    target: null,
+                    rel: null,
+                    class: null,
+                    title: null,
+                  },
+                  type: 'link',
+                },
+              ],
+              text: 'Docs',
+              type: 'text',
+            },
+          ],
+          type: 'paragraph',
+        },
+      ],
+      type: 'doc',
+    };
+    const { rerender } = render(
+      <RichTextEditor value={stored} onChange={onChange} ariaLabel="Task description" />
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText('Task description editor')).toBeInTheDocument()
+    );
+    selectAllInEditor();
+
+    rerender(<RichTextEditor value={reordered} onChange={onChange} ariaLabel="Task description" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }));
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        content: [
+          expect.objectContaining({
+            content: [
+              expect.objectContaining({
+                text: 'Docs',
+                marks: expect.arrayContaining([
+                  expect.objectContaining({ type: 'bold' }),
+                  expect.objectContaining({ type: 'link' }),
+                ]),
+              }),
+            ],
+          }),
+        ],
+      })
+    );
+  });
+
   it('toggles marks and block formatting and emits JSON documents', async () => {
     const onChange = vi.fn();
     render(
