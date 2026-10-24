@@ -39,7 +39,7 @@
 | Client coordinator | Create `client/src/task/TaskLifecycleProvider.tsx`, `TaskLifecycleProvider.test.tsx` | Owner/task-scoped mutations, Query reconciliation, error/Retry and persistent Undo queue |
 | Existing draft guard | `client/src/task/TaskDraftNavigationGuard.tsx` plus corresponding tests | Guard an explicit lifecycle action using existing save/discard/keep UX |
 | Task action controls | Create `client/src/task/TaskLifecycleActions.tsx`, `TaskLifecycleNoticeList.tsx`; modify `TaskRow.tsx`, `TaskDetailSurface.tsx`, `TaskSection.tsx` if needed | Menu/header actions, Delete confirmation, persistent notices |
-| Route and list behavior | `client/src/task/TasksRouteLayout.tsx`, `TasksListPage.tsx`, `TaskWorkspace.tsx`, `task-view.ts` only as needed | Route lifetime, delete navigation, archive precedence, preserve open detail |
+| Route and list behavior | `client/src/task/TasksRouteLayout.tsx`, `TasksListPage.tsx`, `TaskDetailPage.tsx`, `TaskWorkspace.tsx`, `task-view.ts`, `client/src/routes/_authenticated/tasks.$id.tsx` only as needed | Route lifetime, delete navigation, archive precedence, preserve open detail |
 | Frontend tests | Existing `TaskRow.test.tsx`, `TaskDetailSurface.test.tsx`, `TaskWorkspace.test.tsx`, `task-view.test.ts`; create `client/e2e/task-lifecycle.spec.ts` | Interaction, cache, routing and browser acceptance |
 | Documentation | This plan/spec; authoritative PRD-004 via separate knowledge-store workflow | Record restored completed-task rule; do not invent a PRD path |
 
@@ -130,11 +130,11 @@ Use existing constructor signatures and test helpers rather than redesigning the
 
 ### Task 5: Notices, route continuity, list classification and browser acceptance
 
-**Files:** Create `client/src/task/TaskLifecycleNoticeList.tsx`, `client/e2e/task-lifecycle.spec.ts`; modify `TasksRouteLayout.tsx`, `TasksListPage.tsx`, `TaskWorkspace.tsx` and `task-view.ts` only if necessary; extend associated tests.
+**Files:** Create `client/src/task/TaskLifecycleNoticeList.tsx`, `client/e2e/task-lifecycle.spec.ts`; modify `TasksRouteLayout.tsx`, `TasksListPage.tsx`, `TaskDetailPage.tsx`, `TaskWorkspace.tsx`, `client/src/routes/_authenticated/tasks.$id.tsx` and `task-view.ts` only if necessary; extend associated tests.
 
 **Interfaces:**
 - `TaskLifecycleNoticeList` consumes `useTaskLifecycle().notices`; renders one task-specific row per active notice with text, Undo, Dismiss; failed Undo displays error and Retry in place. No timers. A notice remains for task deleted from the list.
-- Host it **inside the mounted Tasks route layout** so panel→list and page→list navigation preserve Undo; route layout unmount or verified user change clears it. Preserve existing `TaskDraftNavigationGuard` and `TaskCompletionProvider` placement/order.
+- Host it **inside the mounted Tasks route layout** so panel→list and page→list navigation preserve Undo; route layout unmount or verified user change clears it. **Existing `TaskCompletionProvider` lives in `client/src/App.tsx` above the router; leave it there.** Preserve existing `TaskDraftNavigationGuard` placement/order.
 - `TasksListPage` supplies `onDeleted` for panel/detail and navigates to `/tasks` with `replace: true` after successful soft-delete; `TaskDetailPage` / route wiring provides equivalent for full-page deletion. Do not use browser Back to revisit a now-deleted canonical detail URL.
 - Keep `classifyTasks` archived precedence unchanged; only add archive-specific assertions as required. Do not expose Archived section or completed history (owned by #25).
 
