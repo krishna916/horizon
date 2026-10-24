@@ -52,6 +52,8 @@ describe('task update API', () => {
     [{ title: 'Updated title' }, '/tasks/7'],
     [{ priority: null }, '/tasks/7'],
     [{ dueDate: null }, '/tasks/7'],
+    [{ description: { type: 'doc', content: [{ type: 'paragraph' }] } }, '/tasks/7'],
+    [{ description: null }, '/tasks/7'],
   ] as const)('sends only the requested field patch %o', async (patch, path) => {
     const patchSpy = vi.spyOn(apiClient, 'patch').mockResolvedValue({ data: detail() } as never);
 
@@ -63,6 +65,53 @@ describe('task update API', () => {
 });
 
 describe('useUpdateTask', () => {
+  it.each([
+    {
+      patch: {
+        description: {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }],
+        },
+      },
+      description: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }],
+      },
+    },
+    { patch: { description: null }, description: null },
+  ])(
+    'reconciles a successful description patch from the server response: $patch',
+    async ({ patch, description }) => {
+      const updated = detail({ description, updatedAt: '2026-10-24T12:00:00Z' });
+      const patchSpy = vi.spyOn(apiClient, 'patch').mockResolvedValue({ data: updated } as never);
+      const { Wrapper, queryClient } = createWrapper();
+      queryClient.setQueryData(
+        ['tasks', 1, 'detail', 7],
+        detail({
+          description: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original' }] }],
+          },
+        })
+      );
+      queryClient.setQueryData<TaskListResponse>(['tasks', 1], { items: [summary()] });
+
+      const { result } = renderHook(() => useUpdateTask(1), { wrapper: Wrapper });
+      await act(async () => {
+        await result.current.updateTask(7, patch);
+      });
+
+      expect(patchSpy).toHaveBeenCalledWith('/tasks/7', patch);
+      expect(queryClient.getQueryData<TaskDetail>(['tasks', 1, 'detail', 7])).toMatchObject({
+        description,
+        updatedAt: '2026-10-24T12:00:00Z',
+      });
+      const [listItem] = queryClient.getQueryData<TaskListResponse>(['tasks', 1])!.items;
+      expect(listItem).not.toHaveProperty('description');
+      expect(listItem?.updatedAt).toBe('2026-10-24T12:00:00Z');
+    }
+  );
+
   it('updates only the matching detail and present list summary, then invalidates that list', async () => {
     const updated = detail({ title: 'Renamed task', priority: null, dueDate: null });
     const patchSpy = vi.spyOn(apiClient, 'patch').mockResolvedValue({ data: updated } as never);
@@ -123,6 +172,7 @@ describe('useUpdateTask', () => {
 
   it.each([
     new Error('400 validation failure'),
+    new Error('500 server failure'),
     new Error('404 unavailable'),
     new Error('network failure'),
   ])('does not replace cache state when the PATCH fails (%s)', async (error) => {
