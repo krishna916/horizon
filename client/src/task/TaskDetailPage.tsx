@@ -5,9 +5,14 @@ import { TaskDetailSurface } from './TaskDetailSurface';
 interface TaskDetailPageProps {
   readonly rawId: string;
   readonly onBack: () => void;
+  readonly onDeleted: () => void;
 }
 
-export function TaskDetailPage({ rawId, onBack }: TaskDetailPageProps): React.JSX.Element {
+export function TaskDetailPage({
+  rawId,
+  onBack,
+  onDeleted,
+}: TaskDetailPageProps): React.JSX.Element {
   const selection = parseTaskSelection(rawId);
   const taskId = selection.kind === 'valid' ? selection.id : null;
 
@@ -21,7 +26,7 @@ export function TaskDetailPage({ rawId, onBack }: TaskDetailPageProps): React.JS
         <ArrowLeft aria-hidden="true" className="size-4" />
         Back to Tasks
       </button>
-      <TaskDetailSurface taskId={taskId} surface="page" onDeleted={onBack} />
+      <TaskDetailSurface taskId={taskId} surface="page" onDeleted={onDeleted} />
     </div>
   );
 }

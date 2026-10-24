@@ -30,5 +30,14 @@ function TaskDetailRoute() {
     });
   }
 
-  return <TaskDetailPage rawId={id} onBack={backToTasks} />;
+  function returnToListAfterDelete() {
+    void navigate({
+      to: '/tasks',
+      search: { task: undefined, create: undefined },
+      replace: true,
+      state: { horizonTaskNavigation: undefined },
+    });
+  }
+
+  return <TaskDetailPage rawId={id} onBack={backToTasks} onDeleted={returnToListAfterDelete} />;
 }

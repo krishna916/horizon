@@ -53,10 +53,14 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
   const [registrationState, setRegistrationState] = useState<TaskDraftRegistration | null>(null);
   const [queuedAction, setQueuedAction] = useState<QueuedAction | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
-  const blocker = useBlocker({
-    shouldBlockFn: () =>
+  const shouldBlockNavigation = useCallback(
+    () =>
       !skipBlocker.current &&
       Boolean(registrationRef.current?.dirty || registrationRef.current?.pending),
+    []
+  );
+  const blocker = useBlocker({
+    shouldBlockFn: shouldBlockNavigation,
     enableBeforeUnload: () =>
       Boolean(registrationRef.current?.dirty || registrationRef.current?.pending),
     withResolver: true,

@@ -60,9 +60,11 @@ function createTestRouter(initialEntry: string) {
 
 function ChecklistDraftProbe() {
   const guard = useTaskDraftGuard();
+  const registerDraft = guard?.register;
+  const clearDraft = guard?.clear;
   const navigate = useNavigate();
   useEffect(() => {
-    guard?.register({
+    registerDraft?.({
       id: 'checklist:1:12',
       kind: 'checklist',
       dirty: true,
@@ -70,8 +72,8 @@ function ChecklistDraftProbe() {
       save: async () => true,
       discard: () => undefined,
     });
-    return () => guard?.clear('checklist:1:12');
-  }, [guard]);
+    return () => clearDraft?.('checklist:1:12');
+  }, [clearDraft, registerDraft]);
 
   return (
     <button type="button" onClick={() => void navigate({ to: '/notes' })}>

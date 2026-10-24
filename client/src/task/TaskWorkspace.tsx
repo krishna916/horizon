@@ -21,6 +21,7 @@ interface TaskWorkspaceProps {
   readonly onSelectTask?: (id: number) => void;
   readonly onOpenCreate?: () => void;
   readonly onClosePanel?: () => void;
+  readonly onDeleted?: () => void;
   readonly onOpenFullPage?: (id: number) => void;
   readonly onCreationDirtyChange?: (dirty: boolean) => void;
   readonly onCreationSubmittingChange?: (pending: boolean) => void;
@@ -35,6 +36,7 @@ export function TaskWorkspace({
   onSelectTask = () => {},
   onOpenCreate = () => {},
   onClosePanel,
+  onDeleted,
   onOpenFullPage,
   onCreationDirtyChange = () => {},
   onCreationSubmittingChange = () => {},
@@ -235,7 +237,7 @@ export function TaskWorkspace({
           taskId={selection.kind === 'valid' ? selection.id : null}
           surface="panel"
           onClose={onClosePanel}
-          onDeleted={onClosePanel}
+          onDeleted={onDeleted ?? onClosePanel}
           onCompletionIntent={onCompletionIntent}
           onOpenFullPage={
             selection.kind === 'valid' && onOpenFullPage

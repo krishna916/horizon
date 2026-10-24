@@ -83,7 +83,8 @@ test('selects tasks, supports history, opens the canonical page, and preserves t
   await page.screenshot({ path: '/tmp/horizon-issue19-task-detail-desktop.png', fullPage: false });
   await expect(page.getByText('<img src=x onerror=alert(1)>')).toBeVisible();
   await expect(page.locator('[role="img"], img')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /archive|delete/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Archive task' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Move to Trash' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Open TASK-8: Second browser task' }).click();
   await expect(page).toHaveURL(/\/tasks\?task=8$/);

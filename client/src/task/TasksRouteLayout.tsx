@@ -4,6 +4,7 @@ import { createContext, useContext, useState } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { TaskDraftNavigationGuard } from './TaskDraftNavigationGuard';
 import { TaskLifecycleProvider } from './TaskLifecycleProvider';
+import { TaskLifecycleNoticeList } from './TaskLifecycleNoticeList';
 
 interface TasksLayoutState {
   listRatio: number;
@@ -21,6 +22,7 @@ export function TasksRouteLayout() {
       <TaskLifecycleProvider key={currentUser.data?.id ?? 'no-user'} userId={currentUser.data?.id}>
         <TasksLayoutContext.Provider value={{ listRatio, setListRatio }}>
           <div className="h-full min-h-0 w-full">
+            <TaskLifecycleNoticeList />
             <Outlet />
           </div>
         </TasksLayoutContext.Provider>

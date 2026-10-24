@@ -107,6 +107,15 @@ export function TasksListPage() {
     });
   }
 
+  function returnToListAfterDelete() {
+    void navigate({
+      to: '/tasks',
+      search: { task: undefined, create: undefined },
+      state: { horizonTaskNavigation: undefined },
+      replace: true,
+    });
+  }
+
   function openFullPage(taskId: number) {
     void navigate({
       to: '/tasks/$id',
@@ -146,6 +155,7 @@ export function TasksListPage() {
         onSelectTask={selectTask}
         onOpenCreate={openCreate}
         onClosePanel={closePanel}
+        onDeleted={returnToListAfterDelete}
         onOpenFullPage={openFullPage}
         onCreationDirtyChange={(dirty) => {
           creationDirty.current = dirty;

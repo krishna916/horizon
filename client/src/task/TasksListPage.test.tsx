@@ -454,6 +454,28 @@ describe('TasksListPage', () => {
     expect(screen.getByRole('heading', { name: 'Saved title' })).toBeInTheDocument();
   });
 
+  it('replaces the panel selection with the Tasks list after confirmed soft-delete', async () => {
+    vi.spyOn(taskApi, 'list').mockResolvedValue(response([task(1, 'Task 1')]) as never);
+    vi.spyOn(taskApi, 'get').mockResolvedValue(detailResponse(1));
+    const deleteSpy = vi
+      .spyOn(taskApi, 'softDelete')
+      .mockResolvedValue({ data: undefined } as never);
+    const { router } = renderTasks('/tasks');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open TASK-1: Task 1' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 1 }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Move TASK-1 to Trash?');
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Trash' }));
+
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(router.state.location.pathname).toBe('/tasks');
+    expect(screen.getByText('TASK-1 moved to Trash')).toBeInTheDocument();
+    await act(async () => router.history.back());
+    expect(router.state.location.pathname).toBe('/tasks');
+  });
+
   it('blocks task navigation during a create POST and restores the dirty guard after failure', async () => {
     vi.spyOn(taskApi, 'list').mockResolvedValue(
       response([task(1, 'First task'), task(2, 'Second task')]) as never
