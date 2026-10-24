@@ -10,16 +10,37 @@ const linkPattern = /\[[^\]\n]+\]\([^\s)]+(?:\s+"[^"]*")?\)/;
 const boldPattern = /\*\*[^*\n]+\*\*|__[^_\n]+__/;
 const italicPattern = /\*(?!\s)[^*\n]+(?<!\s)\*|_(?!\s)[^_\n]+(?<!\s)_/;
 const horizontalRulePattern = /^\s{0,3}(?:---+|___+|\*\*\*+)\s*$/m;
+const tableSeparatorCellPattern = /^:?-{3,}:?$/;
+
+function tableCells(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|')) return null;
+  const cells = trimmed.split('|');
+  if (trimmed.startsWith('|')) cells.shift();
+  if (trimmed.endsWith('|')) cells.pop();
+  return cells.map((cell) => cell.trim());
+}
+
+function hasGfmTable(lines: string[]): boolean {
+  return lines.some((line, index) => {
+    const headers = tableCells(line);
+    const separators = tableCells(lines[index + 1] ?? '');
+    return (
+      headers !== null &&
+      separators !== null &&
+      headers.length === separators.length &&
+      headers.length > 0 &&
+      headers.every((cell) => cell.length > 0) &&
+      separators.every((cell) => tableSeparatorCellPattern.test(cell))
+    );
+  });
+}
 
 export function looksLikeMarkdown(text: string): boolean {
   const source = text.replace(/\r\n?/g, '\n').trim();
   if (source.length === 0) return false;
 
   const lines = source.split('\n');
-  const table =
-    lines.length >= 2 &&
-    lines.some((line) => line.includes('|')) &&
-    lines.some((line) => /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line));
 
   return (
     headingPattern.test(source) ||
@@ -30,7 +51,7 @@ export function looksLikeMarkdown(text: string): boolean {
     boldPattern.test(source) ||
     italicPattern.test(source) ||
     horizontalRulePattern.test(source) ||
-    table
+    hasGfmTable(lines)
   );
 }
 

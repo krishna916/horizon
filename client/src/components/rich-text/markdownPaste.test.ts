@@ -19,6 +19,8 @@ describe('looksLikeMarkdown', () => {
     ['> quoted text', 'quote'],
     ['---', 'horizontal rule'],
     ['| Name | Value |\n| --- | --- |\n| A | B |', 'GFM table'],
+    ['| Name |\n| --- |\n| Ada |', 'single-column GFM table'],
+    ['| Name |\n| :---: |\n| Ada |', 'aligned single-column GFM table'],
     ['## Plan\n\n- **bold**\n- [docs](https://example.com)', 'combined blocks'],
   ])('recognizes %s as %s', (text) => {
     expect(looksLikeMarkdown(text)).toBe(true);
@@ -30,9 +32,58 @@ describe('looksLikeMarkdown', () => {
       expect(looksLikeMarkdown(text)).toBe(false);
     }
   );
+
+  it.each(['A | B', '| --- |', 'Name |\nA |'])(
+    'leaves incomplete pipe table syntax literal: %s',
+    (text) => {
+      expect(looksLikeMarkdown(text)).toBe(false);
+    }
+  );
 });
 
 describe('Markdown paste extension', () => {
+  it('parses and inserts a one-column GFM table with header and cell text', () => {
+    const editor = createEditor();
+    const source = '| Name |\n| --- |\n| Ada |';
+    const parsed = editor.markdown?.parse(source);
+
+    expect(parsed?.content).toEqual([
+      {
+        type: 'table',
+        content: [
+          {
+            type: 'tableRow',
+            content: [
+              {
+                type: 'tableHeader',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Name' }] }],
+              },
+            ],
+          },
+          {
+            type: 'tableRow',
+            content: [
+              {
+                type: 'tableCell',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Ada' }] }],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    const handled = dispatchPaste(editor, source);
+    expect(handled).toBe(true);
+    expect(isSupportedRichTextDocument(editor.getJSON())).toBe(true);
+    expect(editor.getJSON().content).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'table' })])
+    );
+    expect(editor.getText()).toContain('Name');
+    expect(editor.getText()).toContain('Ada');
+    editor.destroy();
+  });
+
   it('parses supported Markdown into the shared schema and inserts at the current selection', () => {
     const editor = new Editor({
       element: document.createElement('div'),
