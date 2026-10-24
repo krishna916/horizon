@@ -114,13 +114,13 @@ Reuse the existing `TaskDraftNavigationGuard` and Radix interaction primitives, 
 4. Playwright: list row archive→Undo, panel Archive→Restore while detail stays open, dedicated page Delete→confirm→list→Undo, dirty edit gate, keyboard interactions, API errors.
 5. Existing tests for completion/list/detail/checklist and format/type/lint/static checks must still pass.
 
-## 8. PRD reconciliation to make in authoritative knowledge store
+## 8. PRD reconciliation
 
 PRD-004 currently describes “Archived → Restore → Active” and its archived restore edge case without distinguishing completion. Update its FR-009/State Transitions/Edge Case 5 wording to:
 
 > Restoring a task clears `archived_at` only. If `completed_at` is null, the task is Active; otherwise it remains Completed and follows completed-history visibility rules.
 
-This correction is specifically approved by the owner. The product source was located during implementation at `../horizon-product-knowledge/10-Product/V1/PRD-004 Tasks.md`, alongside PRD-008 Trash, which requires restore to preserve the exact prior lifecycle state. This PRD copy is outside this repository and remains unmodified; **do not fabricate a PRD file or silently alter the knowledge store.** Apply the reconciliation through its owner-controlled documentation workflow.
+This correction is specifically approved by the owner and was applied to the authoritative product source at `../horizon-product-knowledge/10-Product/V1/PRD-004 Tasks.md` (version 1.2, 2026-10-24). PRD-008 Trash independently requires restore to preserve the exact prior lifecycle state. The product knowledge vault is outside this code repository, so its update is recorded here and summarized in the PR description.
 
 Other shared rules remain intact: `SPEC-001` says archive is independent of Inbox/review and Trash restoration preserves lifecycle context. No new task status field is justified.
 
