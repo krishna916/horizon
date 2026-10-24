@@ -95,7 +95,17 @@ class TaskCommandServiceTest {
 
     @Test
     void updateOnlyPresentFields() {
-        Map<String, Object> description = Map.of("type", "doc", "content", List.of());
+        Map<String, Object> description =
+                Map.of(
+                        "type",
+                        "doc",
+                        "content",
+                        List.of(
+                                Map.of(
+                                        "type",
+                                        "paragraph",
+                                        "content",
+                                        List.of(Map.of("type", "text", "text", "Keep this")))));
         Task created =
                 taskCommandService.create(
                         "Before", description, TaskPriority.HIGH, LocalDate.of(2026, 10, 20));
