@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { toTaskDescriptionDocument } from './taskDescriptionDocument';
+import { RichTextEditor } from '@/components/rich-text/RichTextEditor';
 import { TaskCreateChecklist } from './TaskCreateChecklist';
 import type { CreateChecklistDraft } from './TaskCreateChecklist';
 import type { CreateTaskPayload, TaskDetail } from './types';
@@ -17,7 +17,7 @@ const taskCreateSchema = z.object({
     .trim()
     .min(1, 'Enter a task title.')
     .max(255, 'Title must be 255 characters or fewer.'),
-  description: z.string(),
+  description: z.record(z.string(), z.unknown()).nullable(),
   priority: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']).or(z.literal('')),
   dueDate: z.string(),
 });
@@ -85,7 +85,7 @@ export function TaskCreateForm({
   const { createTask } = useCreateTask(userId);
   const form = useForm<TaskCreateInput, unknown, TaskCreateValues>({
     resolver: zodResolver(taskCreateSchema),
-    defaultValues: { title: '', description: '', priority: '', dueDate: '' },
+    defaultValues: { title: '', description: null, priority: '', dueDate: '' },
   });
   const [recovery, setRecovery] = useState<TaskCreateRecovery | null>(null);
   const [checklistDrafts, setChecklistDrafts] = useState<CreateChecklistDraft[]>([]);
@@ -124,7 +124,7 @@ export function TaskCreateForm({
     const values = form.getValues();
     onDirtyChangeRef.current(
       values.title !== '' ||
-        values.description !== '' ||
+        values.description !== null ||
         values.priority !== '' ||
         values.dueDate !== '' ||
         checklistDrafts.length > 0
@@ -136,14 +136,13 @@ export function TaskCreateForm({
     const values = form.getValues();
     onDirtyChangeRef.current(
       values.title !== '' ||
-        values.description !== '' ||
+        values.description !== null ||
         values.priority !== '' ||
         values.dueDate !== '' ||
         items.length > 0
     );
   };
   const titleField = form.register('title');
-  const descriptionField = form.register('description');
   const priorityField = form.register('priority');
   const dueDateField = form.register('dueDate');
 
@@ -209,8 +208,7 @@ export function TaskCreateForm({
       return;
     }
     const payload: CreateTaskPayload = { title: values.title };
-    const description = toTaskDescriptionDocument(values.description);
-    if (description) payload.description = description;
+    if (values.description) payload.description = values.description;
     if (values.priority) payload.priority = values.priority;
     if (values.dueDate) payload.dueDate = values.dueDate;
     const checklist = checklistDrafts.flatMap((item) => {
@@ -240,7 +238,10 @@ export function TaskCreateForm({
   };
 
   const fieldsDisabled = isSubmitting || recovery !== null;
-  const fieldError = (name: keyof TaskCreateInput) => form.formState.errors[name]?.message;
+  const fieldError = (name: keyof TaskCreateInput) => {
+    const message = form.formState.errors[name]?.message;
+    return typeof message === 'string' ? message : undefined;
+  };
 
   const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -278,23 +279,25 @@ export function TaskCreateForm({
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="task-create-description" className="text-sm font-medium text-foreground">
+          <label
+            htmlFor="task-create-description-editor"
+            className="text-sm font-medium text-foreground"
+          >
             Description (optional)
           </label>
-          <textarea
-            id="task-create-description"
-            rows={5}
-            aria-invalid={Boolean(fieldError('description'))}
-            aria-describedby={
-              fieldError('description') ? 'task-create-description-error' : undefined
-            }
-            disabled={fieldsDisabled}
-            className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-            {...descriptionField}
-            onChange={(event) => {
-              void descriptionField.onChange(event);
+          <RichTextEditor
+            value={form.getValues('description')}
+            onChange={(description) => {
+              form.setValue('description', description, {
+                shouldDirty: true,
+                shouldTouch: true,
+                shouldValidate: true,
+              });
               reportDirtyFromCurrentValues();
             }}
+            ariaLabel="Description (optional)"
+            id="task-create-description-editor"
+            disabled={fieldsDisabled}
           />
           {fieldError('description') && (
             <p id="task-create-description-error" className="text-sm text-destructive">

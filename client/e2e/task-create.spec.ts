@@ -180,7 +180,7 @@ test('retries an ambiguous create with the frozen payload and request key', asyn
   await page.goto('/tasks');
   await page.getByRole('button', { name: 'Add a task to Active…' }).click();
   const title = page.getByRole('textbox', { name: 'Title' });
-  const description = page.getByRole('textbox', { name: 'Description (optional)' });
+  const description = page.getByLabel('Description (optional) editor');
   await title.fill('Recover the submitted draft');
   await description.fill('Keep these details unchanged.');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
@@ -191,7 +191,7 @@ test('retries an ambiguous create with the frozen payload and request key', asyn
   expect(fixture.items).toHaveLength(1);
   expect(fixture.items[0]).toMatchObject({ id: 41, key: 'TASK-41' });
   await expect(title).toBeDisabled();
-  await expect(description).toBeDisabled();
+  await expect(description).toHaveAttribute('contenteditable', 'false');
   await page.getByRole('button', { name: 'Retry creation' }).click();
   await expect(page).toHaveURL(/\/tasks\?task=41$/);
   await expect(page.getByRole('heading', { name: 'Recover the submitted draft' })).toBeVisible();

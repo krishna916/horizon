@@ -13,6 +13,7 @@ interface RichTextEditorProps {
   readonly onChange: (next: RichTextDocument | null) => void;
   readonly disabled?: boolean;
   readonly ariaLabel: string;
+  readonly id?: string;
 }
 
 export function RichTextEditor({
@@ -20,6 +21,7 @@ export function RichTextEditor({
   onChange,
   disabled = false,
   ariaLabel,
+  id,
 }: RichTextEditorProps) {
   const onChangeRef = useRef(onChange);
   const lastEmittedDocument = useRef<string | null>(null);
@@ -31,6 +33,7 @@ export function RichTextEditor({
     immediatelyRender: false,
     editorProps: {
       attributes: {
+        ...(id ? { id } : {}),
         'aria-label': `${ariaLabel} editor`,
         class: 'rich-text-content',
       },
