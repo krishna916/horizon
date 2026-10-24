@@ -73,6 +73,19 @@ describe('TaskDetailSurface', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  function renderDeleteConfirmation() {
+    getSpy.mockResolvedValue(response(detail(7, 'Lifecycle task')) as never);
+    const deleteSpy = vi
+      .spyOn(taskApi, 'softDelete')
+      .mockResolvedValue({ data: undefined } as never);
+    const onDeleted = vi.fn();
+    const { Wrapper } = createWrapper();
+    render(<TaskDetailSurface taskId={7} surface="panel" onDeleted={onDeleted} />, {
+      wrapper: Wrapper,
+    });
+    return { deleteSpy, onDeleted };
+  }
+
   it.each(['panel', 'page'] as const)(
     'shows Archive and Delete actions in the %s detail header',
     async (surface) => {
@@ -104,15 +117,7 @@ describe('TaskDetailSurface', () => {
   });
 
   it('does not delete or navigate when the Trash confirmation is canceled', async () => {
-    getSpy.mockResolvedValue(response(detail(7, 'Lifecycle task')) as never);
-    const deleteSpy = vi
-      .spyOn(taskApi, 'softDelete')
-      .mockResolvedValue({ data: undefined } as never);
-    const onDeleted = vi.fn();
-    const { Wrapper } = createWrapper();
-    render(<TaskDetailSurface taskId={7} surface="panel" onDeleted={onDeleted} />, {
-      wrapper: Wrapper,
-    });
+    const { deleteSpy, onDeleted } = renderDeleteConfirmation();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
     const dialog = screen.getByRole('alertdialog');
@@ -124,15 +129,7 @@ describe('TaskDetailSurface', () => {
   });
 
   it('moves a task to Trash and calls onDeleted once after confirmation', async () => {
-    getSpy.mockResolvedValue(response(detail(7, 'Lifecycle task')) as never);
-    const deleteSpy = vi
-      .spyOn(taskApi, 'softDelete')
-      .mockResolvedValue({ data: undefined } as never);
-    const onDeleted = vi.fn();
-    const { Wrapper } = createWrapper();
-    render(<TaskDetailSurface taskId={7} surface="panel" onDeleted={onDeleted} />, {
-      wrapper: Wrapper,
-    });
+    const { deleteSpy, onDeleted } = renderDeleteConfirmation();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
     const dialog = screen.getByRole('alertdialog');

@@ -128,6 +128,19 @@ function renderRouter(router: ReturnType<typeof createTestRouter>, setupUserMock
 describe('TasksRouteLayout', () => {
   afterEach(() => vi.restoreAllMocks());
 
+  function mockLifecycleActions() {
+    vi.spyOn(taskApi, 'archive').mockResolvedValue({
+      data: {
+        ...lifecycleTask,
+        archivedAt: '2026-10-24T11:00:00Z',
+        description: null,
+        deletedAt: null,
+        checklist: [],
+      },
+    } as never);
+    return vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
+  }
+
   it.each(['/tasks', '/tasks?task=123'])('renders its nested index at %s', async (entry) => {
     const router = createTestRouter(entry);
     renderRouter(router);
@@ -160,16 +173,7 @@ describe('TasksRouteLayout', () => {
       .mockImplementationOnce(
         () => new Promise((resolve) => (resolveRevalidation = resolve)) as never
       );
-    vi.spyOn(taskApi, 'archive').mockResolvedValue({
-      data: {
-        ...lifecycleTask,
-        archivedAt: '2026-10-24T11:00:00Z',
-        description: null,
-        deletedAt: null,
-        checklist: [],
-      },
-    } as never);
-    const deleteSpy = vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
+    const deleteSpy = mockLifecycleActions();
     const restoreSpy = vi.spyOn(taskApi, 'restoreArchive');
     const router = createTestRouter('/tasks');
     renderRouter(router);
@@ -206,16 +210,7 @@ describe('TasksRouteLayout', () => {
       .mockResolvedValueOnce({ data: { id: 1, email: 'tasks@example.com' } } as never)
       .mockImplementationOnce(() => new Promise((resolve) => (resolveSwitch = resolve)) as never)
       .mockResolvedValue({ data: { id: 2, email: 'other@example.com' } } as never);
-    vi.spyOn(taskApi, 'archive').mockResolvedValue({
-      data: {
-        ...lifecycleTask,
-        archivedAt: '2026-10-24T11:00:00Z',
-        description: null,
-        deletedAt: null,
-        checklist: [],
-      },
-    } as never);
-    vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
+    mockLifecycleActions();
     const router = createTestRouter('/tasks');
     renderRouter(router);
     await waitFor(() =>
@@ -243,16 +238,7 @@ describe('TasksRouteLayout', () => {
       .mockResolvedValueOnce({ data: { id: 1, email: 'tasks@example.com' } } as never)
       .mockRejectedValueOnce(new Error('session expired'))
       .mockResolvedValueOnce({ data: { id: 1, email: 'tasks@example.com' } } as never);
-    vi.spyOn(taskApi, 'archive').mockResolvedValue({
-      data: {
-        ...lifecycleTask,
-        archivedAt: '2026-10-24T11:00:00Z',
-        description: null,
-        deletedAt: null,
-        checklist: [],
-      },
-    } as never);
-    vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
+    mockLifecycleActions();
     renderRouter(createTestRouter('/tasks'));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Archive test task' })).toBeEnabled()

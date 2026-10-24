@@ -181,6 +181,17 @@ function renderTasks(initialEntry: string, probe = false) {
   return { router };
 }
 
+async function confirmRowDelete(taskId: number) {
+  fireEvent.keyDown(
+    await screen.findByRole('button', { name: `More actions for TASK-${taskId}` }),
+    {
+      key: 'Enter',
+    }
+  );
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+}
+
 describe('TasksListPage', () => {
   afterEach(() => {
     clearProbeDraftAfterSave = false;
@@ -576,11 +587,7 @@ describe('TasksListPage', () => {
       .mockResolvedValue({ data: undefined } as never);
     const { router } = renderTasks('/tasks?task=1');
 
-    fireEvent.keyDown(await screen.findByRole('button', { name: 'More actions for TASK-1' }), {
-      key: 'Enter',
-    });
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Trash' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+    await confirmRowDelete(1);
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1));
     await waitFor(() => expect(router.state.location.search).toEqual({}));
@@ -597,11 +604,7 @@ describe('TasksListPage', () => {
       .mockResolvedValue({ data: undefined } as never);
     const { router } = renderTasks('/tasks?task=1');
 
-    fireEvent.keyDown(await screen.findByRole('button', { name: 'More actions for TASK-2' }), {
-      key: 'Enter',
-    });
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Trash' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+    await confirmRowDelete(2);
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(2));
     expect(router.state.location.search).toEqual({ task: 1 });
