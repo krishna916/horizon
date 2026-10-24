@@ -10,7 +10,8 @@ import {
 } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { userApi } from '@/user/api';
 import { useTasksLayout, TasksRouteLayout } from './TasksRouteLayout';
 import { useTaskDraftGuard } from './TaskDraftNavigationGuard';
 
@@ -81,6 +82,9 @@ function ChecklistDraftProbe() {
 
 function renderRouter(router: ReturnType<typeof createTestRouter>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(userApi, 'getCurrentUser').mockResolvedValue({
+    data: { id: 1, email: 'tasks@example.com' },
+  } as never);
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -89,6 +93,8 @@ function renderRouter(router: ReturnType<typeof createTestRouter>) {
 }
 
 describe('TasksRouteLayout', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it.each(['/tasks', '/tasks?task=123'])('renders its nested index at %s', async (entry) => {
     const router = createTestRouter(entry);
     renderRouter(router);
