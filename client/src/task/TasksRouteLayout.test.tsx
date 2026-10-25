@@ -132,6 +132,7 @@ function TaskViewProbe() {
             showCompletedHistory: true,
             showArchivedTasks: true,
             expanded: { Active: true, Completed: false, Archived: false },
+            sortMode: 'priority-highest',
           })
         }
       >
@@ -152,7 +153,24 @@ function TaskViewProbe() {
       >
         Back to task list
       </button>
+      <button onClick={() => void navigate({ to: '/notes' })}>Leave Tasks</button>
     </div>
+  );
+}
+
+function OtherWorkspaceProbe() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <p>Other workspace</p>
+      <button
+        onClick={() =>
+          void navigate({ to: '/tasks', search: { task: undefined, create: undefined } })
+        }
+      >
+        Return to Tasks
+      </button>
+    </>
   );
 }
 
@@ -182,7 +200,7 @@ function createTestRouter(initialEntry: string) {
   const otherRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/notes',
-    component: () => <p>Other workspace</p>,
+    component: OtherWorkspaceProbe,
   });
   const routeTree = rootRoute.addChildren([
     tasksRoute.addChildren([tasksIndexRoute, taskPageRoute]),
@@ -250,6 +268,26 @@ describe('TasksRouteLayout', () => {
     } as never);
     return vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
   }
+
+  it('sortModeDefaultsToNewest', async () => {
+    renderRouter(createTestRouter('/tasks'));
+
+    const state = await screen.findByTestId('task-view-state');
+    expect(JSON.parse(state.textContent ?? '{}').sortMode).toBe('newest');
+  });
+
+  it('sortModeResetsAfterLeavingTasks', async () => {
+    renderRouter(createTestRouter('/tasks'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Set task view' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Leave Tasks' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Return to Tasks' }));
+
+    await waitFor(() =>
+      expect(JSON.parse(screen.getByTestId('task-view-state').textContent ?? '{}').sortMode).toBe(
+        'newest'
+      )
+    );
+  });
 
   it('registers the rich description with the existing navigation guard', async () => {
     const updateSpy = vi
@@ -321,6 +359,7 @@ describe('TasksRouteLayout', () => {
       showCompletedHistory: false,
       showArchivedTasks: false,
       expanded: { Active: true, Completed: true, Archived: true },
+      sortMode: 'newest',
     };
 
     expect(await screen.findByTestId('task-view-state')).toHaveTextContent(
@@ -334,6 +373,7 @@ describe('TasksRouteLayout', () => {
       showCompletedHistory: true,
       showArchivedTasks: true,
       expanded: { Active: true, Completed: false, Archived: false },
+      sortMode: 'priority-highest',
     };
     expect(screen.getByTestId('task-view-state')).toHaveTextContent(JSON.stringify(selectedView));
 
@@ -372,6 +412,9 @@ describe('TasksRouteLayout', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Set task view' }));
     expect(screen.getByTestId('task-view-state')).toHaveTextContent('"showCompletedHistory":true');
+    expect(screen.getByTestId('task-view-state')).toHaveTextContent(
+      '"sortMode":"priority-highest"'
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Revalidate session' }));
     await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(2));
@@ -382,6 +425,7 @@ describe('TasksRouteLayout', () => {
           showCompletedHistory: false,
           showArchivedTasks: false,
           expanded: { Active: true, Completed: true, Archived: true },
+          sortMode: 'newest',
         })
       )
     );
