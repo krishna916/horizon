@@ -167,6 +167,25 @@ class TaskDescriptionValidatorTest {
     }
 
     @Test
+    void normalizesExplicitNullOutboundLinkAttributesWithoutMutatingInput() {
+        Map<String, Object> inputAttributes =
+                map("href", "https://example.com", "target", null, "rel", null);
+        Map<String, Object> input = linkDocument(inputAttributes);
+
+        assertThat(TaskDescriptionValidator.validateAndCopy(input))
+                .isEqualTo(
+                        linkDocument(
+                                map(
+                                        "href",
+                                        "https://example.com",
+                                        "target",
+                                        "_blank",
+                                        "rel",
+                                        "noopener noreferrer")));
+        assertThat(input).isEqualTo(linkDocument(inputAttributes));
+    }
+
+    @Test
     void returnsDefensiveNestedCopy() {
         Map<String, Object> sourceText = text("Original", List.of());
         Map<String, Object> sourceParagraph = paragraph(sourceText);

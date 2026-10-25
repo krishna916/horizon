@@ -118,6 +118,11 @@ describe('Markdown paste extension', () => {
     expect(editor.getText()).toContain('Before');
     expect(editor.getText()).toContain('After');
     expect(editor.getText()).toContain('Heading');
+    const markdownLink = editor.view.dom.querySelector('a');
+    expect(markdownLink).toHaveAttribute('target', '_blank');
+    expect(markdownLink?.getAttribute('rel')?.split(/\s+/)).toEqual(
+      expect.arrayContaining(['noopener', 'noreferrer'])
+    );
 
     editor.commands.undo();
     expect(editor.getText()).toBe('BeforeAfter');

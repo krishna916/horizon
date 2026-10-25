@@ -504,6 +504,9 @@ public final class TaskDescriptionValidator {
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> copy = new LinkedHashMap<>();
             map.forEach((key, nested) -> copy.put((String) key, copyValue(nested)));
+            if ("link".equals(copy.get("type"))) {
+                normalizeExplicitNullLinkPolicy(copy);
+            }
             return copy;
         }
         if (value instanceof List<?> list) {
@@ -512,6 +515,21 @@ public final class TaskDescriptionValidator {
             return copy;
         }
         return value;
+    }
+
+    private static void normalizeExplicitNullLinkPolicy(Map<String, Object> mark) {
+        if (!(mark.get("attrs") instanceof Map<?, ?> sourceAttrs)) {
+            return;
+        }
+        Map<String, Object> attrs = new LinkedHashMap<>();
+        sourceAttrs.forEach((key, value) -> attrs.put((String) key, value));
+        if (attrs.containsKey("target") && attrs.get("target") == null) {
+            attrs.put("target", "_blank");
+        }
+        if (attrs.containsKey("rel") && attrs.get("rel") == null) {
+            attrs.put("rel", "noopener noreferrer");
+        }
+        mark.put("attrs", attrs);
     }
 
     private static void invalid(String message) {

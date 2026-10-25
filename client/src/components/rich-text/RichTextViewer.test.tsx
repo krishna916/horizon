@@ -116,6 +116,40 @@ describe('RichTextViewer', () => {
     );
   });
 
+  it('safely renders legacy links with explicit null target and rel attributes', () => {
+    render(
+      <RichTextViewer
+        value={{
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Legacy null link',
+                  marks: [
+                    {
+                      type: 'link',
+                      attrs: { href: 'https://example.com', target: null, rel: null },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+      />
+    );
+
+    const link = screen.getByRole('link', { name: 'Legacy null link' });
+    expect(link).toHaveAttribute('href', 'https://example.com');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link.getAttribute('rel')?.split(/\s+/)).toEqual(
+      expect.arrayContaining(['noopener', 'noreferrer'])
+    );
+  });
+
   it.each([
     { href: 'https://example.com', target: '_self', rel: 'noopener noreferrer' },
     { href: 'https://example.com', rel: 'nofollow' },

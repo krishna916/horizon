@@ -160,6 +160,11 @@ describe('RichTextEditor', () => {
       target: { value: 'https://example.com' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Apply link' }));
+    const renderedLink = screen.getByRole('link', { name: 'Task notes' });
+    expect(renderedLink).toHaveAttribute('target', '_blank');
+    expect(renderedLink.getAttribute('rel')?.split(/\s+/)).toEqual(
+      expect.arrayContaining(['noopener', 'noreferrer'])
+    );
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
         content: [

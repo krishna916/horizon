@@ -162,17 +162,23 @@ describe('TaskDetailView', () => {
   });
 
   it('renders task content, checklist, and optional metadata', () => {
-    render(<TaskDetailView task={task} userId={1} />, { wrapper: createWrapper() });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-24T12:00:00Z'));
+    try {
+      render(<TaskDetailView task={task} userId={1} />, { wrapper: createWrapper() });
 
-    expect(screen.getByRole('heading', { name: 'Review the release notes' })).toBeInTheDocument();
-    expect(screen.getByText('Check the release notes.')).toBeInTheDocument();
-    expect(screen.getByText('High')).toBeInTheDocument();
-    expect(screen.getByText(/Oct 25/)).toBeInTheDocument();
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(4);
-    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
-    expect(screen.getByRole('heading', { name: 'Checklist' })).toBeInTheDocument();
-    expect(screen.queryByText(/tags|attachments|activity/i)).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Review the release notes' })).toBeInTheDocument();
+      expect(screen.getByText('Check the release notes.')).toBeInTheDocument();
+      expect(screen.getByText('High')).toBeInTheDocument();
+      expect(screen.getByText(/Oct 25/)).toBeInTheDocument();
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('button')).toHaveLength(4);
+      expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+      expect(screen.getByRole('heading', { name: 'Checklist' })).toBeInTheDocument();
+      expect(screen.queryByText(/tags|attachments|activity/i)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('saves descriptions explicitly, blocks concurrent scalar edits, and cancels without PATCH', async () => {

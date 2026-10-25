@@ -789,6 +789,57 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void explicitNullLinkPolicyAttributesAreCanonicalizedOnPostAndPatch() throws Exception {
+        String nullAttributeDescription =
+                "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Docs\",\"marks\":[{\"type\":\"link\",\"attrs\":{\"href\":\"https://example.com\",\"target\":null,\"rel\":null,\"title\":\"Example\"}}]}]}]}";
+        MvcResult created =
+                mockMvc.perform(
+                                post("/api/v1/tasks")
+                                        .cookie(ownerCookie)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(
+                                                "{\"title\":\"Null link create\",\"description\":"
+                                                        + nullAttributeDescription
+                                                        + "}"))
+                        .andExpect(status().isCreated())
+                        .andExpect(
+                                jsonPath(
+                                                "$.description.content[0].content[0].marks[0].attrs.target")
+                                        .value("_blank"))
+                        .andExpect(
+                                jsonPath("$.description.content[0].content[0].marks[0].attrs.rel")
+                                        .value("noopener noreferrer"))
+                        .andExpect(
+                                jsonPath("$.description.content[0].content[0].marks[0].attrs.title")
+                                        .value("Example"))
+                        .andReturn();
+        Long id =
+                JsonPath.parse(created.getResponse().getContentAsString()).read("$.id", Long.class);
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"description\":" + nullAttributeDescription + "}"))
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.description.content[0].content[0].marks[0].attrs.target")
+                                .value("_blank"))
+                .andExpect(
+                        jsonPath("$.description.content[0].content[0].marks[0].attrs.rel")
+                                .value("noopener noreferrer"));
+
+        mockMvc.perform(get("/api/v1/tasks/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.description.content[0].content[0].marks[0].attrs.target")
+                                .value("_blank"))
+                .andExpect(
+                        jsonPath("$.description.content[0].content[0].marks[0].attrs.rel")
+                                .value("noopener noreferrer"));
+    }
+
+    @Test
     void richDescriptionPatchReplacesClearsAndAllowsCompletedArchivedTasks() throws Exception {
         createTask(
                 "Rich patch",
