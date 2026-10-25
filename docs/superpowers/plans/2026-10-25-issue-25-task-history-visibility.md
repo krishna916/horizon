@@ -1,6 +1,6 @@
 # Issue #25 — Task History Visibility Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task **in the current repository checkout**. Use no isolated worktree, no subagent implementers and no subagent reviewers, as explicitly directed by the owner. Use checkboxes (`- [ ]`) below to track steps.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task **in the current repository checkout**. Use no isolated worktree and no subagent implementers, as explicitly directed by the owner. A read-only final reviewer is permitted; all coding remains Luna's. Use checkboxes (`- [ ]`) below to track steps.
 
 **Goal:** Deliver independent Completed history / Archived tasks visibility switches and independently collapsible Active, Completed and Archived sections, preserving the approved task lifecycle and route behavior.
 
@@ -12,7 +12,7 @@
 
 **Issue:** https://github.com/krishna916/horizon/issues/25
 **Branch:** `feature/25-task-history-archive-visibility` (already created; this plan is committed there).
-**Execution:** **Native inline Luna implementation. No git worktrees. No delegated/subagent implementation or review.** After tests and self-review, push this branch and open a non-draft PR against `master`, referencing `Closes #25`. Do not merge it.
+**Execution:** **Native inline Luna implementation. No git worktrees. No delegated/subagent implementation.** A read-only final review (if available) does not delegate implementation. After tests and self-review, push this branch and open a non-draft PR against `master`, referencing `Closes #25`. Do not merge it.
 
 ## Global Constraints
 
@@ -178,7 +178,7 @@ npm run test:e2e
 
 Expected for **each**: exit status `0`. If a command fails, diagnose root cause, fix and rerun all relevant checks; do not claim success from partial output or previously cached tests. Backend build is not necessary for this frontend-only change **unless backend files were touched**; if they were, run the repo-required Maven checks plus Postgres Testcontainers integration tests.
 
-Before push, self-review `git diff origin/master...HEAD` against **all** approved spec acceptance scenarios; scan for unwanted status enum, migrations, sorting controls, localStorage, stale task content, mutation side effects, broken keyboard focus and snapshot/brittle test regressions. Owner forbids subagent review, so record **self-review** and any limitations transparently in PR. Also inspect `git status --short` and ensure no unrelated files were included.
+Before push, self-review `git diff origin/master...HEAD` against **all** approved spec acceptance scenarios; scan for unwanted status enum, migrations, sorting controls, localStorage, stale task content, mutation side effects, broken keyboard focus and snapshot/brittle test regressions. Owner forbids subagent **implementation**, not read-only review. Perform a final whole-branch review (an independent read-only reviewer if available, otherwise explicit self-review); record the review method and limitations in the PR. Also inspect `git status --short` and ensure no unrelated files were included.
 
 Then, **as explicitly authorized by the owner**:
 
