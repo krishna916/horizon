@@ -284,6 +284,8 @@ describe('TaskSection', () => {
             <TaskSection
               title="Completed"
               tasks={[task({ completedAt: '2026-10-22T01:00:00Z' })]}
+              expanded
+              onExpandedChange={vi.fn()}
               now={new Date(2026, 9, 18, 12)}
               userId={1}
               onOpen={vi.fn()}
@@ -308,6 +310,7 @@ describe('TaskSection', () => {
   });
 
   it('shows the exact empty message for Active without fake rows or controls', () => {
+    const onExpandedChange = vi.fn();
     render(
       <QueryClientProvider client={new QueryClient()}>
         <TaskCompletionProvider>
@@ -315,6 +318,8 @@ describe('TaskSection', () => {
             <TaskSection
               title="Active"
               tasks={[]}
+              expanded
+              onExpandedChange={onExpandedChange}
               now={new Date(2026, 9, 18)}
               userId={1}
               onOpen={vi.fn()}
@@ -327,6 +332,11 @@ describe('TaskSection', () => {
 
     expect(screen.getByText('No active tasks.')).toBeInTheDocument();
     expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    const collapseButton = screen.getByRole('button', { name: 'Collapse Active section' });
+    expect(collapseButton).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(collapseButton);
+    expect(onExpandedChange).toHaveBeenCalledWith(false);
+    expect(screen.getByRole('heading', { name: 'Active' })).toBeInTheDocument();
+    expect(screen.getByText('No active tasks.')).toBeInTheDocument();
   });
 });

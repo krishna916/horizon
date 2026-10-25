@@ -1,17 +1,48 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Outlet } from '@tanstack/react-router';
 import { createContext, useContext, useState } from 'react';
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { TaskDraftNavigationGuard } from './TaskDraftNavigationGuard';
 import { TaskLifecycleProvider } from './TaskLifecycleProvider';
 import { TaskLifecycleNoticeList } from './TaskLifecycleNoticeList';
 
+export interface TaskViewState {
+  showCompletedHistory: boolean;
+  showArchivedTasks: boolean;
+  expanded: Record<'Active' | 'Completed' | 'Archived', boolean>;
+}
+
+export const DEFAULT_TASK_VIEW_STATE: TaskViewState = {
+  showCompletedHistory: false,
+  showArchivedTasks: false,
+  expanded: { Active: true, Completed: true, Archived: true },
+};
+
 interface TasksLayoutState {
   listRatio: number;
   setListRatio: (nextRatio: number) => void;
+  viewState: TaskViewState;
+  setViewState: Dispatch<SetStateAction<TaskViewState>>;
 }
 
 const TasksLayoutContext = createContext<TasksLayoutState | null>(null);
+
+interface TasksLayoutSessionProps {
+  readonly children: ReactNode;
+  readonly listRatio: number;
+  readonly setListRatio: (nextRatio: number) => void;
+}
+
+function TasksLayoutSession({ children, listRatio, setListRatio }: TasksLayoutSessionProps) {
+  const [viewState, setViewState] = useState(DEFAULT_TASK_VIEW_STATE);
+
+  return (
+    <TasksLayoutContext.Provider value={{ listRatio, setListRatio, viewState, setViewState }}>
+      {children}
+    </TasksLayoutContext.Provider>
+  );
+}
 
 export function TasksRouteLayout() {
   const [listRatio, setListRatio] = useState(60);
@@ -26,12 +57,16 @@ export function TasksRouteLayout() {
   return (
     <TaskDraftNavigationGuard>
       <TaskLifecycleProvider key={lifecycleOwnerKey} userId={currentUser.data?.id}>
-        <TasksLayoutContext.Provider value={{ listRatio, setListRatio }}>
+        <TasksLayoutSession
+          key={lifecycleOwnerKey}
+          listRatio={listRatio}
+          setListRatio={setListRatio}
+        >
           <div className="h-full min-h-0 w-full">
             {sessionVerified && <TaskLifecycleNoticeList />}
             <Outlet />
           </div>
-        </TasksLayoutContext.Provider>
+        </TasksLayoutSession>
       </TaskLifecycleProvider>
     </TaskDraftNavigationGuard>
   );

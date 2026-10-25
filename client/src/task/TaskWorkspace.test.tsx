@@ -110,6 +110,8 @@ describe('TaskWorkspace', () => {
     );
     expect(screen.getByText('Stay organized and clear the path ahead.')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(/loading/i);
+    expect(screen.getByRole('switch', { name: 'Completed history' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Archived tasks' })).not.toBeChecked();
     expect(screen.queryByText('No active tasks.')).not.toBeInTheDocument();
     expect(screen.queryByText(/TASK-/)).not.toBeInTheDocument();
   });
@@ -128,6 +130,8 @@ describe('TaskWorkspace', () => {
 
     expect(screen.getByRole('heading', { name: 'All Tasks' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Loading your Tasks workspace…');
+    expect(screen.getByRole('switch', { name: 'Completed history' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Archived tasks' })).not.toBeChecked();
     expect(listSpy).not.toHaveBeenCalled();
     expect(screen.queryByText(/TASK-/)).not.toBeInTheDocument();
   });
@@ -324,7 +328,16 @@ describe('TaskWorkspace', () => {
     expect(screen.queryByText('Archived task')).not.toBeInTheDocument();
     expect(screen.queryByText('Archived completed task')).not.toBeInTheDocument();
     expect(screen.queryByText(/description/i)).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(5);
+    expect(screen.getByRole('switch', { name: 'Completed history' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Archived tasks' })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Collapse Active section' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'Collapse Completed section' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
     expect(screen.getByRole('button', { name: 'Open TASK-1: Renew passport' })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Open TASK-2: Send signed agreement' })
@@ -333,6 +346,88 @@ describe('TaskWorkspace', () => {
     expect(screen.getByRole('button', { name: 'More actions for TASK-2' })).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('independently reveals history and archived tasks with stable counts when sections collapse', async () => {
+    const today = new Date();
+    const tasks = [
+      task(1, 'Active commitment'),
+      task(2, 'Completed today', { completedAt: today.toISOString() }),
+      task(3, 'Completed yesterday', {
+        completedAt: new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate() - 1,
+          12
+        ).toISOString(),
+      }),
+      task(4, 'Archived active', { archivedAt: today.toISOString() }),
+      task(5, 'Archived completed', {
+        completedAt: new Date(today.getTime() - 48 * 60 * 60 * 1000).toISOString(),
+        archivedAt: today.toISOString(),
+      }),
+    ];
+    listSpy.mockResolvedValue(response(tasks) as never);
+    const completeSpy = vi.spyOn(taskApi, 'complete');
+    const reopenSpy = vi.spyOn(taskApi, 'reopen');
+    const archiveSpy = vi.spyOn(taskApi, 'archive');
+    const restoreSpy = vi.spyOn(taskApi, 'restoreArchive');
+    const deleteSpy = vi.spyOn(taskApi, 'softDelete');
+    const { Wrapper } = createWrapper();
+
+    render(<TaskWorkspace />, { wrapper: Wrapper });
+    expect(await screen.findByText('Active commitment')).toBeInTheDocument();
+    expect(screen.getByText('Completed today')).toBeInTheDocument();
+    expect(screen.queryByText('Completed yesterday')).not.toBeInTheDocument();
+    expect(screen.queryByText('Archived active')).not.toBeInTheDocument();
+    expect(screen.queryByText('Archived completed')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+    expect(screen.getByText('Completed yesterday')).toBeInTheDocument();
+    expect(screen.queryByText('Archived active')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Archived tasks' }));
+    expect(screen.getByText('Archived active')).toBeInTheDocument();
+    expect(screen.getByText('Archived completed')).toBeInTheDocument();
+    expect(screen.getAllByText('Archived completed')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Archived' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Completed section' }));
+    expect(screen.getByRole('heading', { name: 'Completed' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand Completed section' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    expect(screen.getByRole('button', { name: 'Expand Completed section' })).toHaveAttribute(
+      'aria-controls',
+      'task-section-completed-content'
+    );
+    expect(screen.getByRole('heading', { name: 'Completed' }).parentElement).toHaveTextContent('2');
+    expect(
+      screen.queryByRole('button', { name: 'Open TASK-3: Completed yesterday' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse Active section' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'Collapse Archived section' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+    expect(screen.getByRole('heading', { name: 'Completed' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Completed' }).parentElement).toHaveTextContent('1');
+    expect(
+      screen.queryByRole('button', { name: 'Open TASK-3: Completed yesterday' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Archived completed')).toBeInTheDocument();
+    expect(completeSpy).not.toHaveBeenCalled();
+    expect(reopenSpy).not.toHaveBeenCalled();
+    expect(archiveSpy).not.toHaveBeenCalled();
+    expect(restoreSpy).not.toHaveBeenCalled();
+    expect(deleteSpy).not.toHaveBeenCalled();
     expect(listSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -348,7 +443,7 @@ describe('TaskWorkspace', () => {
       ],
     ],
   ] as Array<[string, TaskSummary[]]>)(
-    'shows Active empty state for %s and omits Completed',
+    'keeps empty optional sections hidden for %s',
     async (_case, items) => {
       listSpy.mockResolvedValue(response(items) as never);
       const { Wrapper } = createWrapper();
@@ -358,8 +453,22 @@ describe('TaskWorkspace', () => {
       expect(await screen.findByText('No active tasks.')).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Active' })).toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Completed history' })).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Archived tasks' })).toBeInTheDocument();
     }
   );
+
+  it('keeps empty Completed and Archived sections hidden when both switches are on', async () => {
+    listSpy.mockResolvedValue(response([]) as never);
+    const { Wrapper } = createWrapper();
+    render(<TaskWorkspace />, { wrapper: Wrapper });
+
+    expect(await screen.findByText('No active tasks.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Archived tasks' }));
+    expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Archived' })).not.toBeInTheDocument();
+  });
 
   it('hides stale rows on request failure and retries successfully', async () => {
     listSpy
@@ -375,6 +484,8 @@ describe('TaskWorkspace', () => {
     });
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load your tasks/i);
+    expect(screen.getByRole('switch', { name: 'Completed history' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Archived tasks' })).toBeInTheDocument();
     expect(screen.queryByText('Previously loaded task')).not.toBeInTheDocument();
     listSpy.mockResolvedValueOnce(response([task(2, 'Recovered task')]) as never);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
@@ -434,7 +545,10 @@ describe('TaskWorkspace', () => {
     const completed = task(2, 'Completed before midnight', {
       completedAt: new Date(2026, 9, 18, 23, 30).toISOString(),
     });
-    listSpy.mockResolvedValue(response([active, completed]) as never);
+    const historical = task(3, 'Already historical', {
+      completedAt: new Date(2026, 9, 17, 22).toISOString(),
+    });
+    listSpy.mockResolvedValue(response([active, completed, historical]) as never);
     const { Wrapper } = createWrapper();
 
     render(<TaskWorkspace />, { wrapper: Wrapper });
@@ -443,16 +557,107 @@ describe('TaskWorkspace', () => {
     });
 
     expect(screen.getByText('Completed before midnight')).toBeInTheDocument();
+    expect(screen.queryByText('Already historical')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+    expect(screen.getByText('Already historical')).toBeInTheDocument();
     expect(listSpy).toHaveBeenCalledTimes(1);
     act(() => vi.advanceTimersByTime(10_000));
+    expect(screen.getByRole('heading', { name: 'Completed' }).parentElement).toHaveTextContent('2');
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
     expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
     expect(screen.getByText('Still active')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Completed history' })).not.toBeChecked();
+    expect(listSpy).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(new Date(2026, 9, 20, 9));
     act(() => window.dispatchEvent(new Event('focus')));
     expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+    expect(screen.getByRole('heading', { name: 'Completed' }).parentElement).toHaveTextContent('2');
+    expect(screen.getByText('Completed before midnight')).toBeInTheDocument();
+    expect(screen.getByText('Already historical')).toBeInTheDocument();
     vi.setSystemTime(new Date(2026, 9, 21, 9));
     act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['today', () => new Date().toISOString(), true],
+    ['historical', () => new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(), false],
+  ])(
+    'restoring an archived %s completion preserves its Completed history classification',
+    async (_age, makeCompletedAt, visibleWithoutHistory) => {
+      const now = new Date();
+      const archived = task(1, `Archived ${_age} task`, {
+        completedAt: makeCompletedAt(),
+        archivedAt: now.toISOString(),
+      });
+      const restored = {
+        ...detail(1, archived.title, archived.completedAt),
+        archivedAt: null,
+        updatedAt: now.toISOString(),
+      };
+      listSpy
+        .mockResolvedValueOnce(response([archived]) as never)
+        .mockResolvedValue(
+          response([task(1, archived.title, { completedAt: archived.completedAt })]) as never
+        );
+      const restoreSpy = vi
+        .spyOn(taskApi, 'restoreArchive')
+        .mockResolvedValue({ data: restored } as never);
+      const { Wrapper } = createWrapper();
+
+      render(<TaskWorkspace />, { wrapper: Wrapper });
+      await screen.findByRole('switch', { name: 'Archived tasks' });
+      fireEvent.click(screen.getByRole('switch', { name: 'Archived tasks' }));
+      fireEvent.keyDown(await screen.findByRole('button', { name: 'More actions for TASK-1' }), {
+        key: 'Enter',
+      });
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Restore' }));
+
+      await waitFor(() => expect(restoreSpy).toHaveBeenCalledWith(1));
+      await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+      expect(screen.queryByRole('heading', { name: 'Archived' })).not.toBeInTheDocument();
+      if (visibleWithoutHistory) {
+        expect(screen.getByText(archived.title)).toBeInTheDocument();
+      } else {
+        expect(screen.queryByText(archived.title)).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+        expect(screen.getByText(archived.title)).toBeInTheDocument();
+      }
+      expect(screen.getAllByText(archived.title)).toHaveLength(1);
+    }
+  );
+
+  it('keeps a newly completed row in Active through visibility, collapse, and panel changes', async () => {
+    listSpy.mockResolvedValue(response([task(1, 'Retained across controls')]) as never);
+    vi.spyOn(taskApi, 'complete').mockResolvedValue({
+      data: detail(1, 'Retained across controls', todayString() + 'T10:00:00Z'),
+    } as never);
+    const { Wrapper } = createWrapper();
+    const view = render(<TaskWorkspace />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Archived tasks' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Active section' }));
+    expect(screen.getByRole('button', { name: 'Expand Active section' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Active section' }));
+    expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('1');
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toBeInTheDocument();
+
+    const onClosePanel = vi.fn();
+    view.rerender(
+      <TaskWorkspace selection={{ kind: 'valid', id: 1 }} onClosePanel={onClosePanel} />
+    );
+    expect(await screen.findByRole('button', { name: 'Close task details' })).toBeInTheDocument();
+    view.rerender(<TaskWorkspace onClosePanel={onClosePanel} />);
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toBeInTheDocument();
+    expect(screen.getAllByText('Retained across controls')).toHaveLength(1);
     expect(listSpy).toHaveBeenCalledTimes(1);
   });
 
