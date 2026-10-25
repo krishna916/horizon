@@ -12,6 +12,7 @@ import { TaskCreateSurface } from './TaskCreateSurface';
 import { TaskPanelShell } from './TaskPanelShell';
 import { Button } from '@/components/ui/button';
 import type { TaskDetail } from './types';
+import { DEFAULT_TASK_VIEW_STATE } from './TasksRouteLayout';
 import type { TaskViewState } from './TasksRouteLayout';
 import {
   useTaskCompletionReopenSnapshot,
@@ -48,7 +49,12 @@ export function TaskWorkspace({
   onCreated = () => {},
   listRatio = 60,
   onListRatioChange = () => {},
+  viewState: controlledViewState,
+  setViewState: setControlledViewState,
 }: TaskWorkspaceProps = {}) {
+  const [localViewState, setLocalViewState] = useState(DEFAULT_TASK_VIEW_STATE);
+  const viewState = controlledViewState ?? localViewState;
+  const updateViewState = setControlledViewState ?? setLocalViewState;
   const currentUser = useCurrentUser();
   const userId = currentUser.isPending || currentUser.isError ? undefined : currentUser.data?.id;
   const verifiedUserId = useRef<number | undefined>(undefined);
@@ -98,8 +104,61 @@ export function TaskWorkspace({
   ]);
 
   const sections = taskQuery.data
-    ? classifyTasks(taskQuery.data.items, now, retainedCompletedIds, completionSnapshot)
+    ? classifyTasks(taskQuery.data.items, now, retainedCompletedIds, completionSnapshot, {
+        showCompletedHistory: viewState.showCompletedHistory,
+        showArchivedTasks: viewState.showArchivedTasks,
+      })
     : undefined;
+
+  function updateSectionExpanded(title: 'Active' | 'Completed' | 'Archived', expanded: boolean) {
+    updateViewState((current) => ({
+      ...current,
+      expanded: { ...current.expanded, [title]: expanded },
+    }));
+  }
+
+  const visibilityControls = (
+    <div
+      role="group"
+      aria-label="Task visibility"
+      className="mb-7 flex flex-wrap items-center gap-x-6 gap-y-3"
+    >
+      <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={viewState.showCompletedHistory}
+          onChange={(event) => {
+            const checked = event.currentTarget.checked;
+            updateViewState((current) => ({ ...current, showCompletedHistory: checked }));
+          }}
+          className="peer sr-only"
+        />
+        <span
+          aria-hidden="true"
+          className="relative h-5 w-9 rounded-full bg-muted transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-background after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
+        />
+        Completed history
+      </label>
+      <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={viewState.showArchivedTasks}
+          onChange={(event) => {
+            const checked = event.currentTarget.checked;
+            updateViewState((current) => ({ ...current, showArchivedTasks: checked }));
+          }}
+          className="peer sr-only"
+        />
+        <span
+          aria-hidden="true"
+          className="relative h-5 w-9 rounded-full bg-muted transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-background after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
+        />
+        Archived tasks
+      </label>
+    </div>
+  );
 
   const onCompletionIntent = useCallback(
     (taskId: number, completed: boolean) => {
@@ -170,6 +229,8 @@ export function TaskWorkspace({
         <TaskSection
           title="Active"
           tasks={sections.active}
+          expanded={viewState.expanded.Active}
+          onExpandedChange={(expanded) => updateSectionExpanded('Active', expanded)}
           now={now}
           userId={userId ?? 0}
           onCompletionIntent={onCompletionIntent}
@@ -181,6 +242,22 @@ export function TaskWorkspace({
           <TaskSection
             title="Completed"
             tasks={sections.completed}
+            expanded={viewState.expanded.Completed}
+            onExpandedChange={(expanded) => updateSectionExpanded('Completed', expanded)}
+            now={now}
+            userId={userId ?? 0}
+            onCompletionIntent={onCompletionIntent}
+            onOpen={onSelectTask}
+            onDeleted={handleRowDeleted}
+            selectedTaskId={selection.kind === 'valid' ? selection.id : null}
+          />
+        )}
+        {viewState.showArchivedTasks && sections.archived.length > 0 && (
+          <TaskSection
+            title="Archived"
+            tasks={sections.archived}
+            expanded={viewState.expanded.Archived}
+            onExpandedChange={(expanded) => updateSectionExpanded('Archived', expanded)}
             now={now}
             userId={userId ?? 0}
             onCompletionIntent={onCompletionIntent}
@@ -264,6 +341,7 @@ export function TaskWorkspace({
         list={
           <div className="w-full px-6 py-9 sm:px-8">
             {taskHeader}
+            {visibilityControls}
             {workspaceContent}
           </div>
         }
@@ -280,6 +358,7 @@ export function TaskWorkspace({
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-9 sm:px-8">
       {taskHeader}
+      {visibilityControls}
       {workspaceContent}
     </div>
   );
