@@ -17,18 +17,35 @@ function compareNumbers(left: number, right: number) {
   return 0;
 }
 
-function compareCreationDescending(left: TaskSummary, right: TaskSummary) {
-  return (
-    compareNumbers(Date.parse(right.createdAt), Date.parse(left.createdAt)) ||
-    compareNumbers(right.id, left.id)
+function submillisecondDigits(createdAt: string) {
+  return createdAt.match(/\.(\d+)(?=Z|[+-]\d{2}:\d{2}$)/i)?.[1]?.slice(3) ?? '';
+}
+
+function compareSubmillisecondDigits(left: string, right: string) {
+  const precision = Math.max(left.length, right.length);
+  const normalizedLeft = left.padEnd(precision, '0');
+  const normalizedRight = right.padEnd(precision, '0');
+  if (normalizedLeft < normalizedRight) return -1;
+  if (normalizedLeft > normalizedRight) return 1;
+  return 0;
+}
+
+function compareCreationInstants(left: TaskSummary, right: TaskSummary) {
+  const millisecondOrder = compareNumbers(Date.parse(left.createdAt), Date.parse(right.createdAt));
+  if (millisecondOrder !== 0) return millisecondOrder;
+
+  return compareSubmillisecondDigits(
+    submillisecondDigits(left.createdAt),
+    submillisecondDigits(right.createdAt)
   );
 }
 
+function compareCreationDescending(left: TaskSummary, right: TaskSummary) {
+  return compareCreationInstants(right, left) || compareNumbers(right.id, left.id);
+}
+
 function compareCreationAscending(left: TaskSummary, right: TaskSummary) {
-  return (
-    compareNumbers(Date.parse(left.createdAt), Date.parse(right.createdAt)) ||
-    compareNumbers(left.id, right.id)
-  );
+  return compareCreationInstants(left, right) || compareNumbers(left.id, right.id);
 }
 
 function compareDueDates(left: TaskSummary, right: TaskSummary, mode: TaskSortMode) {

@@ -120,6 +120,44 @@ describe('sortTaskSections', () => {
     ).toEqual([10, 9]);
   });
 
+  it('preserves submillisecond creation precision across all creation-based sort modes', () => {
+    const tasks = [
+      task(101, { createdAt: '2026-10-25T12:30:00.100900Z' }),
+      task(102, { createdAt: '2026-10-25T12:30:00.100100Z' }),
+    ];
+    const sections = { active: tasks, completed: [], archived: [] };
+
+    expect(ids(sortTaskSections(sections, 'newest').active)).toEqual([101, 102]);
+    expect(ids(sortTaskSections(sections, 'oldest').active)).toEqual([102, 101]);
+    expect(ids(sortTaskSections(sections, 'due-earliest').active)).toEqual([101, 102]);
+    expect(ids(sortTaskSections(sections, 'due-latest').active)).toEqual([101, 102]);
+    expect(ids(sortTaskSections(sections, 'priority-highest').active)).toEqual([101, 102]);
+    expect(ids(sortTaskSections(sections, 'priority-lowest').active)).toEqual([101, 102]);
+  });
+
+  it('uses IDs only when precise creation instants are equal across timezone offsets', () => {
+    const tasks = [
+      task(201, { createdAt: '2026-10-25T12:30:00.100900+05:30' }),
+      task(202, { createdAt: '2026-10-25T07:00:00.100900Z' }),
+    ];
+    const sections = { active: tasks, completed: [], archived: [] };
+
+    expect(ids(sortTaskSections(sections, 'newest').active)).toEqual([202, 201]);
+    expect(ids(sortTaskSections(sections, 'oldest').active)).toEqual([201, 202]);
+  });
+
+  it('treats equivalent fractional-second lengths as equal instants', () => {
+    const tasks = [
+      task(301, { createdAt: '2026-10-25T12:30:00.1Z' }),
+      task(302, { createdAt: '2026-10-25T12:30:00.100Z' }),
+      task(303, { createdAt: '2026-10-25T12:30:00.100000Z' }),
+    ];
+    const sections = { active: tasks, completed: [], archived: [] };
+
+    expect(ids(sortTaskSections(sections, 'newest').active)).toEqual([303, 302, 301]);
+    expect(ids(sortTaskSections(sections, 'oldest').active)).toEqual([301, 302, 303]);
+  });
+
   it('sorts each section independently without mutating buckets, arrays, or tasks', () => {
     const active = [task(1, { createdAt: '2026-10-19T10:00:00Z' }), task(2)];
     const completed = [
