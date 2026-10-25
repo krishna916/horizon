@@ -10,7 +10,7 @@ export function TasksListPage() {
   const location = useLocation();
   const navigate = useNavigate({ from: '/tasks/' });
   const router = useRouter();
-  const { listRatio, setListRatio } = useTasksLayout();
+  const { listRatio, setListRatio, viewState, setViewState } = useTasksLayout();
   const creationDirty = useRef(false);
   const creationSubmitting = useRef(false);
   const draftGuard = useTaskDraftGuard();
@@ -174,6 +174,8 @@ export function TasksListPage() {
         onCreated={completeCreate}
         listRatio={listRatio}
         onListRatioChange={setListRatio}
+        viewState={viewState}
+        setViewState={setViewState}
       />
     </>
   );

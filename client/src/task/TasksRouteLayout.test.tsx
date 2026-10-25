@@ -7,7 +7,9 @@ import {
   createRoute,
   createRouter,
   useNavigate,
+  useRouter,
 } from '@tanstack/react-router';
+import type { AnyRouter } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -116,6 +118,44 @@ function RatioProbe() {
   );
 }
 
+function TaskViewProbe() {
+  const { viewState, setViewState } = useTasksLayout();
+  const navigate = useNavigate();
+  const router = useRouter();
+  return (
+    <div>
+      <output data-testid="task-view-state">{JSON.stringify(viewState)}</output>
+      <output data-testid="route-location">Route: {router.state.location.pathname}</output>
+      <button
+        onClick={() =>
+          setViewState({
+            showCompletedHistory: true,
+            showArchivedTasks: true,
+            expanded: { Active: true, Completed: false, Archived: false },
+          })
+        }
+      >
+        Set task view
+      </button>
+      <button
+        onClick={() => void navigate({ to: '/tasks', search: { task: 123, create: undefined } })}
+      >
+        Open task panel
+      </button>
+      <button onClick={() => void navigate({ to: '/tasks/$id', params: { id: '123' } })}>
+        Open full page
+      </button>
+      <button
+        onClick={() =>
+          void navigate({ to: '/tasks', search: { task: undefined, create: undefined } })
+        }
+      >
+        Back to task list
+      </button>
+    </div>
+  );
+}
+
 function createTestRouter(initialEntry: string) {
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
   const tasksRoute = createRoute({
@@ -130,15 +170,24 @@ function createTestRouter(initialEntry: string) {
       <>
         <RatioProbe />
         <LifecycleProbe />
+        <TaskViewProbe />
       </>
     ),
+  });
+  const taskPageRoute = createRoute({
+    getParentRoute: () => tasksRoute,
+    path: '$id',
+    component: TaskViewProbe,
   });
   const otherRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/notes',
     component: () => <p>Other workspace</p>,
   });
-  const routeTree = rootRoute.addChildren([tasksRoute.addChildren([tasksIndexRoute]), otherRoute]);
+  const routeTree = rootRoute.addChildren([
+    tasksRoute.addChildren([tasksIndexRoute, taskPageRoute]),
+    otherRoute,
+  ]);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
@@ -172,7 +221,7 @@ function createDescriptionRouter() {
   });
 }
 
-function renderRouter(router: ReturnType<typeof createTestRouter>, setupUserMock = true) {
+function renderRouter(router: AnyRouter, setupUserMock = true) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (setupUserMock && !vi.isMockFunction(userApi.getCurrentUser)) {
     vi.spyOn(userApi, 'getCurrentUser').mockResolvedValue({
@@ -263,6 +312,79 @@ describe('TasksRouteLayout', () => {
       await router.navigate({ to: '/tasks', search: { task: undefined, create: undefined } });
     });
     await waitFor(() => expect(screen.getByText('List ratio: 60')).toBeInTheDocument());
+  });
+
+  it('preserves visibility and collapse state across panel and full-page routes, then resets outside Tasks', async () => {
+    const router = createTestRouter('/tasks');
+    renderRouter(router);
+    const defaults = {
+      showCompletedHistory: false,
+      showArchivedTasks: false,
+      expanded: { Active: true, Completed: true, Archived: true },
+    };
+
+    expect(await screen.findByTestId('task-view-state')).toHaveTextContent(
+      JSON.stringify(defaults)
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Archive test task' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Set task view' }));
+    const selectedView = {
+      showCompletedHistory: true,
+      showArchivedTasks: true,
+      expanded: { Active: true, Completed: false, Archived: false },
+    };
+    expect(screen.getByTestId('task-view-state')).toHaveTextContent(JSON.stringify(selectedView));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open task panel' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: 123 }));
+    expect(screen.getByTestId('task-view-state')).toHaveTextContent(JSON.stringify(selectedView));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open full page' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/tasks/123'));
+    expect(screen.getByTestId('route-location')).toHaveTextContent('Route: /tasks/123');
+    expect(screen.getByTestId('task-view-state')).toHaveTextContent(JSON.stringify(selectedView));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to task list' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/tasks'));
+    expect(screen.getByTestId('task-view-state')).toHaveTextContent(JSON.stringify(selectedView));
+
+    await act(async () => router.navigate({ to: '/notes' }));
+    expect(await screen.findByText('Other workspace')).toBeInTheDocument();
+    await act(async () =>
+      router.navigate({ to: '/tasks', search: { task: undefined, create: undefined } })
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('task-view-state')).toHaveTextContent(JSON.stringify(defaults))
+    );
+  });
+
+  it('resets visibility and collapse state when the authenticated account changes', async () => {
+    const currentUserSpy = vi
+      .spyOn(userApi, 'getCurrentUser')
+      .mockResolvedValueOnce({ data: { id: 1, email: 'tasks@example.com' } } as never)
+      .mockResolvedValueOnce({ data: { id: 2, email: 'other@example.com' } } as never);
+    renderRouter(createTestRouter('/tasks'));
+
+    await screen.findByTestId('task-view-state');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Archive test task' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Set task view' }));
+    expect(screen.getByTestId('task-view-state')).toHaveTextContent('"showCompletedHistory":true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revalidate session' }));
+    await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(2));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('task-view-state')).toHaveTextContent(
+        JSON.stringify({
+          showCompletedHistory: false,
+          showArchivedTasks: false,
+          expanded: { Active: true, Completed: true, Archived: true },
+        })
+      )
+    );
   });
 
   it('hides an existing notice during same-owner verification and restores it after success', async () => {

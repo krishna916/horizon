@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { classifyTasks } from './task-view';
 import { useLocalDay } from './useLocalDay';
@@ -11,6 +12,7 @@ import { TaskCreateSurface } from './TaskCreateSurface';
 import { TaskPanelShell } from './TaskPanelShell';
 import { Button } from '@/components/ui/button';
 import type { TaskDetail } from './types';
+import type { TaskViewState } from './TasksRouteLayout';
 import {
   useTaskCompletionReopenSnapshot,
   useTaskCompletionSnapshot,
@@ -29,6 +31,8 @@ interface TaskWorkspaceProps {
   readonly onCreated?: (task: TaskDetail) => void;
   readonly listRatio?: number;
   readonly onListRatioChange?: (ratio: number) => void;
+  readonly viewState?: TaskViewState;
+  readonly setViewState?: Dispatch<SetStateAction<TaskViewState>>;
 }
 
 export function TaskWorkspace({
