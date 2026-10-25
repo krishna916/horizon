@@ -42,48 +42,43 @@ async function installTaskApi(page: Page, tasks: Task[]) {
   let listRequests = 0;
   let mutationRequests = 0;
 
-  await page.route('**/api/v1/users/me', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ id: 1, email: 'task-sorting@example.com' }),
-    })
-  );
-  await page.route('**/api/v1/tasks**', async (route: Route) => {
+  await page.route('**/api/v1/**', async (route: Route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace('/api/v1', '');
     const method = route.request().method();
 
+    if (path === '/users/me') {
+      await fulfillJson(route, 200, { id: 1, email: 'task-sorting@example.com' });
+      return;
+    }
+
     if (path === '/tasks' && method === 'GET') {
       listRequests += 1;
-      const items = tasks.map(
-        ({ description: _description, deletedAt: _deletedAt, checklist: _checklist, ...summary }) =>
-          summary
-      );
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ items }),
-      });
+      await fulfillJson(route, 200, { items: tasks });
       return;
     }
 
     const match = path.match(/^\/tasks\/(\d+)$/);
     if (match && method === 'GET') {
       const item = tasks.find(({ id }) => id === Number(match[1]));
-      await route.fulfill({
-        status: item ? 200 : 404,
-        contentType: 'application/json',
-        body: JSON.stringify(item ?? {}),
-      });
+      await fulfillJson(route, item ? 200 : 404, item ?? {});
       return;
     }
 
     if (method !== 'GET') mutationRequests += 1;
-    await route.fulfill({ status: 500, contentType: 'application/problem+json', body: '{}' });
+    await fulfillJson(route, 500, {}, 'application/problem+json');
   });
 
   return { getListRequests: () => listRequests, getMutationRequests: () => mutationRequests };
+}
+
+async function fulfillJson(
+  route: Route,
+  status: number,
+  value: unknown,
+  contentType = 'application/json'
+) {
+  await route.fulfill({ status, contentType, body: JSON.stringify(value) });
 }
 
 async function expectTaskOrder(page: Page, section: string, ids: number[]) {

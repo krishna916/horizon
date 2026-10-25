@@ -269,6 +269,19 @@ describe('TasksRouteLayout', () => {
     return vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
   }
 
+  async function renderTaskLifecycleNotices() {
+    const router = createTestRouter('/tasks');
+    renderRouter(router);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Archive test task' })).toBeEnabled()
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive test task' }));
+    expect(await screen.findByText('TASK-91 archived')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create retry test notice' }));
+    expect(await screen.findByText("Couldn't confirm moving TASK-92 to Trash")).toBeInTheDocument();
+    return router;
+  }
+
   it('sortModeDefaultsToNewest', async () => {
     renderRouter(createTestRouter('/tasks'));
 
@@ -440,15 +453,7 @@ describe('TasksRouteLayout', () => {
       );
     const deleteSpy = mockLifecycleActions();
     const restoreSpy = vi.spyOn(taskApi, 'restoreArchive');
-    const router = createTestRouter('/tasks');
-    renderRouter(router);
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Archive test task' })).toBeEnabled()
-    );
-    fireEvent.click(await screen.findByRole('button', { name: 'Archive test task' }));
-    expect(await screen.findByText('TASK-91 archived')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Create retry test notice' }));
-    expect(await screen.findByText("Couldn't confirm moving TASK-92 to Trash")).toBeInTheDocument();
+    await renderTaskLifecycleNotices();
 
     fireEvent.click(screen.getByRole('button', { name: 'Revalidate session' }));
     await waitFor(() => expect(userApi.getCurrentUser).toHaveBeenCalledTimes(2));
@@ -476,15 +481,7 @@ describe('TasksRouteLayout', () => {
       .mockImplementationOnce(() => new Promise((resolve) => (resolveSwitch = resolve)) as never)
       .mockResolvedValue({ data: { id: 2, email: 'other@example.com' } } as never);
     mockLifecycleActions();
-    const router = createTestRouter('/tasks');
-    renderRouter(router);
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Archive test task' })).toBeEnabled()
-    );
-    fireEvent.click(await screen.findByRole('button', { name: 'Archive test task' }));
-    expect(await screen.findByText('TASK-91 archived')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Create retry test notice' }));
-    expect(await screen.findByText("Couldn't confirm moving TASK-92 to Trash")).toBeInTheDocument();
+    const router = await renderTaskLifecycleNotices();
     fireEvent.click(screen.getByRole('button', { name: 'Revalidate session' }));
     await waitFor(() => expect(currentUserSpy).toHaveBeenCalledTimes(2));
     await act(async () => resolveSwitch({ data: { id: 2, email: 'other@example.com' } }));
