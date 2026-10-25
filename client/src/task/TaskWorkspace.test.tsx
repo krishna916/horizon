@@ -431,24 +431,6 @@ describe('TaskWorkspace', () => {
     expect(listSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps both visibility controls available during task loading and errors without exposing stale rows', async () => {
-    listSpy
-      .mockResolvedValueOnce(response([task(1, 'Private task')]) as never)
-      .mockRejectedValueOnce(new Error('request failed'));
-    const { Wrapper, queryClient } = createWrapper();
-    render(<TaskWorkspace />, { wrapper: Wrapper });
-    expect(await screen.findByText('Private task')).toBeInTheDocument();
-
-    await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ['tasks', 1] });
-    });
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load your tasks/i);
-    expect(screen.getByRole('switch', { name: 'Completed history' })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Archived tasks' })).toBeInTheDocument();
-    expect(screen.queryByText('Private task')).not.toBeInTheDocument();
-  });
-
   it.each([
     ['empty', []],
     ['archived-only', [task(1, 'Archived', { archivedAt: new Date().toISOString() })]],
@@ -502,6 +484,8 @@ describe('TaskWorkspace', () => {
     });
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't load your tasks/i);
+    expect(screen.getByRole('switch', { name: 'Completed history' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Archived tasks' })).toBeInTheDocument();
     expect(screen.queryByText('Previously loaded task')).not.toBeInTheDocument();
     listSpy.mockResolvedValueOnce(response([task(2, 'Recovered task')]) as never);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
