@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page, Route } from '@playwright/test';
 
+test.use({ timezoneId: 'Asia/Kolkata' });
+
 type Task = {
   id: number;
   key: string;
@@ -88,10 +90,11 @@ async function expectTaskOrder(page: Page, section: string, ids: number[]) {
   const rows = page.getByRole('region', { name: section }).getByRole('button', {
     name: /^Open TASK-/,
   });
-  const rowLabels = await rows.evaluateAll((buttons) =>
-    buttons.map((button) => button.getAttribute('aria-label'))
-  );
-  expect(rowLabels).toEqual(ids.map((id) => `Open TASK-${id}: Task ${id}`));
+  await expect
+    .poll(() =>
+      rows.evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label')))
+    )
+    .toEqual(ids.map((id) => `Open TASK-${id}: Task ${id}`));
 }
 
 test.beforeEach(async ({ page }) => {
@@ -179,9 +182,12 @@ test('sortOptionsReorderRowsWithoutNewApiRequests', async ({ page }) => {
 test('sortPersistsWithinTasksAndResetsOutside', async ({ page }) => {
   await page.clock.install({ time: '2026-10-26T06:30:00.000Z' });
   await installTaskApi(page, [
-    task(1, 'Task 1'),
-    task(2, 'Task 2', { completedAt: '2026-10-25T17:00:00Z' }),
-    task(3, 'Task 3', { archivedAt: '2026-10-25T17:30:00Z' }),
+    task(1, 'Task 1', { priority: 'LOW' }),
+    task(4, 'Task 4', { priority: 'HIGH' }),
+    task(2, 'Task 2', { priority: 'LOW', completedAt: '2026-10-25T17:00:00Z' }),
+    task(6, 'Task 6', { priority: 'HIGH', completedAt: '2026-10-25T17:00:00Z' }),
+    task(3, 'Task 3', { priority: 'LOW', archivedAt: '2026-10-25T17:30:00Z' }),
+    task(5, 'Task 5', { priority: 'HIGH', archivedAt: '2026-10-25T17:30:00Z' }),
   ]);
   await page.goto('/tasks');
 
@@ -194,9 +200,13 @@ test('sortPersistsWithinTasksAndResetsOutside', async ({ page }) => {
     'aria-expanded',
     'false'
   );
+  await sort.selectOption('priority-lowest');
   await page.getByRole('switch', { name: 'Completed history' }).check();
   await page.getByRole('switch', { name: 'Archived tasks' }).check();
   await page.getByRole('button', { name: 'Expand Active section' }).click();
+  await expectTaskOrder(page, 'Active', [1, 4]);
+  await expectTaskOrder(page, 'Completed', [2, 6]);
+  await expectTaskOrder(page, 'Archived', [3, 5]);
 
   await page.getByRole('button', { name: 'Open TASK-1: Task 1' }).click();
   await expect(page).toHaveURL(/\/tasks\?task=1$/);
@@ -209,7 +219,7 @@ test('sortPersistsWithinTasksAndResetsOutside', async ({ page }) => {
   await expect(page).toHaveURL(/\/tasks\?task=1$/);
   await page.getByRole('button', { name: 'Close task details' }).click();
   await expect(page).toHaveURL(/\/tasks$/);
-  await expect(sort).toHaveValue('priority-highest');
+  await expect(sort).toHaveValue('priority-lowest');
   await expect(page.getByRole('button', { name: 'Collapse Active section' })).toHaveAttribute(
     'aria-expanded',
     'true'

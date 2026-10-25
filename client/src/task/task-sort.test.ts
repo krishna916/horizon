@@ -88,6 +88,18 @@ describe('sortTaskSections', () => {
     expect(ids(sortTaskSections(sections, 'priority-highest').active)).toEqual([3, 2, 1]);
   });
 
+  it('uses creation time then descending ID to order multiple unprioritized tasks in both directions', () => {
+    const tasks = [
+      task(4, { priority: null, createdAt: '2026-10-20T10:00:00Z' }),
+      task(5, { priority: null, createdAt: '2026-10-21T10:00:00Z' }),
+      task(6, { priority: null, createdAt: '2026-10-21T10:00:00Z' }),
+    ];
+    const sections = { active: tasks, completed: [], archived: [] };
+
+    expect(ids(sortTaskSections(sections, 'priority-highest').active)).toEqual([6, 5, 4]);
+    expect(ids(sortTaskSections(sections, 'priority-lowest').active)).toEqual([6, 5, 4]);
+  });
+
   it('compares creation timestamps as instants and keeps due dates as civil dates', () => {
     const sameInstant = [
       task(7, { createdAt: '2026-10-24T10:00:00+02:00' }),
