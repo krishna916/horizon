@@ -88,7 +88,7 @@
 - [x] **Step 2 — Classify:** For each issue record `fix now` (confirmed correctness/security/accessibility or high-confidence in-scope defect), `defer` (minor cosmetic/maintainability beyond #25), `already fixed`, or `not reproducible/false positive` with brief evidence. Do not claim a finding resolved merely because quality gate is green.
 - [x] **Step 3 — Fix selectively:** For confirmed in-scope defects, first write/adjust a focused regression test, verify RED where applicable, minimally fix, verify GREEN, then commit with an accurate `fix:` message. If a finding requires an unapproved new product behavior or significant CI redesign, **do not silently do it**—record as follow-up and flag to owner.
 - [x] **Step 4 — Diagnose coverage signal:** `client/package.json` has `@vitest/coverage-v8`, but `npm run test` currently uses `vitest run`; `.github/workflows/ci.yml` runs tests/build without an evident frontend LCOV publish step. Inspect the actual Sonar configuration before concluding the cause. **0.0% measured new-code coverage is not the same as zero tests.** Record cause (or limitation) in PR and recommend a separate quality-tooling follow-up unless a tiny, safe configuration-only fix is plainly in scope.
-- [ ] **Step 5 — Report:** Summarize current issue count and disposition in the PR, including links and exact findings that could not be accessed. Do not add blanket suppressions, abandon required tests, or invent Sonar rule IDs. A remaining minor Sonar issue is not automatically a merge blocker; disclose its impact.
+- [x] **Step 5 — Report:** Summarize current issue count and disposition in the PR, including links and exact findings that could not be accessed. Do not add blanket suppressions, abandon required tests, or invent Sonar rule IDs. A remaining minor Sonar issue is not automatically a merge blocker; disclose its impact.
 
 ### Task 4 — Final validation, scope gate, and update existing PR (required)
 
@@ -100,8 +100,8 @@
 - [x] **Step 1 — Validate:** From `client/`, run `npm run test`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm run build`, `npm run test:e2e`. Read full outputs and exit codes; no success claim without evidence.
 - [x] **Step 2 — Review:** Inspect `git diff origin/master...HEAD` and `git diff` for unintended changes, duplicate classifications, local-day boundaries, archive precedence, new persistence or dependencies. Ensure the original issue #25 accepted behaviors remain intact.
 - [x] **Step 3 — Defer explicitly:** **Do not** extract `TaskViewState` / `DEFAULT_TASK_VIEW_STATE` out of `TasksRouteLayout.tsx` merely for aesthetic coupling; the current import is a minor, functional, local dependency and is not a merge blocker. Defer unless an actual cycle or concrete testability problem is found. Do not tackle global Sonar/coverage tooling here unless clearly necessary and approved.
-- [ ] **Step 4 — Commit and push:** Commit any remaining deliberate fixes; ensure clean working tree; `git push origin feature/25-task-history-archive-visibility`.
-- [ ] **Step 5 — PR update:** Keep **existing non-draft PR #52** targeting `master`, still containing `Closes #25`. Append a remediation summary with commits, regression proof, 6 command results, Sonar issue-by-issue triage, limitations/deferred work. Re-check PR CI on the newly pushed head. **Do not create another PR or merge.**
+- [x] **Step 4 — Commit and push:** Commit any remaining deliberate fixes; ensure clean working tree; `git push origin feature/25-task-history-archive-visibility`.
+- [x] **Step 5 — PR update:** Keep **existing non-draft PR #52** targeting `master`, still containing `Closes #25`. Append a remediation summary with commits, regression proof, 6 command results, Sonar issue-by-issue triage, limitations/deferred work. Re-check PR CI on the newly pushed head. **Do not create another PR or merge.**
 
 ## Completion criteria
 
