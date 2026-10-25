@@ -6,17 +6,20 @@ import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { TaskDraftNavigationGuard } from './TaskDraftNavigationGuard';
 import { TaskLifecycleProvider } from './TaskLifecycleProvider';
 import { TaskLifecycleNoticeList } from './TaskLifecycleNoticeList';
+import type { TaskSortMode } from './task-sort';
 
 export interface TaskViewState {
   showCompletedHistory: boolean;
   showArchivedTasks: boolean;
   expanded: Record<'Active' | 'Completed' | 'Archived', boolean>;
+  sortMode: TaskSortMode;
 }
 
 export const DEFAULT_TASK_VIEW_STATE: TaskViewState = {
   showCompletedHistory: false,
   showArchivedTasks: false,
   expanded: { Active: true, Completed: true, Archived: true },
+  sortMode: 'newest',
 };
 
 interface TasksLayoutState {

@@ -2,6 +2,8 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { classifyTasks } from './task-view';
+import { sortTaskSections } from './task-sort';
+import type { TaskSortMode } from './task-sort';
 import { useLocalDay } from './useLocalDay';
 import { TaskSection } from './TaskSection';
 import { useTaskList } from './useTaskList';
@@ -109,6 +111,7 @@ export function TaskWorkspace({
         showArchivedTasks: viewState.showArchivedTasks,
       })
     : undefined;
+  const sortedSections = sections ? sortTaskSections(sections, viewState.sortMode) : undefined;
 
   function updateSectionExpanded(title: 'Active' | 'Completed' | 'Archived', expanded: boolean) {
     updateViewState((current) => ({
@@ -123,6 +126,26 @@ export function TaskWorkspace({
       aria-label="Task visibility"
       className="mb-7 flex flex-wrap items-center gap-x-6 gap-y-3"
     >
+      <div className="inline-flex items-center gap-2 text-sm text-foreground">
+        <label htmlFor="task-sort">Sort</label>
+        <select
+          id="task-sort"
+          aria-label="Sort"
+          value={viewState.sortMode}
+          onChange={(event) => {
+            const sortMode = event.currentTarget.value as TaskSortMode;
+            updateViewState((current) => ({ ...current, sortMode }));
+          }}
+          className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="due-earliest">Due date: earliest first</option>
+          <option value="due-latest">Due date: latest first</option>
+          <option value="priority-highest">Priority: highest first</option>
+          <option value="priority-lowest">Priority: lowest first</option>
+        </select>
+      </div>
       <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
         <span className="relative inline-flex h-5 w-9 items-center">
           <input
@@ -227,12 +250,12 @@ export function TaskWorkspace({
         </button>
       </div>
     );
-  } else if (sections) {
+  } else if (sortedSections) {
     workspaceContent = (
       <>
         <TaskSection
           title="Active"
-          tasks={sections.active}
+          tasks={sortedSections.active}
           expanded={viewState.expanded.Active}
           onExpandedChange={(expanded) => updateSectionExpanded('Active', expanded)}
           now={now}
@@ -242,10 +265,10 @@ export function TaskWorkspace({
           onDeleted={handleRowDeleted}
           selectedTaskId={selection.kind === 'valid' ? selection.id : null}
         />
-        {sections.completed.length > 0 && (
+        {sortedSections.completed.length > 0 && (
           <TaskSection
             title="Completed"
-            tasks={sections.completed}
+            tasks={sortedSections.completed}
             expanded={viewState.expanded.Completed}
             onExpandedChange={(expanded) => updateSectionExpanded('Completed', expanded)}
             now={now}
@@ -256,10 +279,10 @@ export function TaskWorkspace({
             selectedTaskId={selection.kind === 'valid' ? selection.id : null}
           />
         )}
-        {viewState.showArchivedTasks && sections.archived.length > 0 && (
+        {viewState.showArchivedTasks && sortedSections.archived.length > 0 && (
           <TaskSection
             title="Archived"
-            tasks={sections.archived}
+            tasks={sortedSections.archived}
             expanded={viewState.expanded.Archived}
             onExpandedChange={(expanded) => updateSectionExpanded('Archived', expanded)}
             now={now}
