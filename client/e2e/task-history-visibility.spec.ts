@@ -37,7 +37,7 @@ function task(id: number, title: string, overrides: Partial<Task> = {}): Task {
   };
 }
 
-async function installTaskApi(page: Page, initialTasks: Task[]) {
+async function installTaskApi(page: Page, initialTasks: Task[], completionTimestamp?: string) {
   const tasks = initialTasks.map((item) => ({ ...item }));
   let listRequests = 0;
 
@@ -89,8 +89,9 @@ async function installTaskApi(page: Page, initialTasks: Task[]) {
       }
       const updated = {
         ...current,
-        completedAt: taskRoute[2] === 'complete' ? new Date().toISOString() : null,
-        updatedAt: new Date().toISOString(),
+        completedAt:
+          taskRoute[2] === 'complete' ? (completionTimestamp ?? new Date().toISOString()) : null,
+        updatedAt: completionTimestamp ?? new Date().toISOString(),
       };
       tasks[index] = updated;
       await route.fulfill({
@@ -104,7 +105,10 @@ async function installTaskApi(page: Page, initialTasks: Task[]) {
     await route.fallback();
   });
 
-  return { getListRequests: () => listRequests };
+  return {
+    getListRequests: () => listRequests,
+    getArchivedAt: (id: number) => tasks.find((item) => item.id === id)?.archivedAt,
+  };
 }
 
 test.beforeEach(async ({ page }) => {
@@ -221,14 +225,29 @@ test('resets visibility and collapse choices after leaving Tasks or reloading', 
 
 test('releases temporary Active completion retention on a full-page trip', async ({ page }) => {
   await page.clock.install({ time: '2026-10-26T06:30:00.000Z' });
-  await installTaskApi(page, [task(1, 'Retained completion')]);
+  const api = await installTaskApi(
+    page,
+    [task(1, 'Retained completion')],
+    '2026-10-26T06:30:00.000Z'
+  );
   await page.goto('/tasks');
   await page.getByRole('checkbox', { name: 'Complete TASK-1' }).click();
   await expect(page.getByRole('checkbox', { name: 'Reopen TASK-1' })).toBeVisible();
-  await page.getByRole('switch', { name: 'Completed history' }).check();
-  await page.getByRole('switch', { name: 'Archived tasks' }).check();
-  await page.getByRole('button', { name: 'Collapse Active section' }).click();
-  await page.getByRole('button', { name: 'Expand Active section' }).click();
+  expect(api.getArchivedAt(1)).toBeNull();
+  const completedHistory = page.getByRole('switch', { name: 'Completed history' });
+  const archivedTasks = page.getByRole('switch', { name: 'Archived tasks' });
+  await expect(completedHistory).not.toBeChecked();
+  await expect(archivedTasks).not.toBeChecked();
+  await expect(
+    page
+      .getByRole('region', { name: 'Active' })
+      .getByRole('button', { name: 'Open TASK-1: Retained completion' })
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole('region', { name: 'Completed' })
+      .getByRole('button', { name: 'Open TASK-1: Retained completion' })
+  ).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Open TASK-1: Retained completion' }).click();
   await page
@@ -250,6 +269,10 @@ test('releases temporary Active completion retention on a full-page trip', async
       .getByRole('region', { name: 'Completed' })
       .getByRole('button', { name: 'Open TASK-1: Retained completion' })
   ).toBeVisible();
+  expect(api.getArchivedAt(1)).toBeNull();
+  await expect(completedHistory).not.toBeChecked();
+  await expect(archivedTasks).not.toBeChecked();
+  await expect(page.getByRole('heading', { name: 'Archived' })).toHaveCount(0);
 });
 
 test('regroups cached completion timestamps at Kolkata midnight without another list request', async ({
