@@ -27,6 +27,7 @@ export function classifyTasks(
   visibility: TaskVisibilityOptions = { showCompletedHistory: false, showArchivedTasks: false }
 ): TaskSections {
   const sections: TaskSections = { active: [], completed: [], archived: [] };
+  const startOfLocalDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   for (const task of tasks) {
     if (task.archivedAt !== null) {
@@ -43,7 +44,8 @@ export function classifyTasks(
     const completedAt = task.completedAt === null ? now : new Date(task.completedAt);
     if (
       !Number.isNaN(completedAt.getTime()) &&
-      (isSameLocalDay(completedAt, now) || visibility.showCompletedHistory)
+      (isSameLocalDay(completedAt, now) ||
+        (visibility.showCompletedHistory && completedAt.getTime() < startOfLocalDay.getTime()))
     ) {
       sections.completed.push(task);
     }

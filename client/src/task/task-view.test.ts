@@ -148,6 +148,30 @@ describe('classifyTasks', () => {
     ).toEqual([historical]);
   });
 
+  it('completedHistoryExcludesFutureLocalDays', () => {
+    const now = new Date(2026, 9, 26, 12);
+    const yesterday = summary(1, {
+      completedAt: withLocalOffset(new Date(2026, 9, 25, 12)),
+    });
+    const todayLater = summary(2, {
+      completedAt: withLocalOffset(new Date(2026, 9, 26, 15)),
+    });
+    const tomorrow = summary(3, {
+      completedAt: withLocalOffset(new Date(2026, 9, 27, 9)),
+    });
+    const tasks = [yesterday, todayLater, tomorrow];
+    const original = [...tasks];
+
+    expect(classifyTasks(tasks, now).completed).toEqual([todayLater]);
+    expect(
+      classifyTasks(tasks, now, new Set(), new Map(), {
+        showCompletedHistory: true,
+        showArchivedTasks: false,
+      }).completed
+    ).toEqual([yesterday, todayLater]);
+    expect(tasks).toEqual(original);
+  });
+
   it('archivedWinsOverCompletionAndIgnoresRetention', () => {
     const archivedCompleted = summary(1, {
       completedAt: '2026-10-16T09:00:00Z',
@@ -225,19 +249,26 @@ describe('classifyTasks', () => {
     try {
       const justBeforeMidnight = summary(1, { completedAt: '2026-10-25T18:29:59Z' });
       const justAfterMidnight = summary(2, { completedAt: '2026-10-25T18:30:01Z' });
+      const nextLocalDay = summary(3, { completedAt: '2026-10-26T18:30:00Z' });
       const now = new Date('2026-10-25T18:30:01Z');
 
       expect(
         justAfterMidnight.completedAt && new Date(justAfterMidnight.completedAt).getDate()
       ).toBe(26);
-      expect(classifyTasks([justBeforeMidnight, justAfterMidnight], now).completed).toEqual([
-        justAfterMidnight,
-      ]);
       expect(
-        classifyTasks([justBeforeMidnight, justAfterMidnight], now, new Set(), new Map(), {
-          showCompletedHistory: true,
-          showArchivedTasks: false,
-        }).completed
+        classifyTasks([justBeforeMidnight, justAfterMidnight, nextLocalDay], now).completed
+      ).toEqual([justAfterMidnight]);
+      expect(
+        classifyTasks(
+          [justBeforeMidnight, justAfterMidnight, nextLocalDay],
+          now,
+          new Set(),
+          new Map(),
+          {
+            showCompletedHistory: true,
+            showArchivedTasks: false,
+          }
+        ).completed
       ).toEqual([justBeforeMidnight, justAfterMidnight]);
     } finally {
       if (originalTimeZone === undefined) {
