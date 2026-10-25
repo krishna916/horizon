@@ -124,37 +124,41 @@ export function TaskWorkspace({
       className="mb-7 flex flex-wrap items-center gap-x-6 gap-y-3"
     >
       <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
-        <input
-          type="checkbox"
-          role="switch"
-          checked={viewState.showCompletedHistory}
-          onChange={(event) => {
-            const checked = event.currentTarget.checked;
-            updateViewState((current) => ({ ...current, showCompletedHistory: checked }));
-          }}
-          className="peer sr-only"
-        />
-        <span
-          aria-hidden="true"
-          className="relative h-5 w-9 rounded-full bg-muted transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-background after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
-        />
+        <span className="relative inline-flex h-5 w-9 items-center">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={viewState.showCompletedHistory}
+            onChange={(event) => {
+              const checked = event.currentTarget.checked;
+              updateViewState((current) => ({ ...current, showCompletedHistory: checked }));
+            }}
+            className="peer absolute inset-0 z-10 m-0 h-5 w-9 cursor-pointer opacity-0"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 rounded-full bg-muted transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-background after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
+          />
+        </span>
         Completed history
       </label>
       <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
-        <input
-          type="checkbox"
-          role="switch"
-          checked={viewState.showArchivedTasks}
-          onChange={(event) => {
-            const checked = event.currentTarget.checked;
-            updateViewState((current) => ({ ...current, showArchivedTasks: checked }));
-          }}
-          className="peer sr-only"
-        />
-        <span
-          aria-hidden="true"
-          className="relative h-5 w-9 rounded-full bg-muted transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-background after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
-        />
+        <span className="relative inline-flex h-5 w-9 items-center">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={viewState.showArchivedTasks}
+            onChange={(event) => {
+              const checked = event.currentTarget.checked;
+              updateViewState((current) => ({ ...current, showArchivedTasks: checked }));
+            }}
+            className="peer absolute inset-0 z-10 m-0 h-5 w-9 cursor-pointer opacity-0"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 rounded-full bg-muted transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-background after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-ring"
+          />
+        </span>
         Archived tasks
       </label>
     </div>
