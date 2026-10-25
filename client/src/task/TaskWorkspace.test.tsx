@@ -561,7 +561,10 @@ describe('TaskWorkspace', () => {
     const completed = task(2, 'Completed before midnight', {
       completedAt: new Date(2026, 9, 18, 23, 30).toISOString(),
     });
-    listSpy.mockResolvedValue(response([active, completed]) as never);
+    const historical = task(3, 'Already historical', {
+      completedAt: new Date(2026, 9, 17, 22).toISOString(),
+    });
+    listSpy.mockResolvedValue(response([active, completed, historical]) as never);
     const { Wrapper } = createWrapper();
 
     render(<TaskWorkspace />, { wrapper: Wrapper });
@@ -570,16 +573,107 @@ describe('TaskWorkspace', () => {
     });
 
     expect(screen.getByText('Completed before midnight')).toBeInTheDocument();
+    expect(screen.queryByText('Already historical')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+    expect(screen.getByText('Already historical')).toBeInTheDocument();
     expect(listSpy).toHaveBeenCalledTimes(1);
     act(() => vi.advanceTimersByTime(10_000));
+    expect(screen.getByRole('heading', { name: 'Completed' }).parentElement).toHaveTextContent('2');
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
     expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
     expect(screen.getByText('Still active')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Completed history' })).not.toBeChecked();
+    expect(listSpy).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(new Date(2026, 9, 20, 9));
     act(() => window.dispatchEvent(new Event('focus')));
     expect(screen.queryByRole('heading', { name: 'Completed' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+    expect(screen.getByRole('heading', { name: 'Completed' }).parentElement).toHaveTextContent('2');
+    expect(screen.getByText('Completed before midnight')).toBeInTheDocument();
+    expect(screen.getByText('Already historical')).toBeInTheDocument();
     vi.setSystemTime(new Date(2026, 9, 21, 9));
     act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['today', () => new Date().toISOString(), true],
+    ['historical', () => new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(), false],
+  ])(
+    'restoring an archived %s completion preserves its Completed history classification',
+    async (_age, makeCompletedAt, visibleWithoutHistory) => {
+      const now = new Date();
+      const archived = task(1, `Archived ${_age} task`, {
+        completedAt: makeCompletedAt(),
+        archivedAt: now.toISOString(),
+      });
+      const restored = {
+        ...detail(1, archived.title, archived.completedAt),
+        archivedAt: null,
+        updatedAt: now.toISOString(),
+      };
+      listSpy
+        .mockResolvedValueOnce(response([archived]) as never)
+        .mockResolvedValue(
+          response([task(1, archived.title, { completedAt: archived.completedAt })]) as never
+        );
+      const restoreSpy = vi
+        .spyOn(taskApi, 'restoreArchive')
+        .mockResolvedValue({ data: restored } as never);
+      const { Wrapper } = createWrapper();
+
+      render(<TaskWorkspace />, { wrapper: Wrapper });
+      await screen.findByRole('switch', { name: 'Archived tasks' });
+      fireEvent.click(screen.getByRole('switch', { name: 'Archived tasks' }));
+      fireEvent.keyDown(await screen.findByRole('button', { name: 'More actions for TASK-1' }), {
+        key: 'Enter',
+      });
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Restore' }));
+
+      await waitFor(() => expect(restoreSpy).toHaveBeenCalledWith(1));
+      await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+      expect(screen.queryByRole('heading', { name: 'Archived' })).not.toBeInTheDocument();
+      if (visibleWithoutHistory) {
+        expect(screen.getByText(archived.title)).toBeInTheDocument();
+      } else {
+        expect(screen.queryByText(archived.title)).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+        expect(screen.getByText(archived.title)).toBeInTheDocument();
+      }
+      expect(screen.getAllByText(archived.title)).toHaveLength(1);
+    }
+  );
+
+  it('keeps a newly completed row in Active through visibility, collapse, and panel changes', async () => {
+    listSpy.mockResolvedValue(response([task(1, 'Retained across controls')]) as never);
+    vi.spyOn(taskApi, 'complete').mockResolvedValue({
+      data: detail(1, 'Retained across controls', todayString() + 'T10:00:00Z'),
+    } as never);
+    const { Wrapper } = createWrapper();
+    const view = render(<TaskWorkspace />, { wrapper: Wrapper });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete TASK-1' }));
+    await waitFor(() => expect(screen.queryByText('Saving…')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Completed history' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Archived tasks' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Active section' }));
+    expect(screen.getByRole('button', { name: 'Expand Active section' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Active section' }));
+    expect(screen.getByRole('heading', { name: 'Active' }).parentElement).toHaveTextContent('1');
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toBeInTheDocument();
+
+    const onClosePanel = vi.fn();
+    view.rerender(
+      <TaskWorkspace selection={{ kind: 'valid', id: 1 }} onClosePanel={onClosePanel} />
+    );
+    expect(await screen.findByRole('button', { name: 'Close task details' })).toBeInTheDocument();
+    view.rerender(<TaskWorkspace onClosePanel={onClosePanel} />);
+    expect(screen.getByRole('checkbox', { name: 'Reopen TASK-1' })).toBeInTheDocument();
+    expect(screen.getAllByText('Retained across controls')).toHaveLength(1);
     expect(listSpy).toHaveBeenCalledTimes(1);
   });
 
