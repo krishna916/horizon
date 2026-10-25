@@ -126,10 +126,11 @@ export function TaskWorkspace({
       aria-label="Task visibility"
       className="mb-7 flex flex-wrap items-center gap-x-6 gap-y-3"
     >
-      <label className="inline-flex items-center gap-2 text-sm text-foreground">
-        Sort
+      <div className="inline-flex items-center gap-2 text-sm text-foreground">
+        <label htmlFor="task-sort">Sort</label>
         <select
           id="task-sort"
+          aria-label="Sort"
           value={viewState.sortMode}
           onChange={(event) => {
             const sortMode = event.currentTarget.value as TaskSortMode;
@@ -144,7 +145,7 @@ export function TaskWorkspace({
           <option value="priority-highest">Priority: highest first</option>
           <option value="priority-lowest">Priority: lowest first</option>
         </select>
-      </label>
+      </div>
       <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
         <span className="relative inline-flex h-5 w-9 items-center">
           <input
