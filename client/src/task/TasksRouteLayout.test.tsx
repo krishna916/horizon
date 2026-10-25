@@ -6,6 +6,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  useNavigate,
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
@@ -13,9 +14,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userApi } from '@/user/api';
 import { taskApi } from './api';
 import { useTaskLifecycle } from './TaskLifecycleProvider';
+import { TaskCompletionProvider } from './TaskCompletionProvider';
+import { TaskDraftNavigationGuard } from './TaskDraftNavigationGuard';
 import { useTasksLayout, TasksRouteLayout } from './TasksRouteLayout';
-import type { TaskSummary } from './types';
+import type { TaskDetail, TaskSummary } from './types';
 import { useEffect, useState } from 'react';
+import { TaskDetailView } from './TaskDetailView';
 
 const lifecycleTask: TaskSummary = {
   id: 91,
@@ -30,6 +34,37 @@ const lifecycleTask: TaskSummary = {
   updatedAt: '2026-10-24T10:00:00Z',
 };
 const retryTask: TaskSummary = { ...lifecycleTask, id: 92, key: 'TASK-92' };
+const descriptionTask: TaskDetail = {
+  ...lifecycleTask,
+  description: {
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original notes.' }] }],
+  },
+  deletedAt: null,
+  checklist: [],
+};
+
+function DescriptionGuardProbe() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <TaskCompletionProvider>
+        <TaskDetailView task={descriptionTask} userId={1} />
+      </TaskCompletionProvider>
+      <button type="button" onClick={() => void navigate({ to: '/notes' })}>
+        Open notes
+      </button>
+    </>
+  );
+}
+
+function DescriptionGuardLayout() {
+  return (
+    <TaskDraftNavigationGuard>
+      <Outlet />
+    </TaskDraftNavigationGuard>
+  );
+}
 
 function LifecycleProbe() {
   const lifecycle = useTaskLifecycle();
@@ -111,6 +146,32 @@ function createTestRouter(initialEntry: string) {
   return router;
 }
 
+function createDescriptionRouter() {
+  const rootRoute = createRootRoute({
+    component: () => <Outlet />,
+    errorComponent: ({ error }) => <pre>{error.message}</pre>,
+  });
+  const tasksRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/tasks',
+    component: DescriptionGuardLayout,
+  });
+  const detailRoute = createRoute({
+    getParentRoute: () => tasksRoute,
+    path: '/',
+    component: DescriptionGuardProbe,
+  });
+  const notesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/notes',
+    component: () => <p>Other workspace</p>,
+  });
+  return createRouter({
+    routeTree: rootRoute.addChildren([tasksRoute.addChildren([detailRoute]), notesRoute]),
+    history: createMemoryHistory({ initialEntries: ['/tasks'] }),
+  });
+}
+
 function renderRouter(router: ReturnType<typeof createTestRouter>, setupUserMock = true) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (setupUserMock && !vi.isMockFunction(userApi.getCurrentUser)) {
@@ -140,6 +201,44 @@ describe('TasksRouteLayout', () => {
     } as never);
     return vi.spyOn(taskApi, 'softDelete').mockRejectedValue(new Error('network'));
   }
+
+  it('registers the rich description with the existing navigation guard', async () => {
+    const updateSpy = vi
+      .spyOn(taskApi, 'update')
+      .mockResolvedValue({ data: descriptionTask } as never);
+    renderRouter(createDescriptionRouter());
+    await screen.findByRole('heading', { name: 'Lifecycle test task' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit task description' }));
+    const editor = await screen.findByLabelText('Task description editor');
+    fireEvent.keyDown(editor, { key: 'a', ctrlKey: true });
+    fireEvent.paste(editor, {
+      clipboardData: {
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? 'Changed notes.' : ''),
+      },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open notes' }));
+    });
+
+    const guard = await screen.findByRole('alertdialog');
+    expect(guard).toHaveTextContent('Your task draft has unsaved changes.');
+    expect(updateSpy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+    expect(updateSpy).toHaveBeenCalledWith(91, {
+      description: expect.objectContaining({
+        content: [
+          expect.objectContaining({
+            content: [expect.objectContaining({ text: 'Changed notes.' })],
+          }),
+        ],
+      }),
+    });
+    expect(await screen.findByText('Other workspace')).toBeInTheDocument();
+  });
 
   it.each(['/tasks', '/tasks?task=123'])('renders its nested index at %s', async (entry) => {
     const router = createTestRouter(entry);

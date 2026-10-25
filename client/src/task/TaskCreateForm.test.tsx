@@ -54,6 +54,33 @@ afterEach(() => {
 });
 
 describe('TaskCreateForm', () => {
+  it('omits an empty description from task creation', async () => {
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'A task without notes' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+    expect(createTask.mock.calls[0]?.[0]).toEqual({ title: 'A task without notes' });
+  });
+
+  it('preserves an intentionally inserted empty table in the create payload', async () => {
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'A task with a blank table' },
+    });
+    await screen.findByLabelText('Description (optional) editor');
+    fireEvent.click(screen.getByRole('button', { name: 'Insert table' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+    expect(createTask.mock.calls[0]?.[0].description).toMatchObject({
+      type: 'doc',
+      content: expect.arrayContaining([expect.objectContaining({ type: 'table' })]),
+    });
+  });
+
   it('submits ordered checklist drafts atomically with the task and omits local IDs', async () => {
     renderForm();
     fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
@@ -142,13 +169,20 @@ describe('TaskCreateForm', () => {
     );
   });
 
-  it('keeps optional description, priority, and local date without adding defaults', async () => {
+  it('submits structured Markdown description with optional priority and local date', async () => {
     renderForm();
     fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
       target: { value: 'Plan the launch' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Description (optional)' }), {
-      target: { value: 'First paragraph\nSecond paragraph' },
+    const editor = await screen.findByLabelText('Description (optional) editor');
+    fireEvent.paste(editor, {
+      clipboardData: {
+        types: ['text/plain'],
+        getData: (type: string) =>
+          type === 'text/plain'
+            ? '# First paragraph\n\n- First item\n- Second item\n\n```js\nconst ready = true;\n```\n\n| Name | State |\n| --- | --- |\n| Build | Ready |\n\n[Docs](https://example.com)\n\n---'
+            : '',
+      },
     });
     fireEvent.change(screen.getByRole('combobox', { name: 'Priority (optional)' }), {
       target: { value: 'HIGH' },
@@ -162,18 +196,64 @@ describe('TaskCreateForm', () => {
     expect(createTask).toHaveBeenCalledWith(
       {
         title: 'Plan the launch',
-        description: {
+        description: expect.objectContaining({
           type: 'doc',
-          content: [
-            { type: 'paragraph', content: [{ type: 'text', text: 'First paragraph' }] },
-            { type: 'paragraph', content: [{ type: 'text', text: 'Second paragraph' }] },
-          ],
-        },
+          content: expect.arrayContaining([
+            expect.objectContaining({ type: 'heading', attrs: { level: 1 } }),
+            expect.objectContaining({ type: 'bulletList' }),
+            expect.objectContaining({ type: 'codeBlock' }),
+            expect.objectContaining({ type: 'table' }),
+            expect.objectContaining({ type: 'horizontalRule' }),
+          ]),
+        }),
         priority: 'HIGH',
         dueDate: '2026-10-21',
       },
       '11111111-1111-4111-8111-111111111111'
     );
+    expect(JSON.stringify(createTask.mock.calls[0]?.[0].description)).toContain(
+      'https://example.com'
+    );
+  });
+
+  it('reports description edits as dirty and Cancel discards without creating', async () => {
+    const { onCancel, onDirtyChange } = renderForm();
+    const editor = await screen.findByLabelText('Description (optional) editor');
+    fireEvent.paste(editor, {
+      clipboardData: {
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? 'A draft description' : ''),
+      },
+    });
+
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it('shows a server description validation error beside the rich-text editor', async () => {
+    const validationError = Object.assign(new Error('invalid description'), {
+      isAxiosError: true,
+      response: {
+        status: 400,
+        data: { errors: { description: 'Description contains an unsupported mark.' } },
+      },
+    });
+    createTask.mockRejectedValueOnce(validationError);
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'A task with invalid notes' },
+    });
+    await screen.findByLabelText('Description (optional) editor');
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(
+      await screen.findByText('Description contains an unsupported mark.')
+    ).toBeInTheDocument();
+    expect(createTask).toHaveBeenCalledTimes(1);
   });
 
   it.each(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const)(
@@ -208,9 +288,14 @@ describe('TaskCreateForm', () => {
     createTask.mockRejectedValueOnce(new Error('socket closed')).mockResolvedValueOnce(createdTask);
     const { onCreated } = renderForm();
     const title = screen.getByRole('textbox', { name: 'Title' });
-    const description = screen.getByRole('textbox', { name: 'Description (optional)' });
+    const description = await screen.findByLabelText('Description (optional) editor');
     fireEvent.change(title, { target: { value: 'Write a release note' } });
-    fireEvent.change(description, { target: { value: 'Do not lose this draft.' } });
+    fireEvent.paste(description, {
+      clipboardData: {
+        types: ['text/plain'],
+        getData: (type: string) => (type === 'text/plain' ? 'Do not lose this draft.' : ''),
+      },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Add checklist draft item' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Checklist item 1 title' }), {
       target: { value: 'Keep this row unchanged.' },
@@ -219,7 +304,7 @@ describe('TaskCreateForm', () => {
 
     const retry = await screen.findByRole('button', { name: 'Retry creation' });
     expect(title).toBeDisabled();
-    expect(description).toBeDisabled();
+    await waitFor(() => expect(description).toHaveAttribute('contenteditable', 'false'));
     fireEvent.click(retry);
     await waitFor(() => expect(createTask).toHaveBeenCalledTimes(2));
 

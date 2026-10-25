@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useTaskFieldEdit } from './useTaskFieldEdit';
 import { TaskFieldEditor } from './TaskFieldEditor';
 import type { TaskDetail } from './types';
-import { getTaskDescriptionText } from './taskDescriptionText';
+import { TaskDescriptionField } from './TaskDescriptionField';
+import { useTaskDescriptionEdit } from './useTaskDescriptionEdit';
+import {
+  isSupportedRichTextDocument,
+  normalizeRichTextDocument,
+  type RichTextDocument,
+} from '@/components/rich-text/richTextDocument';
 import { useTaskDraftGuard } from './TaskDraftNavigationGuard';
 import { useTaskCompletion } from './TaskCompletionProvider';
 import { TaskCompletionToggle } from './TaskCompletionToggle';
@@ -17,8 +23,12 @@ interface TaskDetailViewProps {
 }
 
 export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailViewProps) {
-  const description = getTaskDescriptionText(task.description);
+  const rawDescription = task.description as RichTextDocument | null;
+  const unsupportedDescription =
+    rawDescription !== null && !isSupportedRichTextDocument(rawDescription);
+  const description = normalizeRichTextDocument(rawDescription);
   const edit = useTaskFieldEdit(task, userId);
+  const descriptionEdit = useTaskDescriptionEdit(task, userId);
   const draftGuard = useTaskDraftGuard();
   const completion = useTaskCompletion(userId, task);
   const [checklistEditing, setChecklistEditing] = useState(false);
@@ -28,24 +38,28 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
   });
   const registerDraft = draftGuard?.register;
   const clearDraft = draftGuard?.clear;
-  const saveRef = useRef(edit.save);
-  const cancelRef = useRef(edit.cancel);
+  const saveRef = useRef<() => Promise<boolean>>(edit.save);
+  const cancelRef = useRef<() => void>(edit.cancel);
   useEffect(() => {
-    saveRef.current = edit.save;
-    cancelRef.current = edit.cancel;
+    saveRef.current = descriptionEdit.editing ? descriptionEdit.save : edit.save;
+    cancelRef.current = descriptionEdit.editing ? descriptionEdit.cancel : edit.cancel;
   });
-  const fieldId = edit.activeField ? `field:${userId}:${task.id}:${edit.activeField}` : null;
+  let fieldId: string | null = null;
+  if (edit.activeField) fieldId = `field:${userId}:${task.id}:${edit.activeField}`;
+  else if (descriptionEdit.editing) fieldId = `field:${userId}:${task.id}:description`;
+  const activeDirty = descriptionEdit.editing ? descriptionEdit.dirty : edit.dirty;
+  const activePending = descriptionEdit.editing ? descriptionEdit.pending : edit.pending;
   useEffect(() => {
     if (!fieldId) return;
     registerDraft?.({
       id: fieldId,
       kind: 'field',
-      dirty: edit.dirty,
-      pending: edit.pending,
+      dirty: activeDirty,
+      pending: activePending,
       save: () => saveRef.current(),
       discard: () => cancelRef.current(),
     });
-  }, [registerDraft, fieldId, edit.dirty, edit.pending]);
+  }, [registerDraft, fieldId, activeDirty, activePending]);
   useEffect(() => {
     if (!fieldId) return;
     return () => clearDraft?.(fieldId);
@@ -58,7 +72,9 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
     pending: edit.pending,
     error: edit.error,
     onActivate: (field: 'title' | 'priority' | 'dueDate') => {
-      if (!checklistEditing) edit.activate(field);
+      if (!checklistEditing && !descriptionEdit.editing && !descriptionEdit.pending) {
+        edit.activate(field);
+      }
     },
     onDraftChange: edit.setDraft,
     onSave: () => void edit.save(),
@@ -107,16 +123,32 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
           </div>
         </h1>
       )}
-      {description && (
-        <p className="break-words whitespace-pre-wrap text-base leading-7 text-muted-foreground">
-          {description}
-        </p>
-      )}
+      <TaskDescriptionField
+        value={unsupportedDescription ? rawDescription : description}
+        unavailable={unsupportedDescription}
+        editing={descriptionEdit.editing}
+        draft={descriptionEdit.draft}
+        dirty={descriptionEdit.dirty}
+        pending={descriptionEdit.pending}
+        blocked={Boolean(edit.activeField) || edit.pending || checklistEditing}
+        error={descriptionEdit.error}
+        onActivate={() => {
+          if (!edit.activeField && !edit.pending && !checklistEditing) descriptionEdit.activate();
+        }}
+        onChange={descriptionEdit.change}
+        onSave={() => void descriptionEdit.save()}
+        onCancel={descriptionEdit.cancel}
+      />
       <ChecklistSection
         taskId={task.id}
         userId={userId}
         items={task.checklist}
-        editBlocked={Boolean(edit.activeField) || edit.pending}
+        editBlocked={
+          Boolean(edit.activeField) ||
+          edit.pending ||
+          descriptionEdit.editing ||
+          descriptionEdit.pending
+        }
         onEditSessionChange={setChecklistEditing}
       />
       <TaskCompletionGateControls taskKey={task.key} gate={gate} />

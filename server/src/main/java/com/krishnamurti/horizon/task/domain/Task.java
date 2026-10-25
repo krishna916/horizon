@@ -69,7 +69,7 @@ public class Task extends BaseEntity {
         task.userId = Objects.requireNonNull(ownerId, "ownerId must not be null");
         task.taskKey = Objects.requireNonNull(taskKey, "taskKey must not be null");
         task.title = normalizeTitle(title);
-        task.description = copyAndValidateDescription(description);
+        task.description = TaskDescriptionValidator.validateAndCopy(description);
         task.priority = priority;
         task.dueDate = dueDate;
         task.inbox = false;
@@ -81,7 +81,7 @@ public class Task extends BaseEntity {
     }
 
     public void updateDescription(Map<String, Object> description) {
-        this.description = copyAndValidateDescription(description);
+        this.description = TaskDescriptionValidator.validateAndCopy(description);
     }
 
     public void updatePriority(TaskPriority priority) {
@@ -142,18 +142,6 @@ public class Task extends BaseEntity {
             throw new InvalidTaskException("title", "title must be at most 255 characters");
         }
         return normalized;
-    }
-
-    private static Map<String, Object> copyAndValidateDescription(Map<String, Object> description) {
-        if (description == null) {
-            return null;
-        }
-        if (!"doc".equals(description.get("type"))
-                || !(description.get("content") instanceof List<?>)) {
-            throw new InvalidTaskException(
-                    "description", "description must be a document with an array content field");
-        }
-        return copyJsonMap(description);
     }
 
     @SuppressWarnings("unchecked")

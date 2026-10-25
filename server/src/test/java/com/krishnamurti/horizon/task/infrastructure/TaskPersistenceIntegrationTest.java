@@ -167,9 +167,59 @@ class TaskPersistenceIntegrationTest {
                         List.of(
                                 Map.of(
                                         "type",
+                                        "heading",
+                                        "attrs",
+                                        Map.of("level", 2),
+                                        "content",
+                                        List.of(Map.of("type", "text", "text", "Nested"))),
+                                Map.of(
+                                        "type",
                                         "paragraph",
                                         "content",
-                                        List.of(Map.of("text", "nested")))));
+                                        List.of(
+                                                Map.of(
+                                                        "type",
+                                                        "text",
+                                                        "text",
+                                                        "nested",
+                                                        "marks",
+                                                        List.of(Map.of("type", "bold"))))),
+                                Map.of(
+                                        "type",
+                                        "table",
+                                        "content",
+                                        List.of(
+                                                Map.of(
+                                                        "type",
+                                                        "tableRow",
+                                                        "content",
+                                                        List.of(
+                                                                Map.of(
+                                                                        "type",
+                                                                        "tableCell",
+                                                                        "attrs",
+                                                                        Map.of(
+                                                                                "colspan",
+                                                                                1,
+                                                                                "rowspan",
+                                                                                1,
+                                                                                "align",
+                                                                                "center",
+                                                                                "colwidth",
+                                                                                List.of(80)),
+                                                                        "content",
+                                                                        List.of(
+                                                                                Map.of(
+                                                                                        "type",
+                                                                                        "paragraph",
+                                                                                        "content",
+                                                                                        List.of(
+                                                                                                Map
+                                                                                                        .of(
+                                                                                                                "type",
+                                                                                                                "text",
+                                                                                                                "text",
+                                                                                                                "cell")))))))))));
         Task task =
                 Task.create(
                         userId,

@@ -163,8 +163,12 @@ describe('TaskWorkspace', () => {
 
     const title = await screen.findByRole('textbox', { name: 'Title' });
     fireEvent.change(title, { target: { value: 'Private same-user draft' } });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Description (optional)' }), {
-      target: { value: 'Keep this through session verification.' },
+    const description = screen.getByLabelText('Description (optional) editor');
+    fireEvent.paste(description, {
+      clipboardData: {
+        getData: (type: string) =>
+          type === 'text/plain' ? 'Keep this through session verification.' : '',
+      },
     });
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
@@ -190,7 +194,7 @@ describe('TaskWorkspace', () => {
     expect(await screen.findByRole('textbox', { name: 'Title' })).toHaveValue(
       'Private same-user draft'
     );
-    expect(screen.getByRole('textbox', { name: 'Description (optional)' })).toHaveValue(
+    expect(screen.getByLabelText('Description (optional) editor')).toHaveTextContent(
       'Keep this through session verification.'
     );
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
