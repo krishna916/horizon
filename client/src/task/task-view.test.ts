@@ -32,6 +32,7 @@ describe('classifyTasks', () => {
     expect(classifyTasks([active, inbox], new Date(2026, 9, 18, 12))).toEqual({
       active: [active, inbox],
       completed: [],
+      archived: [],
     });
   });
 
@@ -47,6 +48,7 @@ describe('classifyTasks', () => {
     expect(classifyTasks([today, yesterday, archivedToday], now)).toEqual({
       active: [],
       completed: [today],
+      archived: [],
     });
   });
 
@@ -92,7 +94,7 @@ describe('classifyTasks', () => {
 
     expect(
       classifyTasks([completed], new Date(2026, 9, 18, 12), new Set(), new Map([[1, false]]))
-    ).toEqual({ active: [completed], completed: [] });
+    ).toEqual({ active: [completed], completed: [], archived: [] });
   });
 
   it('optimisticCompleteUsesRetainedActiveWithoutFakePersistedTimestamp', () => {
@@ -100,7 +102,7 @@ describe('classifyTasks', () => {
 
     expect(
       classifyTasks([incomplete], new Date(2026, 9, 18, 12), new Set([1]), new Map([[1, true]]))
-    ).toEqual({ active: [incomplete], completed: [] });
+    ).toEqual({ active: [incomplete], completed: [], archived: [] });
     expect(incomplete.completedAt).toBeNull();
   });
 
@@ -109,7 +111,7 @@ describe('classifyTasks', () => {
 
     expect(
       classifyTasks([completed], new Date(2026, 9, 18, 12), new Set([1]), new Map([[1, true]]))
-    ).toEqual({ active: [completed], completed: [] });
+    ).toEqual({ active: [completed], completed: [], archived: [] });
   });
 
   it('archivedTaskCannotBeRetained', () => {
@@ -120,7 +122,7 @@ describe('classifyTasks', () => {
 
     expect(
       classifyTasks([archived], new Date(2026, 9, 18, 12), new Set([1]), new Map([[1, false]]))
-    ).toEqual({ active: [], completed: [] });
+    ).toEqual({ active: [], completed: [], archived: [] });
   });
 
   it('oldCompletionFollowsHistoricalVisibilityAfterReentry', () => {
@@ -129,7 +131,132 @@ describe('classifyTasks', () => {
     expect(classifyTasks([historical], new Date(2026, 9, 18, 12), new Set(), new Map())).toEqual({
       active: [],
       completed: [],
+      archived: [],
     });
+  });
+
+  it('historicalCompletionRequiresHistorySwitch', () => {
+    const historical = summary(1, { completedAt: '2026-10-16T09:00:00Z' });
+    const now = new Date(2026, 9, 18, 12);
+
+    expect(classifyTasks([historical], now).completed).toEqual([]);
+    expect(
+      classifyTasks([historical], now, new Set(), new Map(), {
+        showCompletedHistory: true,
+        showArchivedTasks: false,
+      }).completed
+    ).toEqual([historical]);
+  });
+
+  it('archivedWinsOverCompletionAndIgnoresRetention', () => {
+    const archivedCompleted = summary(1, {
+      completedAt: '2026-10-16T09:00:00Z',
+      archivedAt: '2026-10-17T10:00:00Z',
+    });
+    const sections = classifyTasks(
+      [archivedCompleted],
+      new Date(2026, 9, 18, 12),
+      new Set([1]),
+      new Map([[1, false]]),
+      { showCompletedHistory: true, showArchivedTasks: true }
+    );
+
+    expect(sections).toEqual({ active: [], completed: [], archived: [archivedCompleted] });
+  });
+
+  it('independentArchivedAndHistorySwitches', () => {
+    const historical = summary(1, { completedAt: '2026-10-16T09:00:00Z' });
+    const archived = summary(2, { archivedAt: '2026-10-17T10:00:00Z' });
+    const tasks = [historical, archived];
+    const now = new Date(2026, 9, 18, 12);
+
+    expect(
+      classifyTasks(tasks, now, new Set(), new Map(), {
+        showCompletedHistory: true,
+        showArchivedTasks: false,
+      })
+    ).toEqual({ active: [], completed: [historical], archived: [] });
+    expect(
+      classifyTasks(tasks, now, new Set(), new Map(), {
+        showCompletedHistory: false,
+        showArchivedTasks: true,
+      })
+    ).toEqual({ active: [], completed: [], archived: [archived] });
+  });
+
+  it('preservesInputOrderAcrossBuckets', () => {
+    const tasks = [
+      summary(1, { completedAt: '2026-10-16T09:00:00Z' }),
+      summary(2),
+      summary(3, { completedAt: '2026-10-18T09:00:00Z' }),
+      summary(4, { archivedAt: '2026-10-17T10:00:00Z' }),
+    ];
+    const original = [...tasks];
+    const sections = classifyTasks(tasks, new Date(2026, 9, 18, 12), new Set(), new Map(), {
+      showCompletedHistory: true,
+      showArchivedTasks: true,
+    });
+
+    expect(sections).toEqual({
+      active: [tasks[1]],
+      completed: [tasks[0], tasks[2]],
+      archived: [tasks[3]],
+    });
+    expect(tasks).toEqual(original);
+  });
+
+  it('optimisticReopenAndRetainedCompletionStillWork', () => {
+    const retained = summary(1, { completedAt: '2026-10-18T09:00:00Z' });
+    const reopened = summary(2, { completedAt: '2026-10-18T09:00:00Z' });
+    const sections = classifyTasks(
+      [retained, reopened],
+      new Date(2026, 9, 18, 12),
+      new Set([1]),
+      new Map([[2, false]])
+    );
+
+    expect(sections).toEqual({ active: [retained, reopened], completed: [], archived: [] });
+  });
+
+  it('kolkataMidnightOffsetBoundary', () => {
+    const originalTimeZone = process.env.TZ;
+    process.env.TZ = 'Asia/Kolkata';
+
+    try {
+      const justBeforeMidnight = summary(1, { completedAt: '2026-10-25T18:29:59Z' });
+      const justAfterMidnight = summary(2, { completedAt: '2026-10-25T18:30:01Z' });
+      const now = new Date('2026-10-25T18:30:01Z');
+
+      expect(
+        justAfterMidnight.completedAt && new Date(justAfterMidnight.completedAt).getDate()
+      ).toBe(26);
+      expect(classifyTasks([justBeforeMidnight, justAfterMidnight], now).completed).toEqual([
+        justAfterMidnight,
+      ]);
+      expect(
+        classifyTasks([justBeforeMidnight, justAfterMidnight], now, new Set(), new Map(), {
+          showCompletedHistory: true,
+          showArchivedTasks: false,
+        }).completed
+      ).toEqual([justBeforeMidnight, justAfterMidnight]);
+    } finally {
+      if (originalTimeZone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = originalTimeZone;
+      }
+    }
+  });
+
+  it('doesNotIncludeInvalidCompletionTimestampInHistory', () => {
+    const invalid = summary(1, { completedAt: 'not-a-timestamp' });
+
+    expect(
+      classifyTasks([invalid], new Date(2026, 9, 18, 12), new Set(), new Map(), {
+        showCompletedHistory: true,
+        showArchivedTasks: false,
+      })
+    ).toEqual({ active: [], completed: [], archived: [] });
   });
 });
 
