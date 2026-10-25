@@ -1,7 +1,7 @@
 # Issue #25 — Completed-history and Archived visibility design
 
 **Date:** 2026-10-25
-**Status:** Product behavior decisions confirmed with owner; consolidated design **awaiting owner sign-off** before Superpowers implementation planning.
+**Status:** Approved by owner on 2026-10-25; ready for implementation planning.
 **Issue:** https://github.com/krishna916/horizon/issues/25
 **Intended implementer:** Luna
 **Parent epic:** #2
@@ -92,4 +92,4 @@ A Luna implementation must demonstrate:
 
 ## 8. Planning and execution gate
 
-All previously raised product-behavior questions were answered by the owner by 2026-10-25. This consolidated spec is **awaiting explicit review approval**; do not produce an execution-ready Superpowers plan or start implementation until the owner approves this document. Once approved, write a small, TDD-oriented Luna plan under `docs/superpowers/plans/` with precise files, tests, commands and commit checkpoints, and link it from issue #25 for handoff. No implementation code belongs in the design-review stage.
+All previously raised product-behavior questions were answered by the owner by 2026-10-25. The owner approved this consolidated specification and explicitly authorized a Luna implementation plan. Execute the linked TDD-oriented Luna plan in the existing feature branch, then push and open a PR. No additional product or scope decisions may be introduced without owner approval.
