@@ -78,6 +78,10 @@ class TagSchemaIntegrationTest {
         assertSqlState("23514", () -> insertTag(ownerId, " Horizon"));
         assertSqlState("23514", () -> insertTag(ownerId, "Horizon "));
         assertSqlState("22001", () -> insertTag(ownerId, "x".repeat(101)));
+        String supplementaryName = "😀".repeat(101);
+        assertThat(supplementaryName.length()).isEqualTo(202);
+        assertThat(supplementaryName.codePointCount(0, supplementaryName.length())).isEqualTo(101);
+        assertSqlState("22001", () -> insertTag(ownerId, supplementaryName));
         assertSqlState("23503", () -> insertTag(-1L, "Horizon"));
     }
 
@@ -87,6 +91,7 @@ class TagSchemaIntegrationTest {
         CountDownLatch transactionsReady = new CountDownLatch(2);
         CountDownLatch startInserts = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
+        Throwable testFailure = null;
 
         try {
             Future<InsertResult> first =
@@ -114,9 +119,30 @@ class TagSchemaIntegrationTest {
                     .extracting(InsertResult::sqlState)
                     .isEqualTo("23505");
             assertThat(countTagsByOwnerAndLowerName(ownerId, "horizon")).isEqualTo(1L);
+        } catch (Exception | Error failure) {
+            testFailure = failure;
+            throw failure;
         } finally {
             startInserts.countDown();
             executor.shutdownNow();
+            try {
+                if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                    AssertionError terminationFailure =
+                            new AssertionError("Concurrent tag insert workers did not terminate.");
+                    if (testFailure == null) {
+                        throw terminationFailure;
+                    }
+                    testFailure.addSuppressed(terminationFailure);
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                if (testFailure == null) {
+                    throw new AssertionError(
+                            "Interrupted while waiting for concurrent tag insert workers.",
+                            exception);
+                }
+                testFailure.addSuppressed(exception);
+            }
         }
     }
 

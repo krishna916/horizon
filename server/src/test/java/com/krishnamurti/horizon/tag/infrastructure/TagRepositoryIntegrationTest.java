@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krishnamurti.horizon.HorizonApplication;
 import com.krishnamurti.horizon.TestcontainersConfiguration;
+import com.krishnamurti.horizon.tag.domain.InvalidTagException;
 import com.krishnamurti.horizon.tag.domain.Tag;
 import jakarta.persistence.EntityManager;
 import java.util.UUID;
@@ -39,6 +40,34 @@ class TagRepositoryIntegrationTest {
         assertThat(reloaded.getCreatedAt()).isNotNull();
         assertThat(reloaded.getUpdatedAt()).isNotNull();
         assertThat(countTags(saved.getId())).isEqualTo(1);
+    }
+
+    @Test
+    void persistsAndReloadsNameWith100SupplementaryCodePoints() {
+        Long ownerId = createUserId();
+        String name = "😀".repeat(100);
+        assertThat(name.length()).isEqualTo(200);
+        assertThat(name.codePointCount(0, name.length())).isEqualTo(100);
+
+        Tag saved = tagRepository.saveAndFlush(Tag.create(ownerId, name));
+        entityManager.clear();
+
+        Tag reloaded = tagRepository.findByIdAndUserId(saved.getId(), ownerId).orElseThrow();
+
+        assertThat(reloaded.getName()).isEqualTo(name);
+        assertThat(reloaded.getName().length()).isEqualTo(200);
+        assertThat(reloaded.getName().codePointCount(0, reloaded.getName().length()))
+                .isEqualTo(100);
+    }
+
+    @Test
+    void rejectsNameWith101SupplementaryCodePointsInTagAggregate() {
+        Long ownerId = createUserId();
+        String name = "😀".repeat(101);
+        assertThat(name.length()).isEqualTo(202);
+        assertThat(name.codePointCount(0, name.length())).isEqualTo(101);
+
+        assertThatThrownBy(() -> Tag.create(ownerId, name)).isInstanceOf(InvalidTagException.class);
     }
 
     @Test
