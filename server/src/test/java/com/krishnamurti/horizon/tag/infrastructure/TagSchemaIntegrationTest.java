@@ -6,13 +6,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.krishnamurti.horizon.HorizonApplication;
 import com.krishnamurti.horizon.TestcontainersConfiguration;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest(
         classes = HorizonApplication.class,
@@ -21,6 +29,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class TagSchemaIntegrationTest {
 
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private PlatformTransactionManager transactionManager;
 
     @Test
     void schemaHasRequiredColumnsAndIndex() {
@@ -72,6 +81,65 @@ class TagSchemaIntegrationTest {
         assertSqlState("23503", () -> insertTag(-1L, "Horizon"));
     }
 
+    @Test
+    void concurrentCaseVariantsCommitOneTag() throws Exception {
+        Long ownerId = createUserId();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<InsertResult> first =
+                    executor.submit(() -> insertAfterStart(ownerId, "Horizon", ready, start));
+            Future<InsertResult> second =
+                    executor.submit(() -> insertAfterStart(ownerId, "horizon", ready, start));
+
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            InsertResult firstResult = first.get(20, TimeUnit.SECONDS);
+            InsertResult secondResult = second.get(20, TimeUnit.SECONDS);
+
+            assertThat(List.of(firstResult, secondResult).stream().filter(InsertResult::committed))
+                    .hasSize(1);
+            assertThat(
+                            List.of(firstResult, secondResult).stream()
+                                    .filter(result -> !result.committed()))
+                    .singleElement()
+                    .extracting(InsertResult::sqlState)
+                    .isEqualTo("23505");
+            assertThat(countTagsByOwnerAndLowerName(ownerId, "horizon")).isEqualTo(1L);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private InsertResult insertAfterStart(
+            Long userId, String name, CountDownLatch ready, CountDownLatch start) {
+        ready.countDown();
+        try {
+            if (!start.await(10, TimeUnit.SECONDS)) {
+                throw new AssertionError("Concurrent tag insert start signal timed out.");
+            }
+            new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(status -> insertTag(userId, name));
+            return new InsertResult(true, null);
+        } catch (DataAccessException exception) {
+            return new InsertResult(false, sqlState(exception));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Concurrent tag insert was interrupted.", exception);
+        }
+    }
+
+    private Long countTagsByOwnerAndLowerName(Long userId, String lowerName) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM tag WHERE user_id = ? AND lower(name) = ?",
+                Long.class,
+                userId,
+                lowerName);
+    }
+
     private Long createUserId() {
         return jdbcTemplate.queryForObject(
                 "INSERT INTO users (email, password_hash, created_at, updated_at) VALUES (?,"
@@ -111,4 +179,6 @@ class TagSchemaIntegrationTest {
         }
         return null;
     }
+
+    private record InsertResult(boolean committed, String sqlState) {}
 }
