@@ -84,18 +84,24 @@ class TagSchemaIntegrationTest {
     @Test
     void concurrentCaseVariantsCommitOneTag() throws Exception {
         Long ownerId = createUserId();
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch transactionsReady = new CountDownLatch(2);
+        CountDownLatch startInserts = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {
             Future<InsertResult> first =
-                    executor.submit(() -> insertAfterStart(ownerId, "Horizon", ready, start));
+                    executor.submit(
+                            () ->
+                                    insertInTransaction(
+                                            ownerId, "Horizon", transactionsReady, startInserts));
             Future<InsertResult> second =
-                    executor.submit(() -> insertAfterStart(ownerId, "horizon", ready, start));
+                    executor.submit(
+                            () ->
+                                    insertInTransaction(
+                                            ownerId, "horizon", transactionsReady, startInserts));
 
-            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-            start.countDown();
+            assertThat(transactionsReady.await(10, TimeUnit.SECONDS)).isTrue();
+            startInserts.countDown();
             InsertResult firstResult = first.get(20, TimeUnit.SECONDS);
             InsertResult secondResult = second.get(20, TimeUnit.SECONDS);
 
@@ -109,23 +115,35 @@ class TagSchemaIntegrationTest {
                     .isEqualTo("23505");
             assertThat(countTagsByOwnerAndLowerName(ownerId, "horizon")).isEqualTo(1L);
         } finally {
-            start.countDown();
+            startInserts.countDown();
             executor.shutdownNow();
         }
     }
 
-    private InsertResult insertAfterStart(
-            Long userId, String name, CountDownLatch ready, CountDownLatch start) {
-        ready.countDown();
+    private InsertResult insertInTransaction(
+            Long userId,
+            String name,
+            CountDownLatch transactionsReady,
+            CountDownLatch startInserts) {
         try {
-            if (!start.await(10, TimeUnit.SECONDS)) {
-                throw new AssertionError("Concurrent tag insert start signal timed out.");
-            }
             new TransactionTemplate(transactionManager)
-                    .executeWithoutResult(status -> insertTag(userId, name));
+                    .executeWithoutResult(
+                            status -> {
+                                transactionsReady.countDown();
+                                awaitInsertStart(startInserts);
+                                insertTag(userId, name);
+                            });
             return new InsertResult(true, null);
         } catch (DataAccessException exception) {
             return new InsertResult(false, sqlState(exception));
+        }
+    }
+
+    private void awaitInsertStart(CountDownLatch startInserts) {
+        try {
+            if (!startInserts.await(10, TimeUnit.SECONDS)) {
+                throw new AssertionError("Concurrent tag insert start signal timed out.");
+            }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new AssertionError("Concurrent tag insert was interrupted.", exception);
