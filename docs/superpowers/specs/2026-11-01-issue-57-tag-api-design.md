@@ -73,7 +73,7 @@ Response has a dedicated `items` envelope following `TaskListResponse`. Missing 
 
 ## Source reconciliation and authoritative boundaries
 
-- [SPEC-002 Tags](../../ai/HORIZON_PRODUCT_CONTEXT.md) and SPEC-001 describe shared user-defined persistent Tags, no Tag lifecycle and automatic creation during content assignment. #56 approved the actual owner-scoped name model.
+- SPEC-002 Tags v1.0 and SPEC-001 Shared Concepts (product specifications supplied for this issue) describe shared user-defined persistent Tags, no Tag lifecycle and automatic creation during content assignment. [Product context](../../ai/HORIZON_PRODUCT_CONTEXT.md) summarizes those accepted rules; #56 approved the actual owner-scoped name model.
 - PRD-004's `Status` filtering describes derived **Task** states; it is no reason to add a Tag status enum. SPEC-001 content lifecycle fields apply to Task/Note, not Tag.
 - The Constitution and [architecture context](../../ai/HORIZON_ARCHITECTURE_CONTEXT.md) require modular monolith, owner-scoped repository queries, public `tag.api` only, and RFC 9457 errors.
 - [Engineering guide](../../ai/ENG-001%20Engineering%20Guidelines%20v1.0.md), [index](../../ai/INDEX.md), [repository guidelines](../../../Agents.md), and [server guidelines](../../../server/AGENTS.md) require thin HTTP adapters, command/query separation, Testcontainers, Maven verification, and current Java 25/Spring Boot 4.0.6/PostgreSQL 17 (older context documents mention Java 21; implementation controls).
