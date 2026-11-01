@@ -1,13 +1,13 @@
 package com.krishnamurti.horizon.tag.domain;
 
 /** Shared input normalization for Tag names and suggestion prefixes. */
-final class TagNamePolicy {
+public final class TagNamePolicy {
 
-    static final int MAX_NAME_CODE_POINTS = 100;
+    public static final int MAX_NAME_CODE_POINTS = 100;
 
     private TagNamePolicy() {}
 
-    static String normalizeRequiredName(String name) {
+    public static String normalizeRequiredName(String name) {
         String normalized = normalize(name);
         if (normalized.isEmpty()) {
             throw new InvalidTagException("name", "name must not be blank");
@@ -15,7 +15,7 @@ final class TagNamePolicy {
         return normalized;
     }
 
-    static String normalizeSuggestionPrefix(String prefix) {
+    public static String normalizeSuggestionPrefix(String prefix) {
         return normalize(prefix);
     }
 
