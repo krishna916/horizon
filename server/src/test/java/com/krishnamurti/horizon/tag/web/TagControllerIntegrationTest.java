@@ -111,18 +111,19 @@ class TagControllerIntegrationTest {
 
     @Test
     void exposesNoStandaloneTagCreationOrIdLookupRoute() throws Exception {
-        MvcResult createResult =
-                mockMvc.perform(
-                                post("/api/v1/tags")
-                                        .cookie(ownerCookie)
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .content("{\"name\":\"New\"}"))
-                        .andReturn();
-        assertThat(createResult.getResponse().getStatus()).isBetween(400, 599);
+        mockMvc.perform(
+                        post("/api/v1/tags")
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"name\":\"New\"}"))
+                .andExpect(status().is4xxClientError());
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT count(*) FROM tag WHERE user_id = ?", Long.class, ownerId))
+                .isZero();
 
-        MvcResult lookupResult =
-                mockMvc.perform(get("/api/v1/tags/1").cookie(ownerCookie)).andReturn();
-        assertThat(lookupResult.getResponse().getStatus()).isBetween(400, 599);
+        mockMvc.perform(get("/api/v1/tags/1").cookie(ownerCookie))
+                .andExpect(status().is4xxClientError());
     }
 
     private Cookie login(String email) throws Exception {

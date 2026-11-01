@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.krishnamurti.horizon.HorizonApplication;
 import com.krishnamurti.horizon.TestcontainersConfiguration;
 import com.krishnamurti.horizon.tag.api.InvalidTagNameException;
+import com.krishnamurti.horizon.tag.api.TagCommandApi;
+import com.krishnamurti.horizon.tag.api.TagQueryApi;
 import com.krishnamurti.horizon.tag.api.TagReference;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -32,6 +34,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 class TagCommandServiceIntegrationTest {
 
     @Autowired private TagCommandService tagCommandService;
+    @Autowired private TagCommandApi tagCommandApi;
+    @Autowired private TagQueryApi tagQueryApi;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private PlatformTransactionManager transactionManager;
 
@@ -46,6 +50,20 @@ class TagCommandServiceIntegrationTest {
         assertThat(tag.id()).isNotNull();
         assertThat(tag.name()).isEqualTo("Horizon");
         assertThat(countTags(userId, "horizon")).isEqualTo(1);
+    }
+
+    @Test
+    void resolvedTagIsSuggestedAfterCommitOnlyToItsOwner() {
+        Long ownerId = createUserId();
+        Long otherOwnerId = createUserId();
+
+        TagReference resolved =
+                inReadCommittedTransaction(
+                        () -> tagCommandApi.resolveByName(ownerId, "Workflow Tag"));
+
+        assertThat(tagQueryApi.suggest(ownerId, "work"))
+                .containsExactly(new TagReference(resolved.id(), "Workflow Tag"));
+        assertThat(tagQueryApi.suggest(otherOwnerId, "work")).isEmpty();
     }
 
     @Test
