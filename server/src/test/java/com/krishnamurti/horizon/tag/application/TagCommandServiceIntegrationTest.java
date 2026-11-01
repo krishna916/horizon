@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -135,6 +136,7 @@ class TagCommandServiceIntegrationTest {
         CountDownLatch firstResolved = new CountDownLatch(1);
         CountDownLatch releaseFirst = new CountDownLatch(1);
         CountDownLatch secondStarted = new CountDownLatch(1);
+        AtomicInteger secondBackendPid = new AtomicInteger();
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {
@@ -156,12 +158,19 @@ class TagCommandServiceIntegrationTest {
 
             Future<TagReference> second =
                     executor.submit(
-                            () -> {
-                                secondStarted.countDown();
-                                return inReadCommittedTransaction(
-                                        () -> tagCommandService.resolveByName(userId, "horizon"));
-                            });
+                            () ->
+                                    inReadCommittedTransaction(
+                                            () -> {
+                                                secondBackendPid.set(
+                                                        jdbcTemplate.queryForObject(
+                                                                "SELECT pg_backend_pid()",
+                                                                Integer.class));
+                                                secondStarted.countDown();
+                                                return tagCommandService.resolveByName(
+                                                        userId, "horizon");
+                                            }));
             assertThat(secondStarted.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(awaitSecondInsertWait(secondBackendPid.get())).isTrue();
             releaseFirst.countDown();
 
             TagReference firstResult = first.get(10, TimeUnit.SECONDS);
@@ -199,6 +208,28 @@ class TagCommandServiceIntegrationTest {
             Thread.currentThread().interrupt();
             throw new AssertionError("Concurrent Tag resolution was interrupted.", exception);
         }
+    }
+
+    private boolean awaitSecondInsertWait(int backendPid) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            Boolean waiting =
+                    jdbcTemplate.queryForObject(
+                            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                                    + "WHERE pid = ? AND wait_event_type = 'Lock' "
+                                    + "AND lower(query) LIKE 'insert into tag%')",
+                            Boolean.class, backendPid);
+            if (Boolean.TRUE.equals(waiting)) {
+                return true;
+            }
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("Concurrent Tag resolution was interrupted.", exception);
+            }
+        }
+        return false;
     }
 
     private Long createUserId() {
