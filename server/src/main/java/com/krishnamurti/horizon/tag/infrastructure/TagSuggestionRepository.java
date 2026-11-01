@@ -2,7 +2,7 @@ package com.krishnamurti.horizon.tag.infrastructure;
 
 import com.krishnamurti.horizon.tag.api.TagReference;
 import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.stereotype.Repository;
 
 /** Performs owner-filtered literal-prefix searches over persisted Tags. */
@@ -11,15 +11,15 @@ public class TagSuggestionRepository {
 
     private static final int MAX_SUGGESTIONS = 10;
 
-    private final JdbcTemplate jdbcTemplate;
+    private final JdbcOperations jdbcOperations;
 
-    public TagSuggestionRepository(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+    public TagSuggestionRepository(JdbcOperations jdbcOperations) {
+        this.jdbcOperations = jdbcOperations;
     }
 
     public List<TagReference> suggest(Long userId, String normalizedPrefix) {
         String pattern = escapeLikeMetacharacters(normalizedPrefix) + "%";
-        return jdbcTemplate.query(
+        return jdbcOperations.query(
                 "SELECT id, name FROM tag "
                         + "WHERE user_id = ? AND lower(name) LIKE lower(?) ESCAPE '!' "
                         + "ORDER BY lower(name) ASC, name ASC, id ASC LIMIT "
