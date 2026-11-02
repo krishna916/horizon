@@ -57,6 +57,7 @@ public class TaskController {
         var priority = taskRequestMapper.parsePriority(request.priority());
         var dueDate = taskRequestMapper.parseDueDate(request.dueDate());
         var checklist = taskRequestMapper.parseChecklist(request.checklist());
+        var tags = taskRequestMapper.parseTags(request.tags());
         var task =
                 requestKey == null
                         ? taskCommandService.create(
@@ -64,7 +65,8 @@ public class TaskController {
                                 request.description(),
                                 priority,
                                 dueDate,
-                                checklist)
+                                checklist,
+                                tags)
                         : idempotentTaskCreationService.create(
                                 requestKey,
                                 request.title(),

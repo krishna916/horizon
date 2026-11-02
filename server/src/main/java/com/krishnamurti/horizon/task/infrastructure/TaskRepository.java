@@ -23,5 +23,11 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     Optional<Task> lockOwnedForChecklistWrite(
             @Param("taskId") Long taskId, @Param("userId") Long userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            "select task from Task task where task.id = :taskId and task.userId = :userId"
+                    + " and task.deletedAt is null")
+    Optional<Task> lockOwnedForTagWrite(@Param("taskId") Long taskId, @Param("userId") Long userId);
+
     List<Task> findAllByUserIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(Long userId);
 }
