@@ -8,6 +8,7 @@ import com.krishnamurti.horizon.tag.domain.Tag;
 import com.krishnamurti.horizon.tag.domain.TagNamePolicy;
 import com.krishnamurti.horizon.tag.infrastructure.TagRepository;
 import com.krishnamurti.horizon.tag.infrastructure.TagSuggestionRepository;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,16 @@ public class TagQueryService implements TagQueryApi {
     @Override
     public Optional<TagReference> findById(Long userId, Long tagId) {
         return tagRepository.findByIdAndUserId(tagId, userId).map(TagQueryService::toReference);
+    }
+
+    @Override
+    public List<TagReference> findAllByIds(Long userId, Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return tagRepository.findAllByUserIdAndIdIn(userId, List.copyOf(ids)).stream()
+                .map(TagQueryService::toReference)
+                .toList();
     }
 
     @Override

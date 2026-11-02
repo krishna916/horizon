@@ -36,6 +36,26 @@ class TagQueryServiceIntegrationTest {
     }
 
     @Test
+    void batchIdLookupFiltersForeignTagsAndReturnsEmptyForEmptyInput() {
+        Long ownerId = createUserId();
+        Long otherOwnerId = createUserId();
+        Long horizonId = insertTag(ownerId, "Horizon");
+        Long backendId = insertTag(ownerId, "Backend");
+        Long privateId = insertTag(otherOwnerId, "Private");
+
+        assertThat(
+                        tagQueryService.findAllByIds(
+                                ownerId,
+                                java.util.List.of(horizonId, backendId, privateId, Long.MAX_VALUE)))
+                .containsExactlyInAnyOrder(
+                        new TagReference(horizonId, "Horizon"),
+                        new TagReference(backendId, "Backend"));
+        assertThat(tagQueryService.findAllByIds(ownerId, java.util.List.of())).isEmpty();
+        assertThat(tagQueryService.findAllByIds(otherOwnerId, java.util.List.of(horizonId)))
+                .isEmpty();
+    }
+
+    @Test
     void suggestionsAreOwnerScopedCaseInsensitiveLiteralPrefixAndIncludeUnusedTags() {
         Long ownerId = createUserId();
         Long otherOwnerId = createUserId();
