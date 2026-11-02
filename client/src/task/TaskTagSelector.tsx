@@ -13,7 +13,7 @@ interface TaskTagSelectorProps {
 }
 
 function normalizedName(name: string) {
-  return name.trim().toLocaleLowerCase();
+  return name.trim().toLowerCase();
 }
 
 export function TaskTagSelector({
@@ -27,6 +27,7 @@ export function TaskTagSelector({
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [resolvedTags, setResolvedTags] = useState<{ ownerId: number; tag: TaskTag }[]>([]);
   const prefix = query.trim();
   const suggestionsQuery = useQuery({
     queryKey: ['tags', 'suggestions', userId, prefix],
@@ -37,11 +38,14 @@ export function TaskTagSelector({
   });
   const tagsById = useMemo(() => {
     const tags = new Map<number, TaskTag>();
-    for (const tag of [...knownTags, ...(suggestionsQuery.data ?? [])]) {
+    const resolvedForOwner = resolvedTags
+      .filter((entry) => entry.ownerId === userId)
+      .map((entry) => entry.tag);
+    for (const tag of [...knownTags, ...resolvedForOwner, ...(suggestionsQuery.data ?? [])]) {
       tags.set(tag.id, tag);
     }
     return tags;
-  }, [knownTags, suggestionsQuery.data]);
+  }, [knownTags, resolvedTags, suggestionsQuery.data, userId]);
   const visibleSuggestions = (suggestionsQuery.data ?? []).filter(
     (tag) => !isDuplicate({ id: tag.id }, value, tagsById)
   );
@@ -59,6 +63,15 @@ export function TaskTagSelector({
   const select = (selection: TaskTagSelection) => {
     if (!isDuplicate(selection, value, tagsById)) {
       onChange([...value, selection]);
+      if ('id' in selection) {
+        const tag = tagsById.get(selection.id);
+        if (tag) {
+          setResolvedTags((current) => [
+            ...current.filter((entry) => entry.ownerId !== userId || entry.tag.id !== selection.id),
+            { ownerId: userId, tag },
+          ]);
+        }
+      }
     }
     setQuery('');
     setIsOpen(false);

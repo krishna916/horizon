@@ -2,10 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import { tagApi } from '@/tag/api';
 import { taskApi } from './api';
 import { TaskCompletionProvider } from './TaskCompletionProvider';
 import type { TaskDetail } from './types';
 import { TaskDetailView } from './TaskDetailView';
+
+vi.mock('@/tag/api', () => ({ tagApi: { suggest: vi.fn() } }));
 
 const task: TaskDetail = {
   id: 7,
@@ -27,6 +30,14 @@ const task: TaskDetail = {
   checklist: [],
 };
 
+const taggedTask: TaskDetail = {
+  ...task,
+  tags: [
+    { id: 1, name: 'Planning' },
+    { id: 2, name: 'Writing' },
+  ],
+};
+
 function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -41,6 +52,95 @@ function createWrapper() {
 }
 
 describe('TaskDetailView', () => {
+  it('shows all assigned tags in server order and a clear empty state', () => {
+    const { unmount } = render(<TaskDetailView task={taggedTask} userId={1} />, {
+      wrapper: createWrapper(),
+    });
+    expect(screen.getByText('Writing')).toBeInTheDocument();
+    expect(screen.getByText('Planning')).toBeInTheDocument();
+    unmount();
+
+    render(<TaskDetailView task={task} userId={1} />, { wrapper: createWrapper() });
+    expect(screen.getByText('No tags yet')).toBeInTheDocument();
+  });
+
+  it('saves one complete tag selection only after explicit Save', async () => {
+    const update = vi.spyOn(taskApi, 'update').mockResolvedValue({
+      data: { ...taggedTask, tags: [{ id: 4, name: 'Work' }] },
+    } as never);
+    vi.mocked(tagApi.suggest).mockResolvedValue({
+      data: { items: [{ id: 4, name: 'Work' }] },
+    } as never);
+    render(<TaskDetailView task={taggedTask} userId={1} />, { wrapper: createWrapper() });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tags' }));
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tag Planning' }));
+    const tagInput = screen.getByRole('combobox', { name: 'Add tags' });
+    fireEvent.change(tagInput, { target: { value: 'work' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'Work' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update).toHaveBeenCalledWith(7, { tags: [{ id: 2 }, { id: 4 }] });
+  });
+
+  it('discards tag edits without a request and keeps the original tags visible', () => {
+    const update = vi.spyOn(taskApi, 'update');
+    render(<TaskDetailView task={taggedTask} userId={1} />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tags' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tag Planning' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel tags' }));
+
+    expect(update).not.toHaveBeenCalled();
+    expect(screen.getByText('Planning')).toBeInTheDocument();
+    expect(screen.getByText('Writing')).toBeInTheDocument();
+  });
+
+  it('drops an unfinished tag draft when the task or owner changes', async () => {
+    const view = render(<TaskDetailView task={taggedTask} userId={1} />, {
+      wrapper: createWrapper(),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tags' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tag Planning' }));
+
+    view.rerender(<TaskDetailView task={{ ...taggedTask, id: 8 }} userId={1} />);
+    await waitFor(() =>
+      expect(screen.queryByRole('combobox', { name: 'Add tags' })).not.toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tags' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tag Planning' }));
+
+    view.rerender(<TaskDetailView task={{ ...taggedTask, id: 8 }} userId={2} />);
+    await waitFor(() =>
+      expect(screen.queryByRole('combobox', { name: 'Add tags' })).not.toBeInTheDocument()
+    );
+    expect(screen.getByText('Planning')).toBeInTheDocument();
+  });
+
+  it('retains an invalid tag draft after Save fails and blocks overlapping field editing', async () => {
+    const update = vi.spyOn(taskApi, 'update').mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 400, data: { errors: { tags: 'That tag is unavailable.' } } },
+    });
+    render(<TaskDetailView task={taggedTask} userId={1} />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit tags' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tag Planning' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save tags' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That tag is unavailable.');
+    expect(screen.getByRole('button', { name: 'Save tags' })).toBeEnabled();
+    expect(update).toHaveBeenCalledWith(7, { tags: [{ id: 2 }] });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel tags' }));
+
+    fireEvent.doubleClick(
+      screen.getByRole('button', { name: 'Task title: Review the release notes' })
+    );
+    expect(screen.getByRole('button', { name: 'Edit tags' })).toBeDisabled();
+    fireEvent.doubleClick(screen.getByText('Writing'));
+    expect(screen.queryByRole('combobox', { name: 'Add tags' })).not.toBeInTheDocument();
+  });
+
   it('keeps unsupported stored descriptions visible and prevents accidental editing', () => {
     const updateSpy = vi.spyOn(taskApi, 'update').mockResolvedValue({ data: task } as never);
     const view = render(
@@ -173,10 +273,10 @@ describe('TaskDetailView', () => {
       expect(screen.getByText('High')).toBeInTheDocument();
       expect(screen.getByText(/Oct 25/)).toBeInTheDocument();
       expect(screen.queryByRole('link')).not.toBeInTheDocument();
-      expect(screen.getAllByRole('button')).toHaveLength(4);
+      expect(screen.getAllByRole('button')).toHaveLength(5);
       expect(screen.getAllByRole('checkbox')).toHaveLength(1);
       expect(screen.getByRole('heading', { name: 'Checklist' })).toBeInTheDocument();
-      expect(screen.queryByText(/tags|attachments|activity/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/attachments|activity/i)).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -356,6 +456,9 @@ describe('TaskDetailView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reorder checklist' }));
     fireEvent.click(screen.getByRole('button', { name: 'Move Book a table up' }));
+    expect(screen.getByRole('button', { name: 'Edit tags' })).toBeDisabled();
+    fireEvent.doubleClick(screen.getByText('No tags yet'));
+    expect(screen.queryByRole('combobox', { name: 'Add tags' })).not.toBeInTheDocument();
     fireEvent.doubleClick(
       screen.getByRole('button', { name: 'Task title: Review the release notes' })
     );

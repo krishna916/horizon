@@ -61,6 +61,27 @@ function DescriptionGuardProbe() {
   );
 }
 
+const tagGuardTask: TaskDetail = {
+  ...descriptionTask,
+  id: 93,
+  key: 'TASK-93',
+  tags: [{ id: 31, name: 'Planning' }],
+};
+
+function TagGuardProbe() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <TaskCompletionProvider>
+        <TaskDetailView task={tagGuardTask} userId={1} />
+      </TaskCompletionProvider>
+      <button type="button" onClick={() => void navigate({ to: '/notes' })}>
+        Open notes
+      </button>
+    </>
+  );
+}
+
 function DescriptionGuardLayout() {
   return (
     <TaskDraftNavigationGuard>
@@ -214,7 +235,7 @@ function createTestRouter(initialEntry: string) {
   return router;
 }
 
-function createDescriptionRouter() {
+function createDescriptionRouter(component = DescriptionGuardProbe) {
   const rootRoute = createRootRoute({
     component: () => <Outlet />,
     errorComponent: ({ error }) => <pre>{error.message}</pre>,
@@ -227,7 +248,7 @@ function createDescriptionRouter() {
   const detailRoute = createRoute({
     getParentRoute: () => tasksRoute,
     path: '/',
-    component: DescriptionGuardProbe,
+    component,
   });
   const notesRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -339,6 +360,38 @@ describe('TasksRouteLayout', () => {
       }),
     });
     expect(await screen.findByText('Other workspace')).toBeInTheDocument();
+  });
+
+  it('registers tag edits with the existing navigation guard and saves before leaving', async () => {
+    const updateSpy = vi
+      .spyOn(taskApi, 'update')
+      .mockResolvedValue({ data: { ...tagGuardTask, tags: [] } } as never);
+    renderRouter(createDescriptionRouter(TagGuardProbe));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit tags' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tag Planning' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open notes' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      'Your task draft has unsaved changes.'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+    expect(updateSpy).toHaveBeenCalledWith(93, { tags: [] });
+    expect(await screen.findByText('Other workspace')).toBeInTheDocument();
+  });
+
+  it('discards a tag draft through the existing navigation guard without saving', async () => {
+    const updateSpy = vi.spyOn(taskApi, 'update');
+    renderRouter(createDescriptionRouter(TagGuardProbe));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit tags' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tag Planning' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open notes' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard and continue' }));
+
+    expect(await screen.findByText('Other workspace')).toBeInTheDocument();
+    expect(updateSpy).not.toHaveBeenCalled();
   });
 
   it.each(['/tasks', '/tasks?task=123'])('renders its nested index at %s', async (entry) => {
