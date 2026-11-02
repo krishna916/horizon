@@ -13,7 +13,8 @@ public record CreateTaskRequest(
         Map<String, Object> description,
         JsonNode priority,
         JsonNode dueDate,
-        List<InitialChecklistItemRequest> checklist) {
+        List<InitialChecklistItemRequest> checklist,
+        JsonNode tags) {
     public CreateTaskRequest {
         if (description != null) {
             description = Collections.unmodifiableMap(new LinkedHashMap<>(description));
