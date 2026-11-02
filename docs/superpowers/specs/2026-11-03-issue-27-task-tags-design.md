@@ -102,7 +102,7 @@ JDBC instead of an extra JPA join entity is an implementation choice for this si
 
 ## Source reconciliation and architectural constraints
 
-- [Constitution](../../../HORIZON_CONSTITUTION.md) where available, [architecture context](../../ai/HORIZON_ARCHITECTURE_CONTEXT.md), [product context](../../ai/HORIZON_PRODUCT_CONTEXT.md) and [documentation map](../../ai/INDEX.md): modular monolith; facts-over-states; owner-scoped authorization; public module APIs; thin resource controllers, RFC 9457 errors.
+- HORIZON_CONSTITUTION (the supplied project-source document; not stored in this code repository), [architecture context](../../ai/HORIZON_ARCHITECTURE_CONTEXT.md), [product context](../../ai/HORIZON_PRODUCT_CONTEXT.md) and [documentation map](../../ai/INDEX.md): modular monolith; facts-over-states; owner-scoped authorization; public module APIs; thin resource controllers, RFC 9457 errors.
 - **SPEC-002 Tags v1.0**: reusable user-owned Tags, create on assignment, case-insensitive reuse, independent persistence, no administration workspace.
 - **SPEC-001 Shared Concepts**: Inbox independent of Tags and lifecycle; leaving Inbox is one-way explicit review.
 - **PRD-004 Tasks**: optional multiple tags in creation/editing/list/details, Active/Completed/Archived derived from Task facts. Its status/tag filters are outside this issue and gated by #29.
