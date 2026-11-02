@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.task.application;
 import com.krishnamurti.horizon.tag.api.TagQueryApi;
 import com.krishnamurti.horizon.tag.api.TagReference;
 import com.krishnamurti.horizon.task.infrastructure.TaskTagAssociationRepository;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -27,6 +28,12 @@ public class TaskTagQueryService {
     private final TaskTagAssociationRepository associationRepository;
     private final TagQueryApi tagQueryApi;
 
+    // SpotBugs reports a false positive for retaining these Spring-managed constructor
+    // dependencies.
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification =
+                    "The injected collaborators are private final Spring-managed dependencies.")
     public TaskTagQueryService(
             TaskTagAssociationRepository associationRepository, TagQueryApi tagQueryApi) {
         this.associationRepository = associationRepository;

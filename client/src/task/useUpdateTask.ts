@@ -48,6 +48,7 @@ export function useUpdateTask(userId: number) {
         if ('priority' in variables.patch) updated.priority = task.priority;
         if ('dueDate' in variables.patch) updated.dueDate = task.dueDate;
         if ('description' in variables.patch) updated.description = task.description;
+        if ('tags' in variables.patch) updated.tags = task.tags;
         updated.updatedAt = task.updatedAt;
         return updated;
       });
@@ -60,6 +61,7 @@ export function useUpdateTask(userId: number) {
                 if ('title' in variables.patch) updated.title = task.title;
                 if ('priority' in variables.patch) updated.priority = task.priority;
                 if ('dueDate' in variables.patch) updated.dueDate = task.dueDate;
+                if ('tags' in variables.patch) updated.tags = task.tags;
                 updated.updatedAt = task.updatedAt;
                 return updated;
               }),

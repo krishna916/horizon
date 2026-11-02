@@ -88,6 +88,56 @@ beforeEach(() => {
 });
 
 describe('TaskRow', () => {
+  it('shows up to two tag chips and a count for the remaining tags without changing row opening', () => {
+    const onOpen = vi.fn();
+    renderTaskRow(
+      {
+        tags: [
+          { id: 1, name: 'Backend' },
+          { id: 2, name: 'Planning' },
+          { id: 3, name: 'Research' },
+          { id: 4, name: 'Urgent' },
+          { id: 5, name: 'Writing' },
+        ],
+      },
+      { onOpen }
+    );
+
+    const opener = screen.getByRole('button', { name: 'Open TASK-7: Review the release notes' });
+    expect(within(opener).getByText('Backend')).toBeInTheDocument();
+    expect(within(opener).getByText('Planning')).toBeInTheDocument();
+    expect(within(opener).getByText('+3')).toBeInTheDocument();
+    expect(within(opener).queryByText('Research')).not.toBeInTheDocument();
+    expect(within(opener).queryByRole('button')).not.toBeInTheDocument();
+
+    fireEvent.click(opener);
+    expect(onOpen).toHaveBeenCalledWith(7);
+  });
+
+  it('shows one tag without a remaining count', () => {
+    renderTaskRow({ tags: [{ id: 1, name: 'Backend' }] });
+    expect(screen.getByText('Backend')).toBeInTheDocument();
+    expect(screen.queryByText(/^\+\d+$/)).not.toBeInTheDocument();
+  });
+
+  it('shows both tags when there are exactly two', () => {
+    renderTaskRow({
+      tags: [
+        { id: 1, name: 'Backend' },
+        { id: 2, name: 'Planning' },
+      ],
+    });
+    expect(screen.getByText('Backend')).toBeInTheDocument();
+    expect(screen.getByText('Planning')).toBeInTheDocument();
+    expect(screen.queryByText(/^\+\d+$/)).not.toBeInTheDocument();
+  });
+
+  it('omits tag chips when there are no tags', () => {
+    renderTaskRow();
+    expect(screen.queryByText('Backend')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^\+\d+$/)).not.toBeInTheDocument();
+  });
+
   it('opens row actions independently from the row opener and completion control', () => {
     const onOpen = vi.fn();
     const onCompletionIntent = vi.fn();

@@ -9,6 +9,7 @@ import com.krishnamurti.horizon.task.domain.TaskPriority;
 import com.krishnamurti.horizon.task.infrastructure.ChecklistItemRepository;
 import com.krishnamurti.horizon.task.infrastructure.TaskKeyAllocator;
 import com.krishnamurti.horizon.task.infrastructure.TaskRepository;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -28,6 +29,12 @@ public class TaskCommandService implements TaskRecoveryApi {
     private final TaskTagAssignmentService taskTagAssignmentService;
     private final CurrentUserProvider currentUserProvider;
 
+    // SpotBugs reports a false positive for retaining these Spring-managed constructor
+    // dependencies.
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification =
+                    "The injected collaborators are private final Spring-managed dependencies.")
     public TaskCommandService(
             TaskRepository taskRepository,
             TaskKeyAllocator taskKeyAllocator,

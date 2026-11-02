@@ -153,6 +153,63 @@ describe('useUpdateTask', () => {
     expect(queryClient.getQueryState(otherListKey)?.isInvalidated).toBe(false);
   });
 
+  it('reconciles a tag patch from the server into the matching detail and list caches', async () => {
+    const serverTags = [
+      { id: 11, name: 'Backend' },
+      { id: 12, name: 'Planning' },
+    ];
+    const updated = detail({ tags: serverTags, updatedAt: '2026-10-24T12:00:00Z' });
+    vi.spyOn(apiClient, 'patch').mockResolvedValue({ data: updated } as never);
+    const { Wrapper, queryClient } = createWrapper();
+    queryClient.setQueryData(
+      ['tasks', 1, 'detail', 7],
+      detail({ tags: [{ id: 10, name: 'Old' }] })
+    );
+    queryClient.setQueryData<TaskListResponse>(['tasks', 1], {
+      items: [summary({ tags: [{ id: 10, name: 'Old' }] })],
+    });
+
+    const { result } = renderHook(() => useUpdateTask(1), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.updateTask(7, { tags: [{ id: 11 }, { id: 12 }] });
+    });
+
+    expect(queryClient.getQueryData<TaskDetail>(['tasks', 1, 'detail', 7])?.tags).toEqual(
+      serverTags
+    );
+    expect(queryClient.getQueryData<TaskDetail>(['tasks', 1, 'detail', 7])?.updatedAt).toBe(
+      updated.updatedAt
+    );
+    expect(queryClient.getQueryData<TaskListResponse>(['tasks', 1])?.items[0]?.tags).toEqual(
+      serverTags
+    );
+    expect(queryClient.getQueryData<TaskListResponse>(['tasks', 1])?.items[0]?.updatedAt).toBe(
+      updated.updatedAt
+    );
+  });
+
+  it('preserves cached tags when a different task field is patched', async () => {
+    vi.spyOn(apiClient, 'patch').mockResolvedValue({ data: detail({ tags: [] }) } as never);
+    const { Wrapper, queryClient } = createWrapper();
+    const cachedTags = [{ id: 11, name: 'Backend' }];
+    queryClient.setQueryData(['tasks', 1, 'detail', 7], detail({ tags: cachedTags }));
+    queryClient.setQueryData<TaskListResponse>(['tasks', 1], {
+      items: [summary({ tags: cachedTags })],
+    });
+
+    const { result } = renderHook(() => useUpdateTask(1), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.updateTask(7, { title: 'Renamed' });
+    });
+
+    expect(queryClient.getQueryData<TaskDetail>(['tasks', 1, 'detail', 7])?.tags).toEqual(
+      cachedTags
+    );
+    expect(queryClient.getQueryData<TaskListResponse>(['tasks', 1])?.items[0]?.tags).toEqual(
+      cachedTags
+    );
+  });
+
   it('leaves an absent list entry absent while updating the detail cache', async () => {
     const updated = detail();
     vi.spyOn(apiClient, 'patch').mockResolvedValue({ data: updated } as never);

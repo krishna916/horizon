@@ -66,6 +66,15 @@ export function TaskRow({
             </p>
             <div className="mt-1.5 flex min-h-5 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <span>{task.key}</span>
+              {task.tags.slice(0, 2).map((tag) => (
+                <span
+                  key={tag.id}
+                  className="rounded px-1.5 py-0.5 font-medium bg-muted text-muted-foreground"
+                >
+                  {tag.name}
+                </span>
+              ))}
+              {task.tags.length > 2 && <span>+{task.tags.length - 2}</span>}
               {task.priority && (
                 <span
                   className={
