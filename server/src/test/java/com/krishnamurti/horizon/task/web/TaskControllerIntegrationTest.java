@@ -959,6 +959,8 @@ class TaskControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].title").value("List item"))
+                .andExpect(jsonPath("$.items[0].tags").isArray())
+                .andExpect(jsonPath("$.items[0].tags").isEmpty())
                 .andExpect(jsonPath("$.items[0].description").doesNotExist())
                 .andExpect(
                         org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
@@ -1332,15 +1334,63 @@ class TaskControllerIntegrationTest {
                                         "{\"title\":\"Create with tags\",\"tags\":[{\"id\":"
                                                 + existingTagId
                                                 + "},{\"name\":\"Architecture\"},{\"name\":\"architecture\"}]}"))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tags.length()").value(2));
 
         Long taskId = taskIdForTitle("Create with tags");
         assertThat(taskTagIds(taskId)).hasSize(2).contains(existingTagId);
+        mockMvc.perform(get("/api/v1/tasks/{id}", taskId).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags.length()").value(2))
+                .andExpect(jsonPath("$.tags[0].name").value("Architecture"))
+                .andExpect(jsonPath("$.tags[1].name").value("Backend"));
+        mockMvc.perform(get("/api/v1/tasks").cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].tags.length()").value(2))
+                .andExpect(jsonPath("$.items[0].tags[0].name").value("Architecture"));
         assertThat(tagExists(ownerId, "Architecture")).isTrue();
         assertThat(
                         jdbcTemplate.queryForObject(
                                 "SELECT inbox FROM task WHERE id = ?", Boolean.class, taskId))
                 .isFalse();
+    }
+
+    @Test
+    void idempotentCreateIncludesTagSetInFingerprintAndResponse() throws Exception {
+        String key = UUID.randomUUID().toString();
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Idempotent"
+                                            + " tags\",\"tags\":[{\"name\":\"First\"},{\"name\":\"Second\"}]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tags.length()").value(2));
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Idempotent"
+                                            + " tags\",\"tags\":[{\"name\":\"Second\"},{\"name\":\"First\"},{\"name\":\"First\"}]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tags.length()").value(2));
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Idempotent"
+                                                + " tags\",\"tags\":[{\"name\":\"Changed\"}]}"))
+                .andExpect(status().isConflict());
+        assertThat(taskIdCountForTitle("Idempotent tags")).isEqualTo(1);
     }
 
     @Test

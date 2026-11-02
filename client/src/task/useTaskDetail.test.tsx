@@ -20,6 +20,7 @@ const task = (id: number, title: string): TaskDetail => ({
   archivedAt: null,
   createdAt: '2026-10-18T10:00:00Z',
   updatedAt: '2026-10-18T10:00:00Z',
+  tags: [],
   description: null,
   deletedAt: null,
   checklist: [],

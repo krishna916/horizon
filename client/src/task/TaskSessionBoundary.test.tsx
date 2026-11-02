@@ -24,6 +24,7 @@ const task = (id: number, title: string): TaskSummary => ({
   archivedAt: null,
   createdAt: '2026-10-18T10:00:00Z',
   updatedAt: '2026-10-18T10:00:00Z',
+  tags: [],
 });
 
 const taskDetail = (id: number, title: string): TaskDetail => ({

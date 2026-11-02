@@ -23,6 +23,7 @@ const detail = (changes: Partial<TaskDetail> = {}): TaskDetail => ({
   deletedAt: null,
   checklist: [],
   ...changes,
+  tags: changes.tags ?? [],
 });
 
 const summary = (changes: Partial<TaskSummary> = {}): TaskSummary => {

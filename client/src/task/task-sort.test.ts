@@ -15,6 +15,7 @@ const task = (id: number, changes: Partial<TaskSummary> = {}): TaskSummary => ({
   createdAt: '2026-10-20T10:00:00Z',
   updatedAt: '2026-10-20T10:00:00Z',
   ...changes,
+  tags: changes.tags ?? [],
 });
 
 const ids = (tasks: TaskSummary[]) => tasks.map(({ id }) => id);

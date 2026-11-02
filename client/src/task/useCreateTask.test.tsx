@@ -20,6 +20,7 @@ const detail = (id: number): TaskDetail => ({
   archivedAt: null,
   createdAt: '2026-10-20T10:00:00Z',
   updatedAt: '2026-10-20T10:00:00Z',
+  tags: [],
   description: null,
   deletedAt: null,
   checklist: [],
@@ -36,6 +37,7 @@ const summary = (id: number): TaskSummary => ({
   archivedAt: null,
   createdAt: '2026-10-20T10:00:00Z',
   updatedAt: '2026-10-20T10:00:00Z',
+  tags: [],
 });
 
 function createWrapper() {

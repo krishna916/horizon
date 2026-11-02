@@ -34,6 +34,7 @@ const lifecycleTask: TaskSummary = {
   archivedAt: null,
   createdAt: '2026-10-24T10:00:00Z',
   updatedAt: '2026-10-24T10:00:00Z',
+  tags: [],
 };
 const retryTask: TaskSummary = { ...lifecycleTask, id: 92, key: 'TASK-92' };
 const descriptionTask: TaskDetail = {

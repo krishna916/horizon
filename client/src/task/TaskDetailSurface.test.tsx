@@ -27,6 +27,7 @@ const detail = (id: number, title: string): TaskDetail => ({
   archivedAt: null,
   createdAt: '2026-10-18T10:00:00Z',
   updatedAt: '2026-10-18T10:00:00Z',
+  tags: [],
   description: {
     type: 'doc',
     content: [{ type: 'paragraph', content: [{ type: 'text', text: `${title} description` }] }],

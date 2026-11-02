@@ -14,6 +14,7 @@ const summary = (id: number, changes: Partial<TaskSummary> = {}): TaskSummary =>
   createdAt: '2026-10-18T10:00:00Z',
   updatedAt: '2026-10-18T10:00:00Z',
   ...changes,
+  tags: changes.tags ?? [],
 });
 
 function withLocalOffset(date: Date) {
