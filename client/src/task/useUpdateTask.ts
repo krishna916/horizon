@@ -40,6 +40,12 @@ export function useUpdateTask(userId: number) {
         return;
       }
 
+      if (variables.patch.tags?.some((tag) => 'name' in tag)) {
+        void queryClient.invalidateQueries({
+          queryKey: ['tags', 'suggestions', variables.ownerId],
+        });
+      }
+
       const detailKey = ['tasks', variables.ownerId, 'detail', task.id] as const;
       const listKey = ['tasks', variables.ownerId] as const;
       queryClient.setQueryData<TaskDetail>(detailKey, (current) => {
