@@ -68,14 +68,16 @@ export function TaskTagSelector({
     return tags;
   }, [knownTags, resolvedTags, suggestionsQuery.data, userId]);
   const displaySelections = value
-    .map((selection, index) => ({
-      selection,
-      index,
-      name:
-        'name' in selection
-          ? selection.name
-          : (tagsById.get(selection.id)?.name ?? `Tag #${selection.id}`),
-    }))
+    .map((selection, index) => {
+      let name: string;
+      if ('name' in selection) {
+        name = selection.name;
+      } else {
+        name = tagsById.get(selection.id)?.name ?? `Tag #${selection.id}`;
+      }
+
+      return { selection, index, name };
+    })
     .sort((left, right) => {
       const byNormalizedName = left.name.toLowerCase().localeCompare(right.name.toLowerCase());
       if (byNormalizedName !== 0) return byNormalizedName;
