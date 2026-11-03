@@ -49,14 +49,18 @@ export function useTaskTagsEdit(task: TaskDetail, userId: number): TaskTagsEditS
   const [error, setError] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const identityRef = useRef({ taskId: task.id, userId });
+  const generationRef = useRef(0);
   const { updateTask } = useUpdateTask(userId);
   const dirty = editing && !sameSelectionSet(draft, taskSelections(task));
 
   useEffect(() => {
     if (identityRef.current.taskId !== task.id || identityRef.current.userId !== userId) {
       identityRef.current = { taskId: task.id, userId };
+      generationRef.current += 1;
+      pendingRef.current = false;
       setEditing(false);
       setDraft(taskSelections(task));
+      setPending(false);
       setError(null);
     }
   }, [task, task.id, userId]);
@@ -83,20 +87,24 @@ export function useTaskTagsEdit(task: TaskDetail, userId: number): TaskTagsEditS
     }
 
     const identity = { taskId: task.id, userId };
+    const generation = generationRef.current;
     pendingRef.current = true;
     setPending(true);
     setError(null);
     try {
       await updateTask(task.id, { tags: draft });
       if (
-        identityRef.current.taskId === identity.taskId &&
-        identityRef.current.userId === identity.userId
+        generationRef.current !== generation ||
+        identityRef.current.taskId !== identity.taskId ||
+        identityRef.current.userId !== identity.userId
       ) {
-        setEditing(false);
+        return false;
       }
+      setEditing(false);
       return true;
     } catch (saveError) {
       if (
+        generationRef.current === generation &&
         identityRef.current.taskId === identity.taskId &&
         identityRef.current.userId === identity.userId
       ) {
@@ -106,8 +114,14 @@ export function useTaskTagsEdit(task: TaskDetail, userId: number): TaskTagsEditS
       }
       return false;
     } finally {
-      pendingRef.current = false;
-      setPending(false);
+      if (
+        generationRef.current === generation &&
+        identityRef.current.taskId === identity.taskId &&
+        identityRef.current.userId === identity.userId
+      ) {
+        pendingRef.current = false;
+        setPending(false);
+      }
     }
   }
 
