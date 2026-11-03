@@ -164,17 +164,20 @@ export function TaskTagSelector({
   };
 
   return (
-      <div
-        ref={selectorRef}
-        className="space-y-2"
-        onBlur={(event) => {
-          if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
-            return;
-          }
-          setIsOpen(false);
-          setActiveIndex(-1);
-        }}
-      >
+    <div
+      ref={selectorRef}
+      className="space-y-2"
+      onBlur={(event) => {
+        if (
+          event.relatedTarget instanceof Node &&
+          event.currentTarget.contains(event.relatedTarget)
+        ) {
+          return;
+        }
+        setIsOpen(false);
+        setActiveIndex(-1);
+      }}
+    >
       <label htmlFor={`${id}-input`} className="text-sm font-medium text-foreground">
         Tags
       </label>
@@ -230,61 +233,50 @@ export function TaskTagSelector({
 
       {isSuggestionsOpen && (
         <div className="overflow-hidden rounded-md border border-border bg-background text-sm shadow-sm">
-          <ul id={listboxId} role="listbox" aria-label="Tag suggestions">
-            {suggestionsQuery.isLoading && (
-              <li role="presentation">
-                <p role="status" className="px-3 py-2 text-muted-foreground">
-                  Loading tags…
-                </p>
-              </li>
-            )}
-            {suggestionsQuery.isError && (
-              <li role="presentation">
-                <p role="alert" className="px-3 py-2 text-destructive">
-                  Could not load tags. Try again.
-                </p>
-              </li>
-            )}
-            {!suggestionsQuery.isLoading &&
-              !suggestionsQuery.isError &&
-              visibleSuggestions.length === 0 && (
-                <li role="presentation">
-                  <p className="px-3 py-2 text-muted-foreground">No matching tags</p>
-                </li>
-              )}
+          <div id={listboxId} role="listbox" aria-label="Tag suggestions">
             {visibleSuggestions.map((tag, index) => (
-              <li key={tag.id} role="presentation">
-                <button
-                  id={`${id}-option-${index}`}
-                  type="button"
-                  role="option"
-                  tabIndex={-1}
-                  aria-selected={activeOptionIndex === index}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => select({ id: tag.id })}
-                  className="w-full px-3 py-2 text-left text-foreground hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
-                >
-                  {tag.name}
-                </button>
-              </li>
+              <button
+                key={tag.id}
+                id={`${id}-option-${index}`}
+                type="button"
+                role="option"
+                tabIndex={-1}
+                aria-selected={activeOptionIndex === index}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => select({ id: tag.id })}
+                className="w-full px-3 py-2 text-left text-foreground hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
+              >
+                {tag.name}
+              </button>
             ))}
             {showCreate && (
-              <li role="presentation">
-                <button
-                  id={`${id}-option-${visibleSuggestions.length}`}
-                  type="button"
-                  role="option"
-                  tabIndex={-1}
-                  aria-selected={activeOptionIndex === visibleSuggestions.length}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => select({ name: createName })}
-                  className="w-full border-t border-border px-3 py-2 text-left font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
-                >
-                  Create tag “{createName}”
-                </button>
-              </li>
+              <button
+                id={`${id}-option-${visibleSuggestions.length}`}
+                type="button"
+                role="option"
+                tabIndex={-1}
+                aria-selected={activeOptionIndex === visibleSuggestions.length}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => select({ name: createName })}
+                className="w-full border-t border-border px-3 py-2 text-left font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
+              >
+                Create tag “{createName}”
+              </button>
             )}
-          </ul>
+          </div>
+          {suggestionsQuery.isLoading && (
+            <output className="block px-3 py-2 text-muted-foreground">Loading tags…</output>
+          )}
+          {suggestionsQuery.isError && (
+            <p role="alert" className="px-3 py-2 text-destructive">
+              Could not load tags. Try again.
+            </p>
+          )}
+          {!suggestionsQuery.isLoading &&
+            !suggestionsQuery.isError &&
+            visibleSuggestions.length === 0 && (
+              <output className="block px-3 py-2 text-muted-foreground">No matching tags</output>
+            )}
         </div>
       )}
     </div>

@@ -43,32 +43,30 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
   const clearDraft = draftGuard?.clear;
   const saveRef = useRef<() => Promise<boolean>>(edit.save);
   const cancelRef = useRef<() => void>(edit.cancel);
+  let activeSave = edit.save;
+  let activeCancel = edit.cancel;
+  let activeDirty = edit.dirty;
+  let activePending = edit.pending;
+  if (descriptionEdit.editing) {
+    activeSave = descriptionEdit.save;
+    activeCancel = descriptionEdit.cancel;
+    activeDirty = descriptionEdit.dirty;
+    activePending = descriptionEdit.pending;
+  }
+  if (tagsEdit.editing) {
+    activeSave = tagsEdit.save;
+    activeCancel = tagsEdit.cancel;
+    activeDirty = tagsEdit.dirty;
+    activePending = tagsEdit.pending;
+  }
   useEffect(() => {
-    saveRef.current = tagsEdit.editing
-      ? tagsEdit.save
-      : descriptionEdit.editing
-        ? descriptionEdit.save
-        : edit.save;
-    cancelRef.current = tagsEdit.editing
-      ? tagsEdit.cancel
-      : descriptionEdit.editing
-        ? descriptionEdit.cancel
-        : edit.cancel;
+    saveRef.current = activeSave;
+    cancelRef.current = activeCancel;
   });
   let fieldId: string | null = null;
   if (edit.activeField) fieldId = `field:${userId}:${task.id}:${edit.activeField}`;
   else if (descriptionEdit.editing) fieldId = `field:${userId}:${task.id}:description`;
   else if (tagsEdit.editing) fieldId = `field:${userId}:${task.id}:tags`;
-  const activeDirty = tagsEdit.editing
-    ? tagsEdit.dirty
-    : descriptionEdit.editing
-      ? descriptionEdit.dirty
-      : edit.dirty;
-  const activePending = tagsEdit.editing
-    ? tagsEdit.pending
-    : descriptionEdit.editing
-      ? descriptionEdit.pending
-      : edit.pending;
   useEffect(() => {
     if (!fieldId) return;
     registerDraft?.({

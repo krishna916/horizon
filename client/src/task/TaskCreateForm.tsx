@@ -167,9 +167,9 @@ export function TaskCreateForm({
 
   const reportFailure = (error: unknown, snapshot: TaskCreateRecovery) => {
     const errors = fieldErrors(error);
-    const recognizedFields = ['title', 'description', 'priority', 'dueDate', 'tags'];
+    const recognizedFields = new Set(['title', 'description', 'priority', 'dueDate', 'tags']);
     for (const [field, message] of Object.entries(errors)) {
-      if (recognizedFields.includes(field)) {
+      if (recognizedFields.has(field)) {
         if (field === 'tags') {
           setFormError(message);
         } else {
@@ -177,7 +177,7 @@ export function TaskCreateForm({
         }
       }
     }
-    if (Object.keys(errors).some((field) => recognizedFields.includes(field))) {
+    if (Object.keys(errors).some((field) => recognizedFields.has(field))) {
       setRecovery(null);
       if (!errors.tags) setFormError(null);
       return;
