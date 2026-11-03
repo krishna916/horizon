@@ -40,7 +40,7 @@ export function useUpdateTask(userId: number) {
         return;
       }
 
-      if (variables.patch.tags?.some((tag) => 'name' in tag)) {
+      if ('tags' in variables.patch && variables.patch.tags.some((tag) => 'name' in tag)) {
         void queryClient.invalidateQueries({
           queryKey: ['tags', 'suggestions', variables.ownerId],
         });
