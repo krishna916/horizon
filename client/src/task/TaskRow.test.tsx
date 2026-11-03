@@ -109,9 +109,34 @@ describe('TaskRow', () => {
     expect(within(opener).getByText('+3')).toBeInTheDocument();
     expect(within(opener).queryByText('Research')).not.toBeInTheDocument();
     expect(within(opener).queryByRole('button')).not.toBeInTheDocument();
+    expect(opener).toHaveAccessibleDescription(
+      'Tags: Backend, Planning, Research, Urgent, Writing. 3 more tags.'
+    );
 
     fireEvent.click(opener);
     expect(onOpen).toHaveBeenCalledWith(7);
+  });
+
+  it('renders task metadata in the approved key, due date, priority, tags order', () => {
+    renderTaskRow({
+      tags: [
+        { id: 1, name: 'Architecture' },
+        { id: 2, name: 'Backend' },
+        { id: 3, name: 'Planning' },
+      ],
+    });
+
+    const opener = screen.getByRole('button', { name: 'Open TASK-7: Review the release notes' });
+    const metadata = within(opener).getByText('TASK-7').parentElement;
+    expect(metadata).not.toBeNull();
+    expect(Array.from(metadata!.children).map((child) => child.textContent?.trim())).toEqual([
+      'TASK-7',
+      'Oct 24',
+      'High',
+      'Architecture',
+      'Backend',
+      '+1',
+    ]);
   });
 
   it('shows one tag without a remaining count', () => {
@@ -188,9 +213,11 @@ describe('TaskRow', () => {
     const dueDate = within(opener).getByText('Oct 24');
 
     expect(title).toBeInTheDocument();
-    expect(key.compareDocumentPosition(priority) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
-      priority.compareDocumentPosition(dueDate) & Node.DOCUMENT_POSITION_FOLLOWING
+      key.compareDocumentPosition(dueDate) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      dueDate.compareDocumentPosition(priority) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(container.querySelectorAll('li')).toHaveLength(1);
     expect(row.querySelector('svg')).toBeInTheDocument();
