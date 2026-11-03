@@ -76,7 +76,9 @@ describe('useTaskTagsEdit', () => {
     expect(result.current.draft).toEqual([{ id: 22 }]);
 
     await act(async () => {
-      pending[0]!.resolve({ data: task(7, [{ id: 21, name: 'Architecture' }]) } as AxiosResponse<TaskDetail>);
+      pending[0]!.resolve({
+        data: task(7, [{ id: 21, name: 'Architecture' }]),
+      } as AxiosResponse<TaskDetail>);
       await expect(oldSave).resolves.toBe(false);
     });
     expect(result.current.editing).toBe(true);
@@ -87,10 +89,10 @@ describe('useTaskTagsEdit', () => {
   it('ignores an old owner save after switching away and back while a new save is pending', async () => {
     const pending = deferredUpdates();
     const { Wrapper } = createWrapper();
-    const { result, rerender } = renderHook(
-      ({ userId }) => useTaskTagsEdit(task(7), userId),
-      { initialProps: { userId: 1 }, wrapper: Wrapper }
-    );
+    const { result, rerender } = renderHook(({ userId }) => useTaskTagsEdit(task(7), userId), {
+      initialProps: { userId: 1 },
+      wrapper: Wrapper,
+    });
 
     act(() => result.current.activate());
     act(() => result.current.change([{ name: 'Owner one draft' }]));
@@ -129,17 +131,23 @@ describe('useTaskTagsEdit', () => {
     expect(result.current.pending).toBe(true);
     expect(result.current.editing).toBe(true);
     expect(result.current.error).toBeNull();
-    expect(result.current.draft).toEqual([{ name: 'Owner one current draft' }] satisfies TaskTagSelection[]);
+    expect(result.current.draft).toEqual([
+      { name: 'Owner one current draft' },
+    ] satisfies TaskTagSelection[]);
 
     await act(async () => {
-      pending[1]!.resolve({ data: task(7, [{ id: 22, name: 'Owner two draft' }]) } as AxiosResponse<TaskDetail>);
+      pending[1]!.resolve({
+        data: task(7, [{ id: 22, name: 'Owner two draft' }]),
+      } as AxiosResponse<TaskDetail>);
       await expect(ownerTwoSave).resolves.toBe(false);
     });
     expect(result.current.pending).toBe(true);
     expect(result.current.draft).toEqual([{ name: 'Owner one current draft' }]);
 
     await act(async () => {
-      pending[2]!.resolve({ data: task(7, [{ id: 21, name: 'Owner one current draft' }]) } as AxiosResponse<TaskDetail>);
+      pending[2]!.resolve({
+        data: task(7, [{ id: 21, name: 'Owner one current draft' }]),
+      } as AxiosResponse<TaskDetail>);
       await expect(currentSave).resolves.toBe(true);
     });
     expect(result.current.pending).toBe(false);

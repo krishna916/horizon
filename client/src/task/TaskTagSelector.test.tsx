@@ -101,12 +101,7 @@ describe('TaskTagSelector', () => {
     fireEvent.change(input, { target: { value: 'Architecture' } });
     fireEvent.click(await screen.findByRole('option', { name: 'Create tag “Architecture”' }));
     const selection = onChange.mock.lastCall?.[0];
-    expect(selection).toEqual([
-      { id: 12 },
-      { id: 9 },
-      { id: 8 },
-      { name: 'Architecture' },
-    ]);
+    expect(selection).toEqual([{ id: 12 }, { id: 9 }, { id: 8 }, { name: 'Architecture' }]);
 
     rerender(
       <TaskTagSelector value={selection!} knownTags={knownTags} onChange={onChange} userId={7} />

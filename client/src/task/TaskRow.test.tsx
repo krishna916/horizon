@@ -213,9 +213,7 @@ describe('TaskRow', () => {
     const dueDate = within(opener).getByText('Oct 24');
 
     expect(title).toBeInTheDocument();
-    expect(
-      key.compareDocumentPosition(dueDate) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
+    expect(key.compareDocumentPosition(dueDate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
       dueDate.compareDocumentPosition(priority) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
