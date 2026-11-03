@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { tagApi } from '@/tag/api';
@@ -19,7 +19,7 @@ function renderSelector(props: Partial<React.ComponentProps<typeof TaskTagSelect
   const view = render(<TaskTagSelector value={[]} onChange={onChange} userId={7} {...props} />, {
     wrapper: Wrapper,
   });
-  return { ...view, onChange };
+  return { ...view, onChange, queryClient };
 }
 
 const response = (items: TaskTag[]) => ({ data: { items } });
@@ -34,7 +34,9 @@ describe('TaskTagSelector', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Add tags' }), {
       target: { value: 'plan' },
     });
-    fireEvent.click(await screen.findByRole('option', { name: 'Planning' }));
+    const option = await screen.findByRole('option', { name: 'Planning' });
+    fireEvent.mouseDown(option);
+    fireEvent.click(option);
 
     expect(tagApi.suggest).toHaveBeenCalledWith('plan');
     expect(onChange).toHaveBeenCalledWith([{ id: 12 }]);
@@ -48,6 +50,12 @@ describe('TaskTagSelector', () => {
 
     fireEvent.change(input, { target: { value: 'roadmap' } });
     expect(screen.queryByRole('option', { name: 'Create tag “roadmap”' })).not.toBeInTheDocument();
+    expect(await screen.findByText('No matching tags')).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById(input.getAttribute('aria-controls')!)).toHaveAttribute(
+      'role',
+      'listbox'
+    );
 
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.change(input, { target: { value: 'Build, test 🚀' } });
@@ -78,6 +86,11 @@ describe('TaskTagSelector', () => {
     const input = screen.getByRole('combobox', { name: 'Add tags' });
     fireEvent.change(input, { target: { value: 'work' } });
     expect(screen.getByRole('status')).toHaveTextContent('Loading tags');
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById(input.getAttribute('aria-controls')!)).toHaveAttribute(
+      'role',
+      'listbox'
+    );
     finishSuggestions[0]?.(
       response([
         { id: 4, name: 'Work' },
@@ -92,14 +105,25 @@ describe('TaskTagSelector', () => {
     fireEvent.change(input, { target: { value: 'absent' } });
     finishSuggestions[1]?.(response([]));
     expect(await screen.findByText('No matching tags')).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById(input.getAttribute('aria-controls')!)).toHaveAttribute(
+      'role',
+      'listbox'
+    );
     fireEvent.keyDown(input, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
 
     vi.mocked(tagApi.suggest).mockRejectedValue(new Error('offline'));
     fireEvent.change(input, { target: { value: 'fail' } });
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load tags');
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById(input.getAttribute('aria-controls')!)).toHaveAttribute(
+      'role',
+      'listbox'
+    );
     rerender(<TaskTagSelector value={[]} onChange={onChange} userId={7} disabled />);
     expect(screen.getByRole('combobox', { name: 'Add tags' })).toBeDisabled();
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
   });
 
   it('does not show stale prefix results after typing a newer query or changing owner', async () => {
@@ -124,5 +148,65 @@ describe('TaskTagSelector', () => {
     pending.get('new:3')?.(response([{ id: 3, name: 'Owner eight result' }]));
     expect(await screen.findByRole('option', { name: 'Owner eight result' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'New result' })).not.toBeInTheDocument();
+  });
+
+  it('dismisses suggestions when focus leaves and reopens for the retained query', async () => {
+    vi.mocked(tagApi.suggest).mockResolvedValue(response([{ id: 12, name: 'Planning' }]) as never);
+    const { container } = renderSelector();
+    const input = screen.getByRole('combobox', { name: 'Add tags' });
+    const outside = document.createElement('button');
+    outside.textContent = 'Next field';
+    document.body.append(outside);
+
+    try {
+      input.focus();
+      fireEvent.change(input, { target: { value: 'plan' } });
+      expect(await screen.findByRole('option', { name: 'Planning' })).toBeInTheDocument();
+      fireEvent.keyDown(input, { key: 'Tab' });
+      act(() => outside.focus());
+      await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
+      expect(input).toHaveValue('plan');
+
+      act(() => input.focus());
+      expect(await screen.findByRole('option', { name: 'Planning' })).toBeInTheDocument();
+      act(() => fireEvent.pointerDown(outside));
+      await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
+    } finally {
+      outside.remove();
+      container.remove();
+    }
+  });
+
+  it('keeps the listbox control mounted in errors and resets a stale active descendant', async () => {
+    const { queryClient } = renderSelector();
+    const input = screen.getByRole('combobox', { name: 'Add tags' });
+    vi.mocked(tagApi.suggest).mockResolvedValue(
+      response([
+        { id: 4, name: 'Work' },
+        { id: 5, name: 'Workshop' },
+      ]) as never
+    );
+    fireEvent.change(input, { target: { value: 'work' } });
+    const secondOption = await screen.findByRole('option', { name: 'Workshop' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input).toHaveAttribute('aria-activedescendant', secondOption.id);
+
+    queryClient.setQueryData(['tags', 'suggestions', 7, 'work'], [{ id: 4, name: 'Work' }]);
+    await waitFor(() => expect(input).not.toHaveAttribute('aria-activedescendant'));
+    const listboxId = input.getAttribute('aria-controls');
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById(listboxId!)).toHaveAttribute('role', 'listbox');
+
+    vi.mocked(tagApi.suggest).mockRejectedValue(new Error('offline'));
+    fireEvent.change(input, { target: { value: 'failure' } });
+    await screen.findByRole('alert');
+    const errorListboxId = input.getAttribute('aria-controls');
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById(errorListboxId!)).toHaveAttribute('role', 'listbox');
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(true);
   });
 });

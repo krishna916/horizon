@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { tagApi } from '@/tag/api';
@@ -48,6 +48,7 @@ export function TaskTagSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [resolvedTags, setResolvedTags] = useState<{ ownerId: number; tag: TaskTag }[]>([]);
+  const selectorRef = useRef<HTMLDivElement>(null);
   const prefix = query.trim();
   const suggestionsQuery = useQuery({
     queryKey: ['tags', 'suggestions', userId, prefix],
@@ -79,6 +80,20 @@ export function TaskTagSelector({
     ) &&
     !isDuplicate({ name: createName }, value, tagsById);
   const optionCount = visibleSuggestions.length + (showCreate ? 1 : 0);
+  const isSuggestionsOpen = !disabled && isOpen && prefix.length > 0;
+  const listboxId = `${id}-listbox`;
+  const activeOptionIndex = activeIndex >= 0 && activeIndex < optionCount ? activeIndex : -1;
+
+  useEffect(() => {
+    if (!isSuggestionsOpen) return;
+    const dismissWhenPointerLeaves = (event: PointerEvent) => {
+      if (event.target instanceof Node && selectorRef.current?.contains(event.target)) return;
+      setIsOpen(false);
+      setActiveIndex(-1);
+    };
+    document.addEventListener('pointerdown', dismissWhenPointerLeaves);
+    return () => document.removeEventListener('pointerdown', dismissWhenPointerLeaves);
+  }, [isSuggestionsOpen]);
 
   const select = (selection: TaskTagSelection) => {
     if (!isDuplicate(selection, value, tagsById)) {
@@ -105,17 +120,22 @@ export function TaskTagSelector({
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown' && optionCount > 0) {
       event.preventDefault();
-      setActiveIndex((current) => (current + 1) % optionCount);
+      setActiveIndex((activeOptionIndex + 1) % optionCount);
       return;
     }
     if (event.key === 'ArrowUp' && optionCount > 0) {
       event.preventDefault();
-      setActiveIndex((current) => (current <= 0 ? optionCount - 1 : current - 1));
+      setActiveIndex(activeOptionIndex <= 0 ? optionCount - 1 : activeOptionIndex - 1);
       return;
     }
-    if (event.key === 'Enter' && isOpen) {
+    if (event.key === 'Enter' && isSuggestionsOpen) {
       event.preventDefault();
-      const selection = getActiveSelection(activeIndex, visibleSuggestions, showCreate, createName);
+      const selection = getActiveSelection(
+        activeOptionIndex,
+        visibleSuggestions,
+        showCreate,
+        createName
+      );
       if (selection) select(selection);
       return;
     }
@@ -126,7 +146,17 @@ export function TaskTagSelector({
   };
 
   return (
-    <div className="space-y-2">
+      <div
+        ref={selectorRef}
+        className="space-y-2"
+        onBlur={(event) => {
+          if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+            return;
+          }
+          setIsOpen(false);
+          setActiveIndex(-1);
+        }}
+      >
       <label htmlFor={`${id}-input`} className="text-sm font-medium text-foreground">
         Tags
       </label>
@@ -160,10 +190,12 @@ export function TaskTagSelector({
           role="combobox"
           aria-label="Add tags"
           aria-autocomplete="list"
-          aria-expanded={isOpen && prefix.length > 0}
-          aria-controls={`${id}-listbox`}
+          aria-expanded={isSuggestionsOpen}
+          aria-controls={listboxId}
           aria-activedescendant={
-            activeIndex >= 0 && isOpen ? `${id}-option-${activeIndex}` : undefined
+            activeOptionIndex >= 0 && isSuggestionsOpen
+              ? `${id}-option-${activeOptionIndex}`
+              : undefined
           }
           autoComplete="off"
           disabled={disabled}
@@ -182,57 +214,63 @@ export function TaskTagSelector({
         />
       </div>
 
-      {isOpen && prefix.length > 0 && (
+      {isSuggestionsOpen && (
         <div className="overflow-hidden rounded-md border border-border bg-background text-sm shadow-sm">
-          {suggestionsQuery.isLoading && (
-            <p role="status" className="px-3 py-2 text-muted-foreground">
-              Loading tags…
-            </p>
-          )}
-          {suggestionsQuery.isError && (
-            <p role="alert" className="px-3 py-2 text-destructive">
-              Could not load tags. Try again.
-            </p>
-          )}
-          {!suggestionsQuery.isLoading &&
-            !suggestionsQuery.isError &&
-            visibleSuggestions.length === 0 && (
-              <p className="px-3 py-2 text-muted-foreground">No matching tags</p>
+          <ul id={listboxId} role="listbox" aria-label="Tag suggestions">
+            {suggestionsQuery.isLoading && (
+              <li role="presentation">
+                <p role="status" className="px-3 py-2 text-muted-foreground">
+                  Loading tags…
+                </p>
+              </li>
             )}
-          {(visibleSuggestions.length > 0 || showCreate) && (
-            <ul id={`${id}-listbox`} role="listbox" aria-label="Tag suggestions">
-              {visibleSuggestions.map((tag, index) => (
-                <li key={tag.id} role="presentation">
-                  <button
-                    id={`${id}-option-${index}`}
-                    type="button"
-                    role="option"
-                    aria-selected={activeIndex === index}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => select({ id: tag.id })}
-                    className="w-full px-3 py-2 text-left text-foreground hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
-                  >
-                    {tag.name}
-                  </button>
-                </li>
-              ))}
-              {showCreate && (
+            {suggestionsQuery.isError && (
+              <li role="presentation">
+                <p role="alert" className="px-3 py-2 text-destructive">
+                  Could not load tags. Try again.
+                </p>
+              </li>
+            )}
+            {!suggestionsQuery.isLoading &&
+              !suggestionsQuery.isError &&
+              visibleSuggestions.length === 0 && (
                 <li role="presentation">
-                  <button
-                    id={`${id}-option-${visibleSuggestions.length}`}
-                    type="button"
-                    role="option"
-                    aria-selected={activeIndex === visibleSuggestions.length}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => select({ name: createName })}
-                    className="w-full border-t border-border px-3 py-2 text-left font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
-                  >
-                    Create tag “{createName}”
-                  </button>
+                  <p className="px-3 py-2 text-muted-foreground">No matching tags</p>
                 </li>
               )}
-            </ul>
-          )}
+            {visibleSuggestions.map((tag, index) => (
+              <li key={tag.id} role="presentation">
+                <button
+                  id={`${id}-option-${index}`}
+                  type="button"
+                  role="option"
+                  tabIndex={-1}
+                  aria-selected={activeOptionIndex === index}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => select({ id: tag.id })}
+                  className="w-full px-3 py-2 text-left text-foreground hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
+                >
+                  {tag.name}
+                </button>
+              </li>
+            ))}
+            {showCreate && (
+              <li role="presentation">
+                <button
+                  id={`${id}-option-${visibleSuggestions.length}`}
+                  type="button"
+                  role="option"
+                  tabIndex={-1}
+                  aria-selected={activeOptionIndex === visibleSuggestions.length}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => select({ name: createName })}
+                  className="w-full border-t border-border px-3 py-2 text-left font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
+                >
+                  Create tag “{createName}”
+                </button>
+              </li>
+            )}
+          </ul>
         </div>
       )}
     </div>
