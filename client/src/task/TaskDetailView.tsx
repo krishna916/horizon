@@ -15,6 +15,8 @@ import { TaskCompletionToggle } from './TaskCompletionToggle';
 import { TaskCompletionFeedback } from './TaskCompletionFeedback';
 import { ChecklistSection } from './ChecklistSection';
 import { TaskCompletionGateControls, useTaskCompletionGate } from './TaskCompletionGate';
+import { TaskTagsField } from './TaskTagsField';
+import { useTaskTagsEdit } from './useTaskTagsEdit';
 
 interface TaskDetailViewProps {
   readonly task: TaskDetail;
@@ -29,6 +31,7 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
   const description = normalizeRichTextDocument(rawDescription);
   const edit = useTaskFieldEdit(task, userId);
   const descriptionEdit = useTaskDescriptionEdit(task, userId);
+  const tagsEdit = useTaskTagsEdit(task, userId);
   const draftGuard = useTaskDraftGuard();
   const completion = useTaskCompletion(userId, task);
   const [checklistEditing, setChecklistEditing] = useState(false);
@@ -40,15 +43,30 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
   const clearDraft = draftGuard?.clear;
   const saveRef = useRef<() => Promise<boolean>>(edit.save);
   const cancelRef = useRef<() => void>(edit.cancel);
+  let activeSave = edit.save;
+  let activeCancel = edit.cancel;
+  let activeDirty = edit.dirty;
+  let activePending = edit.pending;
+  if (descriptionEdit.editing) {
+    activeSave = descriptionEdit.save;
+    activeCancel = descriptionEdit.cancel;
+    activeDirty = descriptionEdit.dirty;
+    activePending = descriptionEdit.pending;
+  }
+  if (tagsEdit.editing) {
+    activeSave = tagsEdit.save;
+    activeCancel = tagsEdit.cancel;
+    activeDirty = tagsEdit.dirty;
+    activePending = tagsEdit.pending;
+  }
   useEffect(() => {
-    saveRef.current = descriptionEdit.editing ? descriptionEdit.save : edit.save;
-    cancelRef.current = descriptionEdit.editing ? descriptionEdit.cancel : edit.cancel;
+    saveRef.current = activeSave;
+    cancelRef.current = activeCancel;
   });
   let fieldId: string | null = null;
   if (edit.activeField) fieldId = `field:${userId}:${task.id}:${edit.activeField}`;
   else if (descriptionEdit.editing) fieldId = `field:${userId}:${task.id}:description`;
-  const activeDirty = descriptionEdit.editing ? descriptionEdit.dirty : edit.dirty;
-  const activePending = descriptionEdit.editing ? descriptionEdit.pending : edit.pending;
+  else if (tagsEdit.editing) fieldId = `field:${userId}:${task.id}:tags`;
   useEffect(() => {
     if (!fieldId) return;
     registerDraft?.({
@@ -72,7 +90,13 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
     pending: edit.pending,
     error: edit.error,
     onActivate: (field: 'title' | 'priority' | 'dueDate') => {
-      if (!checklistEditing && !descriptionEdit.editing && !descriptionEdit.pending) {
+      if (
+        !checklistEditing &&
+        !descriptionEdit.editing &&
+        !descriptionEdit.pending &&
+        !tagsEdit.editing &&
+        !tagsEdit.pending
+      ) {
         edit.activate(field);
       }
     },
@@ -130,7 +154,13 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
         draft={descriptionEdit.draft}
         dirty={descriptionEdit.dirty}
         pending={descriptionEdit.pending}
-        blocked={Boolean(edit.activeField) || edit.pending || checklistEditing}
+        blocked={
+          Boolean(edit.activeField) ||
+          edit.pending ||
+          checklistEditing ||
+          tagsEdit.editing ||
+          tagsEdit.pending
+        }
         error={descriptionEdit.error}
         onActivate={() => {
           if (!edit.activeField && !edit.pending && !checklistEditing) descriptionEdit.activate();
@@ -147,7 +177,9 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
           Boolean(edit.activeField) ||
           edit.pending ||
           descriptionEdit.editing ||
-          descriptionEdit.pending
+          descriptionEdit.pending ||
+          tagsEdit.editing ||
+          tagsEdit.pending
         }
         onEditSessionChange={setChecklistEditing}
       />
@@ -163,6 +195,23 @@ export function TaskDetailView({ task, userId, onCompletionIntent }: TaskDetailV
           <dt className="text-xs text-muted-foreground">Due date</dt>
           <dd>
             <TaskFieldEditor field="dueDate" value={task.dueDate} {...editorProps} />
+          </dd>
+        </div>
+        <div className="min-w-[18rem] space-y-1">
+          <dt className="text-xs text-muted-foreground">Tags</dt>
+          <dd>
+            <TaskTagsField
+              task={task}
+              userId={userId}
+              edit={tagsEdit}
+              blocked={
+                Boolean(edit.activeField) ||
+                edit.pending ||
+                descriptionEdit.editing ||
+                descriptionEdit.pending ||
+                checklistEditing
+              }
+            />
           </dd>
         </div>
       </dl>

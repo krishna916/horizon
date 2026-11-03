@@ -116,6 +116,7 @@ class TaskCommandServiceTest {
                                 FieldUpdate.of("After"),
                                 FieldUpdate.absent(),
                                 FieldUpdate.absent(),
+                                FieldUpdate.absent(),
                                 FieldUpdate.absent()));
 
         assertThat(updated.getTitle()).isEqualTo("After");
@@ -139,7 +140,8 @@ class TaskCommandServiceTest {
                                 FieldUpdate.absent(),
                                 FieldUpdate.of(null),
                                 FieldUpdate.of(null),
-                                FieldUpdate.of(null)));
+                                FieldUpdate.of(null),
+                                FieldUpdate.absent()));
 
         assertThat(updated.getDescription()).isNull();
         assertThat(updated.getPriority()).isNull();
@@ -177,6 +179,7 @@ class TaskCommandServiceTest {
                                 FieldUpdate.of("After"),
                                 FieldUpdate.absent(),
                                 FieldUpdate.absent(),
+                                FieldUpdate.absent(),
                                 FieldUpdate.absent()));
 
         assertThat(updated.getId()).isEqualTo(id);
@@ -200,6 +203,7 @@ class TaskCommandServiceTest {
                         id,
                         new TaskPatch(
                                 FieldUpdate.of("After"),
+                                FieldUpdate.absent(),
                                 FieldUpdate.absent(),
                                 FieldUpdate.absent(),
                                 FieldUpdate.absent()));

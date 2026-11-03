@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { RichTextEditor } from '@/components/rich-text/RichTextEditor';
 import { TaskCreateChecklist } from './TaskCreateChecklist';
+import { TaskTagSelector } from './TaskTagSelector';
 import type { CreateChecklistDraft } from './TaskCreateChecklist';
 import type { CreateTaskPayload, TaskDetail } from './types';
 import { useCreateTask } from './useCreateTask';
@@ -89,6 +90,7 @@ export function TaskCreateForm({
   });
   const [recovery, setRecovery] = useState<TaskCreateRecovery | null>(null);
   const [checklistDrafts, setChecklistDrafts] = useState<CreateChecklistDraft[]>([]);
+  const [tagDraft, setTagDraft] = useState<CreateTaskPayload['tags']>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const currentUserId = useRef<number | undefined>(userId);
@@ -113,8 +115,10 @@ export function TaskCreateForm({
   }, [onDirtyChange]);
 
   useEffect(() => {
-    onDirtyChangeRef.current(form.formState.isDirty || checklistDrafts.length > 0);
-  }, [checklistDrafts.length, form.formState.isDirty]);
+    onDirtyChangeRef.current(
+      form.formState.isDirty || checklistDrafts.length > 0 || (tagDraft?.length ?? 0) > 0
+    );
+  }, [checklistDrafts.length, form.formState.isDirty, tagDraft?.length]);
 
   useEffect(() => {
     titleInputRef.current?.focus();
@@ -127,7 +131,8 @@ export function TaskCreateForm({
         values.description !== null ||
         values.priority !== '' ||
         values.dueDate !== '' ||
-        checklistDrafts.length > 0
+        checklistDrafts.length > 0 ||
+        (tagDraft?.length ?? 0) > 0
     );
   };
   const handleChecklistDraftChange = (items: CreateChecklistDraft[]) => {
@@ -139,7 +144,21 @@ export function TaskCreateForm({
         values.description !== null ||
         values.priority !== '' ||
         values.dueDate !== '' ||
-        items.length > 0
+        items.length > 0 ||
+        (tagDraft?.length ?? 0) > 0
+    );
+  };
+  const handleTagDraftChange = (selections: NonNullable<CreateTaskPayload['tags']>) => {
+    setTagDraft(selections);
+    setFormError(null);
+    const values = form.getValues();
+    onDirtyChangeRef.current(
+      values.title !== '' ||
+        values.description !== null ||
+        values.priority !== '' ||
+        values.dueDate !== '' ||
+        checklistDrafts.length > 0 ||
+        selections.length > 0
     );
   };
   const titleField = form.register('title');
@@ -148,15 +167,19 @@ export function TaskCreateForm({
 
   const reportFailure = (error: unknown, snapshot: TaskCreateRecovery) => {
     const errors = fieldErrors(error);
-    const recognizedFields = ['title', 'description', 'priority', 'dueDate'];
+    const recognizedFields = new Set(['title', 'description', 'priority', 'dueDate', 'tags']);
     for (const [field, message] of Object.entries(errors)) {
-      if (recognizedFields.includes(field)) {
-        form.setError(field as keyof TaskCreateInput, { type: 'server', message });
+      if (recognizedFields.has(field)) {
+        if (field === 'tags') {
+          setFormError(message);
+        } else {
+          form.setError(field as keyof TaskCreateInput, { type: 'server', message });
+        }
       }
     }
-    if (Object.keys(errors).some((field) => recognizedFields.includes(field))) {
+    if (Object.keys(errors).some((field) => recognizedFields.has(field))) {
       setRecovery(null);
-      setFormError(null);
+      if (!errors.tags) setFormError(null);
       return;
     }
     if (isAmbiguousFailure(error)) {
@@ -217,6 +240,7 @@ export function TaskCreateForm({
       return [{ title, ...(item.dueDate ? { dueDate: item.dueDate } : {}) }];
     });
     if (checklist.length > 0) payload.checklist = checklist;
+    if (tagDraft?.length) payload.tags = tagDraft;
     const snapshot: TaskCreateRecovery = {
       payload,
       requestKey: globalThis.crypto.randomUUID(),
@@ -233,6 +257,7 @@ export function TaskCreateForm({
   const cancel = () => {
     if (submitting.current) return;
     cancelled.current = true;
+    setTagDraft([]);
     onDirtyChange(false);
     onCancel();
   };
@@ -357,6 +382,13 @@ export function TaskCreateForm({
             </p>
           )}
         </div>
+
+        <TaskTagSelector
+          value={tagDraft ?? []}
+          onChange={handleTagDraftChange}
+          userId={userId}
+          disabled={fieldsDisabled}
+        />
 
         <TaskCreateChecklist
           items={checklistDrafts}

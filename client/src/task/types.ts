@@ -4,7 +4,15 @@ export type UpdateTaskPayload =
   | { title: string }
   | { priority: TaskPriority | null }
   | { dueDate: string | null }
-  | { description: Record<string, unknown> | null };
+  | { description: Record<string, unknown> | null }
+  | { tags: TaskTagSelection[] };
+
+export interface TaskTag {
+  id: number;
+  name: string;
+}
+
+export type TaskTagSelection = { id: number } | { name: string };
 
 export interface TaskSummary {
   id: number;
@@ -17,6 +25,7 @@ export interface TaskSummary {
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  tags: TaskTag[];
 }
 
 export interface TaskDetail extends TaskSummary {
@@ -43,4 +52,5 @@ export interface CreateTaskPayload {
   priority?: TaskPriority | null;
   dueDate?: string | null;
   checklist?: { title: string; dueDate?: string | null }[];
+  tags?: TaskTagSelection[];
 }

@@ -9,6 +9,7 @@ import com.krishnamurti.horizon.task.domain.TaskPriority;
 import com.krishnamurti.horizon.task.infrastructure.ChecklistItemRepository;
 import com.krishnamurti.horizon.task.infrastructure.TaskKeyAllocator;
 import com.krishnamurti.horizon.task.infrastructure.TaskRepository;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -25,16 +26,25 @@ public class TaskCommandService implements TaskRecoveryApi {
     private final TaskRepository taskRepository;
     private final TaskKeyAllocator taskKeyAllocator;
     private final ChecklistItemRepository checklistItemRepository;
+    private final TaskTagAssignmentService taskTagAssignmentService;
     private final CurrentUserProvider currentUserProvider;
 
+    // SpotBugs reports a false positive for retaining these Spring-managed constructor
+    // dependencies.
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification =
+                    "The injected collaborators are private final Spring-managed dependencies.")
     public TaskCommandService(
             TaskRepository taskRepository,
             TaskKeyAllocator taskKeyAllocator,
             ChecklistItemRepository checklistItemRepository,
+            TaskTagAssignmentService taskTagAssignmentService,
             CurrentUserProvider currentUserProvider) {
         this.taskRepository = taskRepository;
         this.taskKeyAllocator = taskKeyAllocator;
         this.checklistItemRepository = checklistItemRepository;
+        this.taskTagAssignmentService = taskTagAssignmentService;
         this.currentUserProvider = currentUserProvider;
     }
 
@@ -54,6 +64,17 @@ public class TaskCommandService implements TaskRecoveryApi {
             TaskPriority priority,
             LocalDate dueDate,
             List<InitialChecklistItem> checklist) {
+        return create(title, description, priority, dueDate, checklist, List.of());
+    }
+
+    @Transactional
+    public Task create(
+            String title,
+            Map<String, Object> description,
+            TaskPriority priority,
+            LocalDate dueDate,
+            List<InitialChecklistItem> checklist,
+            List<TaskTagSelection> tags) {
         Long userId = requireCurrentUserId();
         long number = taskKeyAllocator.allocateNextNumber(userId);
         Task task = Task.create(userId, "TASK-" + number, title, description, priority, dueDate);
@@ -71,6 +92,9 @@ public class TaskCommandService implements TaskRecoveryApi {
                                 })
                         .toList();
         checklistItemRepository.saveAllAndFlush(items);
+        if (!tags.isEmpty()) {
+            taskTagAssignmentService.replace(userId, saved.getId(), tags);
+        }
         return saved;
     }
 
@@ -93,6 +117,9 @@ public class TaskCommandService implements TaskRecoveryApi {
         }
         if (patch.dueDate().present()) {
             task.updateDueDate(patch.dueDate().value());
+        }
+        if (patch.tags().present()) {
+            taskTagAssignmentService.replace(userId, taskId, patch.tags().value());
         }
 
         return taskRepository.saveAndFlush(task);

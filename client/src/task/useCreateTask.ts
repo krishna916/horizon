@@ -40,6 +40,12 @@ export function useCreateTask(userId: number) {
         return;
       }
 
+      if (variables.payload.tags?.some((tag) => 'name' in tag)) {
+        void queryClient.invalidateQueries({
+          queryKey: ['tags', 'suggestions', variables.ownerId],
+        });
+      }
+
       const listKey = ['tasks', variables.ownerId] as const;
       queryClient.setQueryData(['tasks', variables.ownerId, 'detail', task.id], task);
       queryClient.setQueryData<TaskListResponse>(listKey, (current) =>

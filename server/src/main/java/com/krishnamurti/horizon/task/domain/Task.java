@@ -92,6 +92,10 @@ public class Task extends BaseEntity {
         this.dueDate = dueDate;
     }
 
+    public void touchMetadata(OffsetDateTime now) {
+        setUpdatedAt(Objects.requireNonNull(now, "now must not be null"));
+    }
+
     public void complete(OffsetDateTime when) {
         if (completedAt == null) {
             completedAt = Objects.requireNonNull(when, "when must not be null");

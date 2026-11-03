@@ -1,5 +1,6 @@
 package com.krishnamurti.horizon.tag.api;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -7,6 +8,8 @@ import java.util.Optional;
 public interface TagQueryApi {
 
     Optional<TagReference> findById(Long userId, Long tagId);
+
+    List<TagReference> findAllByIds(Long userId, Collection<Long> ids);
 
     List<TagReference> suggest(Long userId, String prefix);
 }

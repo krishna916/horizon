@@ -52,6 +52,18 @@ public class IdempotentTaskCreationService {
             TaskPriority priority,
             LocalDate dueDate,
             List<InitialChecklistItem> checklist) {
+        return create(requestKey, title, description, priority, dueDate, checklist, List.of());
+    }
+
+    @Transactional
+    public Task create(
+            UUID requestKey,
+            String title,
+            Map<String, Object> description,
+            TaskPriority priority,
+            LocalDate dueDate,
+            List<InitialChecklistItem> checklist,
+            List<TaskTagSelection> tags) {
         Long userId =
                 currentUserProvider
                         .getCurrentUserId()
@@ -60,10 +72,13 @@ public class IdempotentTaskCreationService {
                                         new InsufficientAuthenticationException(
                                                 "User is not authenticated"));
         String fingerprint =
-                TaskCreationFingerprint.compute(title, description, priority, dueDate, checklist);
+                TaskCreationFingerprint.compute(
+                        title, description, priority, dueDate, checklist, tags);
 
         if (creationRequestRepository.claim(userId, requestKey, fingerprint)) {
-            Task task = taskCommandService.create(title, description, priority, dueDate, checklist);
+            Task task =
+                    taskCommandService.create(
+                            title, description, priority, dueDate, checklist, tags);
             creationRequestRepository.complete(userId, requestKey, task.getId());
             return task;
         }

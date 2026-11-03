@@ -109,4 +109,70 @@ class TaskCreationFingerprintTest {
                                 "Task", null, null, null, List.of(second, first)))
                 .isNotEqualTo(baseline);
     }
+
+    @Test
+    void tagSelectionOrderAndExactDuplicatesDoNotAffectFingerprint() {
+        List<TaskTagSelection> selections =
+                List.of(new TaskTagSelection(12L, null), new TaskTagSelection(null, " planning "));
+
+        assertThat(TaskCreationFingerprint.compute("Task", null, null, null, List.of(), selections))
+                .isEqualTo(
+                        TaskCreationFingerprint.compute(
+                                "Task",
+                                null,
+                                null,
+                                null,
+                                List.of(),
+                                List.of(
+                                        new TaskTagSelection(null, " planning "),
+                                        new TaskTagSelection(12L, null),
+                                        new TaskTagSelection(12L, null))));
+    }
+
+    @Test
+    void tagIdentityAndRawNameAffectFingerprint() {
+        String baseline =
+                TaskCreationFingerprint.compute(
+                        "Task",
+                        null,
+                        null,
+                        null,
+                        List.of(),
+                        List.of(new TaskTagSelection(12L, null)));
+
+        assertThat(
+                        TaskCreationFingerprint.compute(
+                                "Task",
+                                null,
+                                null,
+                                null,
+                                List.of(),
+                                List.of(new TaskTagSelection(13L, null))))
+                .isNotEqualTo(baseline);
+        assertThat(
+                        TaskCreationFingerprint.compute(
+                                "Task",
+                                null,
+                                null,
+                                null,
+                                List.of(),
+                                List.of(new TaskTagSelection(null, "12"))))
+                .isNotEqualTo(baseline);
+        assertThat(
+                        TaskCreationFingerprint.compute(
+                                "Task",
+                                null,
+                                null,
+                                null,
+                                List.of(),
+                                List.of(new TaskTagSelection(null, " planning "))))
+                .isNotEqualTo(
+                        TaskCreationFingerprint.compute(
+                                "Task",
+                                null,
+                                null,
+                                null,
+                                List.of(),
+                                List.of(new TaskTagSelection(null, "planning"))));
+    }
 }

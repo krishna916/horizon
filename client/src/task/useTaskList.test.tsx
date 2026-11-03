@@ -20,6 +20,7 @@ const task = (id: number, title: string): TaskSummary => ({
   archivedAt: null,
   createdAt: '2026-10-18T10:00:00Z',
   updatedAt: '2026-10-18T10:00:00Z',
+  tags: [],
 });
 
 const response = (items: TaskSummary[]) => ({ data: { items } }) as AxiosResponse<TaskListResponse>;

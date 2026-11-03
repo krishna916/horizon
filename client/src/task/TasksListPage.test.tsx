@@ -38,6 +38,7 @@ const task = (id: number, title: string): TaskSummary => ({
   archivedAt: null,
   createdAt: '2026-10-18T10:00:00Z',
   updatedAt: '2026-10-18T10:00:00Z',
+  tags: [],
 });
 
 const response = (items: TaskSummary[]) => ({ data: { items } });
@@ -54,6 +55,7 @@ const detailResponse = (id: number, completedAt: string | null = null): AxiosRes
       archivedAt: null,
       createdAt: '2026-10-18T10:00:00Z',
       updatedAt: '2026-10-18T10:00:00Z',
+      tags: [],
       description: null,
       deletedAt: null,
       checklist: [],
@@ -792,7 +794,10 @@ describe('TasksListPage', () => {
             resolveUpdate = () =>
               resolve({
                 ...detailResponse(id),
-                data: { ...detailResponse(id).data, ...patch },
+                data:
+                  'tags' in patch
+                    ? detailResponse(id).data
+                    : { ...detailResponse(id).data, ...patch },
               });
           })
       );
@@ -924,6 +929,7 @@ describe('TasksListPage', () => {
         archivedAt: null,
         createdAt: '2026-10-20T10:00:00Z',
         updatedAt: '2026-10-20T10:00:00Z',
+        tags: [],
         description: null,
         deletedAt: null,
         checklist: [],

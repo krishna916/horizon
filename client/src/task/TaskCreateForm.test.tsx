@@ -1,10 +1,13 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskDetail } from './types';
+import { tagApi } from '@/tag/api';
 import { TaskCreateForm } from './TaskCreateForm';
 
 const { createTask } = vi.hoisted(() => ({ createTask: vi.fn() }));
 vi.mock('./useCreateTask', () => ({ useCreateTask: () => ({ createTask }) }));
+vi.mock('@/tag/api', () => ({ tagApi: { suggest: vi.fn() } }));
 
 const createdTask: TaskDetail = {
   id: 10,
@@ -17,6 +20,7 @@ const createdTask: TaskDetail = {
   archivedAt: null,
   createdAt: '2026-10-20T10:00:00Z',
   updatedAt: '2026-10-20T10:00:00Z',
+  tags: [],
   description: null,
   deletedAt: null,
   checklist: [],
@@ -26,15 +30,20 @@ function renderForm(props: Partial<React.ComponentProps<typeof TaskCreateForm>> 
   const onCreated = vi.fn();
   const onDirtyChange = vi.fn();
   const onCancel = vi.fn();
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
   const view = render(
-    <TaskCreateForm
-      userId={1}
-      onCreated={onCreated}
-      onDirtyChange={onDirtyChange}
-      onSubmittingChange={vi.fn()}
-      onCancel={onCancel}
-      {...props}
-    />
+    <QueryClientProvider client={queryClient}>
+      <TaskCreateForm
+        userId={1}
+        onCreated={onCreated}
+        onDirtyChange={onDirtyChange}
+        onSubmittingChange={vi.fn()}
+        onCancel={onCancel}
+        {...props}
+      />
+    </QueryClientProvider>
   );
   return { ...view, onCreated, onDirtyChange, onCancel };
 }
@@ -43,6 +52,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   createTask.mockReset();
   createTask.mockResolvedValue(createdTask);
+  vi.mocked(tagApi.suggest).mockResolvedValue({ data: { items: [] } } as never);
   vi.spyOn(globalThis.crypto, 'randomUUID')
     .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
     .mockReturnValue('22222222-2222-4222-8222-222222222222');
@@ -54,6 +64,84 @@ afterEach(() => {
 });
 
 describe('TaskCreateForm', () => {
+  it('submits selected existing and new draft tags with the task payload', async () => {
+    vi.mocked(tagApi.suggest).mockResolvedValueOnce({
+      data: { items: [{ id: 12, name: 'Planning' }] },
+    } as never);
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Tagged task' },
+    });
+    const tagInput = screen.getByRole('combobox', { name: 'Add tags' });
+    fireEvent.change(tagInput, { target: { value: 'plan' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'Planning' }));
+    fireEvent.change(tagInput, { target: { value: 'Build, test 🚀' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'Create tag “Build, test 🚀”' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
+    expect(createTask.mock.calls[0]?.[0]).toEqual({
+      title: 'Tagged task',
+      tags: [{ id: 12 }, { name: 'Build, test 🚀' }],
+    });
+  });
+
+  it('keeps selected tags dirty and clears a deselected-only draft on Cancel', async () => {
+    vi.mocked(tagApi.suggest).mockResolvedValue({
+      data: { items: [{ id: 12, name: 'Planning' }] },
+    } as never);
+    const { onCancel, onDirtyChange } = renderForm();
+    const tagInput = screen.getByRole('combobox', { name: 'Add tags' });
+    fireEvent.change(tagInput, { target: { value: 'plan' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'Planning' }));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tag Planning' }));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(createTask).not.toHaveBeenCalled();
+    expect(tagApi.suggest).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the same tag payload and idempotency key for an ambiguous create retry', async () => {
+    createTask.mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce(createdTask);
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Retry with tag' },
+    });
+    const tagInput = screen.getByRole('combobox', { name: 'Add tags' });
+    fireEvent.change(tagInput, { target: { value: 'Backlog, later' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'Create tag “Backlog, later”' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry creation' }));
+
+    await waitFor(() => expect(createTask).toHaveBeenCalledTimes(2));
+    expect(createTask.mock.calls[0]).toEqual(createTask.mock.calls[1]);
+    expect(createTask.mock.calls[0]?.[0].tags).toEqual([{ name: 'Backlog, later' }]);
+  });
+
+  it('shows tag validation errors without discarding the editable draft', async () => {
+    createTask.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 400, data: { errors: { tags: 'Tag name is invalid.' } } },
+    });
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Invalid tag' },
+    });
+    const tagInput = screen.getByRole('combobox', { name: 'Add tags' });
+    fireEvent.change(tagInput, { target: { value: 'Broken' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'Create tag “Broken”' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Tag name is invalid.');
+    expect(tagInput).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Remove tag Broken' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Retry creation' })).not.toBeInTheDocument();
+  });
+
   it('omits an empty description from task creation', async () => {
     renderForm();
     fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
@@ -411,7 +499,10 @@ describe('TaskCreateForm', () => {
         onCancel={vi.fn()}
       />
     );
-    const view = render(renderForUser(1));
+    const queryClient = new QueryClient();
+    const view = render(
+      <QueryClientProvider client={queryClient}>{renderForUser(1)}</QueryClientProvider>
+    );
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
       target: { value: 'User one task' },
@@ -419,7 +510,9 @@ describe('TaskCreateForm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
     await waitFor(() => expect(createTask).toHaveBeenCalledTimes(1));
 
-    view.rerender(renderForUser(2));
+    view.rerender(
+      <QueryClientProvider client={queryClient}>{renderForUser(2)}</QueryClientProvider>
+    );
     fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
       target: { value: 'User two task' },
     });

@@ -37,6 +37,7 @@ const taskSummary = (id: number, fields: Partial<TaskSummary> = {}): TaskSummary
   createdAt: '2026-10-24T08:00:00Z',
   updatedAt: '2026-10-24T08:00:00Z',
   ...fields,
+  tags: fields.tags ?? [],
 });
 
 const taskDetail = (id: number, fields: Partial<TaskDetail> = {}): TaskDetail => ({
@@ -45,6 +46,7 @@ const taskDetail = (id: number, fields: Partial<TaskDetail> = {}): TaskDetail =>
   deletedAt: null,
   checklist: [],
   ...fields,
+  tags: fields.tags ?? [],
 });
 
 const response = <T,>(data: T) => ({ data }) as AxiosResponse<T>;

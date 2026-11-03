@@ -19,6 +19,7 @@ type TaskSummary = {
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  tags: Array<{ id: number; name: string }>;
 };
 
 type TaskDetail = TaskSummary & {
@@ -41,6 +42,7 @@ function summary(id: number, title: string, completedAt: string | null = null): 
     archivedAt: null,
     createdAt: '2026-10-20T10:00:00Z',
     updatedAt: '2026-10-20T10:00:00Z',
+    tags: [],
   };
 }
 

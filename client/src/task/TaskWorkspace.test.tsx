@@ -29,6 +29,7 @@ const task = (id: number, title: string, changes: Partial<TaskSummary> = {}): Ta
   archivedAt: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+  tags: [],
   ...changes,
 });
 

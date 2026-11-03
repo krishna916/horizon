@@ -40,6 +40,12 @@ export function useUpdateTask(userId: number) {
         return;
       }
 
+      if ('tags' in variables.patch && variables.patch.tags.some((tag) => 'name' in tag)) {
+        void queryClient.invalidateQueries({
+          queryKey: ['tags', 'suggestions', variables.ownerId],
+        });
+      }
+
       const detailKey = ['tasks', variables.ownerId, 'detail', task.id] as const;
       const listKey = ['tasks', variables.ownerId] as const;
       queryClient.setQueryData<TaskDetail>(detailKey, (current) => {
@@ -48,6 +54,7 @@ export function useUpdateTask(userId: number) {
         if ('priority' in variables.patch) updated.priority = task.priority;
         if ('dueDate' in variables.patch) updated.dueDate = task.dueDate;
         if ('description' in variables.patch) updated.description = task.description;
+        if ('tags' in variables.patch) updated.tags = task.tags;
         updated.updatedAt = task.updatedAt;
         return updated;
       });
@@ -60,6 +67,7 @@ export function useUpdateTask(userId: number) {
                 if ('title' in variables.patch) updated.title = task.title;
                 if ('priority' in variables.patch) updated.priority = task.priority;
                 if ('dueDate' in variables.patch) updated.dueDate = task.dueDate;
+                if ('tags' in variables.patch) updated.tags = task.tags;
                 updated.updatedAt = task.updatedAt;
                 return updated;
               }),

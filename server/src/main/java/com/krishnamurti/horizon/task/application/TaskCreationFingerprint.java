@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /** Creates a stable digest for the meaningful fields of a task creation request. */
 public final class TaskCreationFingerprint {
@@ -33,6 +34,16 @@ public final class TaskCreationFingerprint {
             TaskPriority priority,
             LocalDate dueDate,
             List<InitialChecklistItem> checklist) {
+        return compute(normalizedTitle, description, priority, dueDate, checklist, List.of());
+    }
+
+    public static String compute(
+            String normalizedTitle,
+            Map<String, Object> description,
+            TaskPriority priority,
+            LocalDate dueDate,
+            List<InitialChecklistItem> checklist,
+            List<TaskTagSelection> tags) {
         Map<String, Object> canonicalRequest = new LinkedHashMap<>();
         canonicalRequest.put("title", normalizedTitle == null ? null : normalizedTitle.strip());
         canonicalRequest.put("description", canonicalize(description));
@@ -55,6 +66,24 @@ public final class TaskCreationFingerprint {
                                         })
                                 .toList();
         canonicalRequest.put("checklist", canonicalChecklist);
+        TreeSet<String> canonicalTags = new TreeSet<>();
+        if (tags != null) {
+            for (TaskTagSelection selection : tags) {
+                Map<String, Object> canonicalTag = new LinkedHashMap<>();
+                if (selection.id() != null) {
+                    canonicalTag.put("id", selection.id());
+                } else {
+                    canonicalTag.put("name", selection.name());
+                }
+                try {
+                    canonicalTags.add(OBJECT_MAPPER.writeValueAsString(canonicalTag));
+                } catch (JsonProcessingException exception) {
+                    throw new IllegalArgumentException(
+                            "Tag selection must be JSON serializable.", exception);
+                }
+            }
+        }
+        canonicalRequest.put("tags", canonicalTags);
 
         try {
             byte[] canonicalBytes = OBJECT_MAPPER.writeValueAsBytes(canonicalRequest);

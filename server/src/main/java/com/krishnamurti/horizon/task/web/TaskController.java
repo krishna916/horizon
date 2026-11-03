@@ -4,6 +4,7 @@ import com.krishnamurti.horizon.task.application.IdempotentTaskCreationService;
 import com.krishnamurti.horizon.task.application.TaskChecklistQueryService;
 import com.krishnamurti.horizon.task.application.TaskCommandService;
 import com.krishnamurti.horizon.task.application.TaskQueryService;
+import com.krishnamurti.horizon.task.application.TaskTagQueryService;
 import com.krishnamurti.horizon.task.domain.Task;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -31,6 +32,7 @@ public class TaskController {
     private final IdempotentTaskCreationService idempotentTaskCreationService;
     private final TaskQueryService taskQueryService;
     private final TaskChecklistQueryService taskChecklistQueryService;
+    private final TaskTagQueryService taskTagQueryService;
     private final TaskResponseMapper taskResponseMapper;
     private final TaskRequestMapper taskRequestMapper;
 
@@ -39,12 +41,14 @@ public class TaskController {
             IdempotentTaskCreationService idempotentTaskCreationService,
             TaskQueryService taskQueryService,
             TaskChecklistQueryService taskChecklistQueryService,
+            TaskTagQueryService taskTagQueryService,
             TaskResponseMapper taskResponseMapper,
             TaskRequestMapper taskRequestMapper) {
         this.taskCommandService = taskCommandService;
         this.idempotentTaskCreationService = idempotentTaskCreationService;
         this.taskQueryService = taskQueryService;
         this.taskChecklistQueryService = taskChecklistQueryService;
+        this.taskTagQueryService = taskTagQueryService;
         this.taskResponseMapper = taskResponseMapper;
         this.taskRequestMapper = taskRequestMapper;
     }
@@ -57,6 +61,7 @@ public class TaskController {
         var priority = taskRequestMapper.parsePriority(request.priority());
         var dueDate = taskRequestMapper.parseDueDate(request.dueDate());
         var checklist = taskRequestMapper.parseChecklist(request.checklist());
+        var tags = taskRequestMapper.parseTags(request.tags());
         var task =
                 requestKey == null
                         ? taskCommandService.create(
@@ -64,14 +69,16 @@ public class TaskController {
                                 request.description(),
                                 priority,
                                 dueDate,
-                                checklist)
+                                checklist,
+                                tags)
                         : idempotentTaskCreationService.create(
                                 requestKey,
                                 request.title(),
                                 request.description(),
                                 priority,
                                 dueDate,
-                                checklist);
+                                checklist,
+                                tags);
         URI location = URI.create("/api/v1/tasks/" + task.getId());
         return ResponseEntity.created(location).body(toDetail(task));
     }
@@ -136,12 +143,28 @@ public class TaskController {
     @GetMapping
     @ResponseStatus(HttpStatus.OK)
     public TaskListResponse list() {
+        List<Task> tasks = taskQueryService.list();
+        var tagsByTask =
+                tasks.isEmpty()
+                        ? java.util.Map
+                                .<Long, List<com.krishnamurti.horizon.tag.api.TagReference>>of()
+                        : taskTagQueryService.tagsForTasks(
+                                tasks.get(0).getUserId(), tasks.stream().map(Task::getId).toList());
         List<TaskSummaryResponse> items =
-                taskQueryService.list().stream().map(taskResponseMapper::toSummary).toList();
+                tasks.stream()
+                        .map(
+                                task ->
+                                        taskResponseMapper.toSummary(
+                                                task, tagsByTask.get(task.getId())))
+                        .toList();
         return new TaskListResponse(items);
     }
 
     private TaskDetailResponse toDetail(Task task) {
-        return taskResponseMapper.toDetail(task, taskChecklistQueryService.list(task.getId()));
+        var tags = taskTagQueryService.tagsForTasks(task.getUserId(), List.of(task.getId()));
+        return taskResponseMapper.toDetail(
+                task,
+                taskChecklistQueryService.list(task.getId()),
+                tags.getOrDefault(task.getId(), List.of()));
     }
 }

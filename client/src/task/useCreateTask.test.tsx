@@ -20,6 +20,7 @@ const detail = (id: number): TaskDetail => ({
   archivedAt: null,
   createdAt: '2026-10-20T10:00:00Z',
   updatedAt: '2026-10-20T10:00:00Z',
+  tags: [],
   description: null,
   deletedAt: null,
   checklist: [],
@@ -36,6 +37,7 @@ const summary = (id: number): TaskSummary => ({
   archivedAt: null,
   createdAt: '2026-10-20T10:00:00Z',
   updatedAt: '2026-10-20T10:00:00Z',
+  tags: [],
 });
 
 function createWrapper() {
@@ -165,6 +167,62 @@ describe('useCreateTask', () => {
       queryClient.getQueryData<TaskListResponse>(otherListKey)?.items.map(({ id }) => id)
     ).toEqual([9]);
     expect(queryClient.getQueryState(listKey)?.isInvalidated).toBe(true);
+  });
+
+  it('refreshes only the creating owner suggestion prefixes after assigning a new tag name', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue({ data: detail(41) } as never);
+    const { Wrapper, queryClient } = createWrapper();
+    const archKey = ['tags', 'suggestions', 1, 'arch'] as const;
+    const backendKey = ['tags', 'suggestions', 1, 'backend'] as const;
+    const otherOwnerKey = ['tags', 'suggestions', 2, 'arch'] as const;
+    queryClient.setQueryData(archKey, []);
+    queryClient.setQueryData(backendKey, [{ id: 7, name: 'Backend' }]);
+    queryClient.setQueryData(otherOwnerKey, []);
+
+    const { result } = renderHook(() => useCreateTask(1), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.createTask(
+        { title: 'Created task', tags: [{ name: 'Architecture' }] },
+        'request-uuid'
+      );
+    });
+
+    expect(queryClient.getQueryState(archKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(backendKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(otherOwnerKey)?.isInvalidated).toBe(false);
+
+    const fetchSuggestions = vi.fn().mockResolvedValue([{ id: 8, name: 'Architecture' }]);
+    await queryClient.fetchQuery({
+      queryKey: archKey,
+      queryFn: fetchSuggestions,
+      staleTime: 30_000,
+    });
+    expect(fetchSuggestions).toHaveBeenCalledOnce();
+  });
+
+  it('does not invalidate tag suggestions for tag-free or failed creates', async () => {
+    const postSpy = vi.spyOn(apiClient, 'post');
+    const { Wrapper, queryClient } = createWrapper();
+    const key = ['tags', 'suggestions', 1, 'arch'] as const;
+    queryClient.setQueryData(key, []);
+    postSpy.mockResolvedValueOnce({ data: detail(41) } as never);
+
+    const { result } = renderHook(() => useCreateTask(1), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.createTask({ title: 'No tags' }, 'request-uuid');
+    });
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false);
+
+    postSpy.mockRejectedValueOnce(new Error('create failed'));
+    await act(async () => {
+      await expect(
+        result.current.createTask(
+          { title: 'Failed create', tags: [{ name: 'Architecture' }] },
+          'request-uuid-2'
+        )
+      ).rejects.toThrow('create failed');
+    });
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false);
   });
 
   it('does not retry a rejected create request automatically', async () => {

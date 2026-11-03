@@ -22,12 +22,14 @@ public record TaskDetailResponse(
         OffsetDateTime updatedAt,
         Map<String, Object> description,
         OffsetDateTime deletedAt,
-        List<ChecklistItemResponse> checklist) {
+        List<ChecklistItemResponse> checklist,
+        List<TaskTagResponse> tags) {
     public TaskDetailResponse {
         if (description != null) {
             description = Collections.unmodifiableMap(new LinkedHashMap<>(description));
         }
         checklist = checklist == null ? List.of() : List.copyOf(checklist);
+        tags = tags == null ? List.of() : List.copyOf(tags);
     }
 
     @Override

@@ -1,5 +1,6 @@
 package com.krishnamurti.horizon.task.web;
 
+import com.krishnamurti.horizon.tag.api.InvalidTagNameException;
 import com.krishnamurti.horizon.task.application.ChecklistOrderConflictException;
 import com.krishnamurti.horizon.task.application.TaskCreationConflictException;
 import com.krishnamurti.horizon.task.application.TaskNotFoundException;
@@ -59,6 +60,12 @@ public class TaskExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ProblemDetail handleInvalidRequest(TaskRequestValidationException exception) {
         return validationFailure(exception.getField(), exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidTagNameException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ProblemDetail handleInvalidTagName(InvalidTagNameException exception) {
+        return validationFailure("tags", exception.getMessage());
     }
 
     private ProblemDetail validationFailure(String field, String message) {

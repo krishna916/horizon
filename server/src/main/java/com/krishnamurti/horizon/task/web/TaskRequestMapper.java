@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.task.web;
 import com.krishnamurti.horizon.task.application.FieldUpdate;
 import com.krishnamurti.horizon.task.application.InitialChecklistItem;
 import com.krishnamurti.horizon.task.application.TaskPatch;
+import com.krishnamurti.horizon.task.application.TaskTagSelection;
 import com.krishnamurti.horizon.task.domain.TaskPriority;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -19,7 +20,7 @@ import tools.jackson.databind.JsonNode;
 public class TaskRequestMapper {
 
     private static final Set<String> EDITABLE_FIELDS =
-            Set.of("title", "description", "priority", "dueDate");
+            Set.of("title", "description", "priority", "dueDate", "tags");
 
     public TaskPatch toPatch(UpdateTaskRequest request) {
         Map<String, JsonNode> fields = request.fields();
@@ -35,7 +36,53 @@ public class TaskRequestMapper {
                 stringUpdate(fields, "title"),
                 descriptionUpdate(fields),
                 priorityUpdate(fields),
-                dateUpdate(fields));
+                dateUpdate(fields),
+                fields.containsKey("tags")
+                        ? FieldUpdate.of(parseTags(fields.get("tags")))
+                        : FieldUpdate.absent());
+    }
+
+    public List<TaskTagSelection> parseTags(JsonNode value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (!value.isArray()) {
+            fail("tags", "Must be an array of Tag references.");
+        }
+
+        List<TaskTagSelection> selections = new ArrayList<>();
+        value.forEach(
+                selection -> {
+                    if (!selection.isObject() || selection.size() != 1) {
+                        fail("tags", "Each Tag reference must contain exactly one of id or name.");
+                    }
+                    JsonNode id = selection.get("id");
+                    JsonNode name = selection.get("name");
+                    if (id != null) {
+                        if (!id.isIntegralNumber()) {
+                            fail("tags", "Tag IDs must be positive integers.");
+                        }
+                        long tagId;
+                        try {
+                            tagId = Long.parseLong(id.numberValue().toString());
+                        } catch (NumberFormatException exception) {
+                            throw new TaskRequestValidationException(
+                                    "tags", "Tag IDs must be positive integers.");
+                        }
+                        if (tagId <= 0) {
+                            fail("tags", "Tag IDs must be positive integers.");
+                        }
+                        selections.add(new TaskTagSelection(tagId, null));
+                    } else if (name != null) {
+                        if (!name.isString() || name.stringValue().isBlank()) {
+                            fail("tags", "Tag names must be non-empty strings.");
+                        }
+                        selections.add(new TaskTagSelection(null, name.stringValue()));
+                    } else {
+                        fail("tags", "Each Tag reference must contain exactly one of id or name.");
+                    }
+                });
+        return List.copyOf(selections);
     }
 
     public TaskPriority parsePriority(JsonNode value) {

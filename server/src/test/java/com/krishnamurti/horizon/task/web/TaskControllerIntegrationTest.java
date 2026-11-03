@@ -959,6 +959,8 @@ class TaskControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].title").value("List item"))
+                .andExpect(jsonPath("$.items[0].tags").isArray())
+                .andExpect(jsonPath("$.items[0].tags").isEmpty())
                 .andExpect(jsonPath("$.items[0].description").doesNotExist())
                 .andExpect(
                         org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
@@ -1266,6 +1268,161 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void patchTagSetsAreAtomicAndIndependentOfInboxAndTaskFields() throws Exception {
+        createTask("Tag assignment", "{\"title\":\"Tag assignment\"}");
+        Long taskId = taskIdForTitle("Tag assignment");
+        Long ownerId = userId(ownerEmail);
+        Long tagId = insertTag(ownerId, "Horizon");
+        jdbcTemplate.update("UPDATE task SET inbox = TRUE WHERE id = ?", taskId);
+        OffsetDateTime initialUpdatedAt = taskUpdatedAt(taskId);
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", taskId)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"tags\":[{\"id\":"
+                                                + tagId
+                                                + "},{\"name\":\"Horizon\"},{\"name\":\"horizon\"}]}"))
+                .andExpect(status().isOk());
+
+        assertThat(taskTagIds(taskId)).containsExactly(tagId);
+        assertThat(taskUpdatedAt(taskId)).isAfter(initialUpdatedAt);
+        OffsetDateTime changedUpdatedAt = taskUpdatedAt(taskId);
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", taskId)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"tags\":[{\"id\":" + tagId + "}]}"))
+                .andExpect(status().isOk());
+        assertThat(taskUpdatedAt(taskId)).isEqualTo(changedUpdatedAt);
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", taskId)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Renamed\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Renamed"));
+        assertThat(taskTagIds(taskId)).containsExactly(tagId);
+
+        mockMvc.perform(
+                        patch("/api/v1/tasks/{id}", taskId)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"tags\":[]}"))
+                .andExpect(status().isOk());
+        assertThat(taskTagIds(taskId)).isEmpty();
+        assertThat(tagExists(tagId)).isTrue();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT inbox FROM task WHERE id = ?", Boolean.class, taskId))
+                .isTrue();
+    }
+
+    @Test
+    void createResolvesExistingAndNewTagsWithinTheTaskSave() throws Exception {
+        Long ownerId = userId(ownerEmail);
+        Long existingTagId = insertTag(ownerId, "Backend");
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Create with tags\",\"tags\":[{\"id\":"
+                                                + existingTagId
+                                                + "},{\"name\":\"Architecture\"},{\"name\":\"architecture\"}]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tags.length()").value(2));
+
+        Long taskId = taskIdForTitle("Create with tags");
+        assertThat(taskTagIds(taskId)).hasSize(2).contains(existingTagId);
+        mockMvc.perform(get("/api/v1/tasks/{id}", taskId).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags.length()").value(2))
+                .andExpect(jsonPath("$.tags[0].name").value("Architecture"))
+                .andExpect(jsonPath("$.tags[1].name").value("Backend"));
+        mockMvc.perform(get("/api/v1/tasks").cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].tags.length()").value(2))
+                .andExpect(jsonPath("$.items[0].tags[0].name").value("Architecture"));
+        assertThat(tagExists(ownerId, "Architecture")).isTrue();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT inbox FROM task WHERE id = ?", Boolean.class, taskId))
+                .isFalse();
+    }
+
+    @Test
+    void idempotentCreateIncludesTagSetInFingerprintAndResponse() throws Exception {
+        String key = UUID.randomUUID().toString();
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Idempotent"
+                                            + " tags\",\"tags\":[{\"name\":\"First\"},{\"name\":\"Second\"}]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tags.length()").value(2));
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Idempotent"
+                                            + " tags\",\"tags\":[{\"name\":\"Second\"},{\"name\":\"First\"},{\"name\":\"First\"}]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tags.length()").value(2));
+
+        mockMvc.perform(
+                        post("/api/v1/tasks")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Idempotent"
+                                                + " tags\",\"tags\":[{\"name\":\"Changed\"}]}"))
+                .andExpect(status().isConflict());
+        assertThat(taskIdCountForTitle("Idempotent tags")).isEqualTo(1);
+    }
+
+    @Test
+    void patchForeignTagIdReturnsOwnerSafeNotFoundWithoutChangingLinks() throws Exception {
+        createTask("Foreign tag assignment", "{\"title\":\"Foreign tag assignment\"}");
+        Long taskId = taskIdForTitle("Foreign tag assignment");
+        Long ownerTagId = insertTag(userId(ownerEmail), "Owned");
+        String otherEmail = UUID.randomUUID() + "@example.com";
+        Long otherUserId = userCommandService.register(otherEmail, PASSWORD).id();
+        Long foreignTagId = insertTag(otherUserId, "Private");
+        patchTags(taskId, "[{\"id\":" + ownerTagId + "}]").andExpect(status().isOk());
+
+        patchTags(taskId, "[{\"name\":\"Draft\"},{\"id\":" + foreignTagId + "}]")
+                .andExpect(status().isNotFound());
+
+        assertThat(taskTagIds(taskId)).containsExactly(ownerTagId);
+        assertThat(tagExists(userId(ownerEmail), "Draft")).isFalse();
+    }
+
+    @Test
+    void patchInvalidTagNameReturnsValidationProblemOnTagsField() throws Exception {
+        createTask("Invalid tag name", "{\"title\":\"Invalid tag name\"}");
+        Long taskId = taskIdForTitle("Invalid tag name");
+
+        patchTags(taskId, "[{\"name\":\"" + "x".repeat(101) + "\"}]")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"))
+                .andExpect(jsonPath("$.errors.tags").isNotEmpty());
+        assertThat(taskTagIds(taskId)).isEmpty();
+    }
+
+    @Test
     void patchNullClearsPriorityDueDateDescription() throws Exception {
         createTask(
                 "Clear optional",
@@ -1495,6 +1652,56 @@ class TaskControllerIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(body))
                 .andExpect(status().isCreated());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions patchTags(Long taskId, String tags)
+            throws Exception {
+        return mockMvc.perform(
+                patch("/api/v1/tasks/{id}", taskId)
+                        .cookie(ownerCookie)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tags\":" + tags + "}"));
+    }
+
+    private Long userId(String email) {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM users WHERE email = ?", Long.class, email);
+    }
+
+    private Long insertTag(Long userId, String name) {
+        return jdbcTemplate.queryForObject(
+                "INSERT INTO tag (user_id, name, created_at, updated_at) "
+                        + "VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id",
+                Long.class,
+                userId,
+                name);
+    }
+
+    private java.util.List<Long> taskTagIds(Long taskId) {
+        return jdbcTemplate.queryForList(
+                "SELECT tag_id FROM task_tag WHERE task_id = ? ORDER BY tag_id",
+                Long.class,
+                taskId);
+    }
+
+    private OffsetDateTime taskUpdatedAt(Long taskId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT updated_at FROM task WHERE id = ?", OffsetDateTime.class, taskId);
+    }
+
+    private boolean tagExists(Long tagId) {
+        return Boolean.TRUE.equals(
+                jdbcTemplate.queryForObject(
+                        "SELECT EXISTS (SELECT 1 FROM tag WHERE id = ?)", Boolean.class, tagId));
+    }
+
+    private boolean tagExists(Long userId, String name) {
+        return Boolean.TRUE.equals(
+                jdbcTemplate.queryForObject(
+                        "SELECT EXISTS (SELECT 1 FROM tag WHERE user_id = ? AND name = ?)",
+                        Boolean.class,
+                        userId,
+                        name));
     }
 
     private Cookie login(String email) throws Exception {
