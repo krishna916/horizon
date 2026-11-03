@@ -67,6 +67,24 @@ export function TaskTagSelector({
     }
     return tags;
   }, [knownTags, resolvedTags, suggestionsQuery.data, userId]);
+  const displaySelections = value
+    .map((selection, index) => ({
+      selection,
+      index,
+      name:
+        'name' in selection
+          ? selection.name
+          : (tagsById.get(selection.id)?.name ?? `Tag #${selection.id}`),
+    }))
+    .sort((left, right) => {
+      const byNormalizedName = left.name.toLowerCase().localeCompare(right.name.toLowerCase());
+      if (byNormalizedName !== 0) return byNormalizedName;
+      const byDisplayName = left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+      if (byDisplayName !== 0) return byDisplayName;
+      const leftId = 'id' in left.selection ? left.selection.id : Number.MAX_SAFE_INTEGER;
+      const rightId = 'id' in right.selection ? right.selection.id : Number.MAX_SAFE_INTEGER;
+      return leftId - rightId || left.index - right.index;
+    });
   const visibleSuggestions = (suggestionsQuery.data ?? []).filter(
     (tag) => !isDuplicate({ id: tag.id }, value, tagsById)
   );
@@ -161,11 +179,7 @@ export function TaskTagSelector({
         Tags
       </label>
       <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-        {value.map((selection, index) => {
-          const name =
-            'name' in selection
-              ? selection.name
-              : (tagsById.get(selection.id)?.name ?? `Tag #${selection.id}`);
+        {displaySelections.map(({ selection, index, name }) => {
           return (
             <span
               key={'name' in selection ? `name:${selection.name}:${index}` : `id:${selection.id}`}

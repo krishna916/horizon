@@ -77,6 +77,79 @@ describe('TaskTagSelector', () => {
     expect(onChange).toHaveBeenCalledWith([]);
   });
 
+  it('sorts resolved and draft chips case-insensitively with stable display-name tie breaks', async () => {
+    vi.mocked(tagApi.suggest).mockResolvedValue(response([]) as never);
+    const knownTags = [
+      { id: 12, name: 'Backend' },
+      { id: 9, name: 'Api' },
+      { id: 8, name: 'API' },
+    ];
+    const onChange = vi.fn();
+    const { container, rerender } = renderSelector({
+      value: [{ id: 12 }, { id: 9 }, { id: 8 }],
+      knownTags,
+      onChange,
+    });
+
+    expect(
+      Array.from(container.querySelectorAll('button[aria-label^="Remove tag "]')).map((button) =>
+        button.getAttribute('aria-label')
+      )
+    ).toEqual(['Remove tag API', 'Remove tag Api', 'Remove tag Backend']);
+
+    const input = screen.getByRole('combobox', { name: 'Add tags' });
+    fireEvent.change(input, { target: { value: 'Architecture' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'Create tag “Architecture”' }));
+    const selection = onChange.mock.lastCall?.[0];
+    expect(selection).toEqual([
+      { id: 12 },
+      { id: 9 },
+      { id: 8 },
+      { name: 'Architecture' },
+    ]);
+
+    rerender(
+      <TaskTagSelector value={selection!} knownTags={knownTags} onChange={onChange} userId={7} />
+    );
+    expect(
+      Array.from(container.querySelectorAll('button[aria-label^="Remove tag "]')).map((button) =>
+        button.getAttribute('aria-label')
+      )
+    ).toEqual([
+      'Remove tag API',
+      'Remove tag Api',
+      'Remove tag Architecture',
+      'Remove tag Backend',
+    ]);
+  });
+
+  it('removes the correct original selection when the sorted first chip was last in the value', async () => {
+    vi.mocked(tagApi.suggest).mockResolvedValue(response([]) as never);
+    const onChange = vi.fn();
+    const { rerender } = renderSelector({
+      value: [{ id: 12 }],
+      knownTags: [{ id: 12, name: 'Backend' }],
+      onChange,
+    });
+    const input = screen.getByRole('combobox', { name: 'Add tags' });
+    fireEvent.change(input, { target: { value: 'Architecture' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'Create tag “Architecture”' }));
+    const selection = onChange.mock.lastCall?.[0];
+    expect(selection).toEqual([{ id: 12 }, { name: 'Architecture' }]);
+
+    rerender(
+      <TaskTagSelector
+        value={selection!}
+        knownTags={[{ id: 12, name: 'Backend' }]}
+        onChange={onChange}
+        userId={7}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Remove tag Architecture' }));
+
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 12 }]);
+  });
+
   it('supports arrow and Enter selection, Escape dismissal, loading, empty, error, and disabled states', async () => {
     const finishSuggestions: ((value: ReturnType<typeof response>) => void)[] = [];
     vi.mocked(tagApi.suggest).mockImplementation(
