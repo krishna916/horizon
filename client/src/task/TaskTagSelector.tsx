@@ -16,6 +16,26 @@ function normalizedName(name: string) {
   return name.trim().toLowerCase();
 }
 
+function getActiveSelection(
+  activeIndex: number,
+  visibleSuggestions: TaskTag[],
+  showCreate: boolean,
+  createName: string
+): TaskTagSelection | null {
+  if (activeIndex >= 0 && activeIndex < visibleSuggestions.length) {
+    const tag = visibleSuggestions[activeIndex];
+    return tag ? { id: tag.id } : null;
+  }
+  if (showCreate && (activeIndex === visibleSuggestions.length || activeIndex < 0)) {
+    return { name: createName };
+  }
+  if (!showCreate && visibleSuggestions.length === 1) {
+    const tag = visibleSuggestions[0];
+    return tag ? { id: tag.id } : null;
+  }
+  return null;
+}
+
 export function TaskTagSelector({
   value,
   onChange,
@@ -86,23 +106,20 @@ export function TaskTagSelector({
     if (event.key === 'ArrowDown' && optionCount > 0) {
       event.preventDefault();
       setActiveIndex((current) => (current + 1) % optionCount);
-    } else if (event.key === 'ArrowUp' && optionCount > 0) {
+      return;
+    }
+    if (event.key === 'ArrowUp' && optionCount > 0) {
       event.preventDefault();
       setActiveIndex((current) => (current <= 0 ? optionCount - 1 : current - 1));
-    } else if (event.key === 'Enter' && isOpen) {
+      return;
+    }
+    if (event.key === 'Enter' && isOpen) {
       event.preventDefault();
-      if (activeIndex >= 0 && activeIndex < visibleSuggestions.length) {
-        const tag = visibleSuggestions[activeIndex];
-        if (tag) select({ id: tag.id });
-      } else if (activeIndex === visibleSuggestions.length && showCreate) {
-        select({ name: createName });
-      } else if (showCreate) {
-        select({ name: createName });
-      } else if (visibleSuggestions.length === 1) {
-        const tag = visibleSuggestions[0];
-        if (tag) select({ id: tag.id });
-      }
-    } else if (event.key === 'Escape') {
+      const selection = getActiveSelection(activeIndex, visibleSuggestions, showCreate, createName);
+      if (selection) select(selection);
+      return;
+    }
+    if (event.key === 'Escape') {
       setIsOpen(false);
       setActiveIndex(-1);
     }

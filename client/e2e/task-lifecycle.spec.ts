@@ -11,6 +11,7 @@ type Task = {
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  tags: Array<{ id: number; name: string }>;
   description: null;
   deletedAt: string | null;
   checklist: [];
@@ -28,6 +29,7 @@ function task(id: number, overrides: Partial<Task> = {}): Task {
     archivedAt: null,
     createdAt: '2026-10-20T10:00:00Z',
     updatedAt: '2026-10-20T10:00:00Z',
+    tags: [],
     description: null,
     deletedAt: null,
     checklist: [],

@@ -24,8 +24,9 @@ function selectionKey(selection: TaskTagSelection): string {
 }
 
 function sameSelectionSet(left: TaskTagSelection[], right: TaskTagSelection[]) {
-  const leftKeys = left.map(selectionKey).sort();
-  const rightKeys = right.map(selectionKey).sort();
+  const compareKeys = (leftKey: string, rightKey: string) => leftKey.localeCompare(rightKey);
+  const leftKeys = left.map(selectionKey).sort(compareKeys);
+  const rightKeys = right.map(selectionKey).sort(compareKeys);
   return JSON.stringify(leftKeys) === JSON.stringify(rightKeys);
 }
 
