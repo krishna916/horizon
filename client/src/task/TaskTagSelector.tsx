@@ -81,7 +81,12 @@ export function TaskTagSelector({
     .sort((left, right) => {
       const byNormalizedName = left.name.toLowerCase().localeCompare(right.name.toLowerCase());
       if (byNormalizedName !== 0) return byNormalizedName;
-      const byDisplayName = left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+      let byDisplayName = 0;
+      if (left.name < right.name) {
+        byDisplayName = -1;
+      } else if (left.name > right.name) {
+        byDisplayName = 1;
+      }
       if (byDisplayName !== 0) return byDisplayName;
       const leftId = 'id' in left.selection ? left.selection.id : Number.MAX_SAFE_INTEGER;
       const rightId = 'id' in right.selection ? right.selection.id : Number.MAX_SAFE_INTEGER;
