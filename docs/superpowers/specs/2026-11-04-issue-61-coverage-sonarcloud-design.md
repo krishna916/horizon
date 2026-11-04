@@ -77,7 +77,7 @@ Playwright: existing separate frontend CI step (no backend Java coverage claim)
 - Keep `npm run test` as `vitest run`; add `test:coverage` = `vitest run --coverage`. Set `test.coverage.provider='v8'` in `vitest.config.ts`, with `lcov`, `html` and helpful console reporter.
 - Include production `src/**/*.{ts,tsx}` in the coverage denominator (not only test-imported files) and exclude only test/spec files, setup scripts, declaration files and generated router files. Avoid exclusions for components, hooks or feature modules just because they lack tests. Confirm Vitest 2.x syntax and exact dependency versions from `package-lock.json`.
 - Add `npm run verify` as the **one authoritative frontend full verification**: lint, format check, Vitest once with coverage, TypeScript/Vite production build, then a small Node report validator. `npm run build` already runs `tsc -b`, so a second `npm run typecheck` is unnecessary. Verify `lcov.info` contains source (SF) and line (DA) records with nonzero measured execution and HTML exists; malformed/missing reports fail `verify` clearly. No new runtime dependency.
-- Keep Playwright as a separate CI step after the canonical unit/build gate. Ignore `/client/coverage/` in Git; do not upload HTML in routine CI.
+- Keep Playwright as a separate CI step after the canonical unit/build gate. Ignore `/client/coverage/` in Git **and** update `client/.prettierignore` and `client/eslint.config.js` to exclude generated coverage output from subsequent lint/format checks. Verify that lint + format checks succeed a second time with the local HTML report already present. Do not upload HTML in routine CI.
 
 ### C. SonarCloud analysis contract
 
