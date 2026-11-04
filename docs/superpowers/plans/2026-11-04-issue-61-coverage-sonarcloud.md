@@ -8,7 +8,7 @@
 
 **Tech Stack:** Java 25, Spring Boot 4.0.6, Maven Surefire/Spotless/SpotBugs/Error Prone/PostgreSQL Testcontainers, JaCoCo 0.8.16; React 19, TypeScript 6, Node 24, Vite 8, Vitest 2.1.x/V8 coverage 2.1.x, Playwright; GitHub Actions checkout@v7/upload-artifact@v7/download-artifact@v8; SonarQube Cloud (SonarCloud).
 
-**Spec:** [Owner-reviewed design candidate](../specs/2026-11-04-issue-61-coverage-sonarcloud-design.md) and [Issue #61](https://github.com/krishna916/horizon/issues/61).
+**Spec:** [Design candidate for owner review](../specs/2026-11-04-issue-61-coverage-sonarcloud-design.md) and [Issue #61](https://github.com/krishna916/horizon/issues/61).
 
 ## Global Constraints
 
