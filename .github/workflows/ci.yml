@@ -43,6 +43,23 @@ jobs:
       - name: Run Maven verification
         run: ./mvnw -B -ntp verify
 
+      - name: Stage SonarCloud inputs
+        run: |
+          test -s target/site/jacoco/jacoco.xml
+          test -d target/classes
+          find target/classes -type f -name '*.class' -print -quit | grep -q .
+          mkdir -p "$RUNNER_TEMP/sonar-input/server/target/site/jacoco"
+          cp target/site/jacoco/jacoco.xml "$RUNNER_TEMP/sonar-input/server/target/site/jacoco/jacoco.xml"
+          cp -a target/classes "$RUNNER_TEMP/sonar-input/server/target/classes"
+
+      - name: Upload backend SonarCloud inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-sonar-input
+          path: ${{ runner.temp }}/sonar-input/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v7
@@ -75,20 +92,75 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps --ignore-scripts
 
-      - name: Run ESLint
-        run: npm run lint
+      - name: Run frontend verification
+        run: npm run verify
 
-      - name: Check Prettier formatting
-        run: npm run format:check
+      - name: Stage frontend SonarCloud inputs
+        run: |
+          test -s coverage/lcov.info
+          mkdir -p "$RUNNER_TEMP/sonar-input/client/coverage"
+          cp coverage/lcov.info "$RUNNER_TEMP/sonar-input/client/coverage/lcov.info"
 
-      - name: Run Vitest
-        run: npm run test
-
-      - name: Build frontend
-        run: npm run build
+      - name: Upload frontend SonarCloud inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-sonar-input
+          path: ${{ runner.temp }}/sonar-input/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Install Chromium for Playwright
         run: npm run test:e2e:install
 
       - name: Run Playwright browser tests
         run: npm run test:e2e
+
+  sonarcloud:
+    name: sonarcloud
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: [backend, frontend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download backend SonarCloud inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: backend-sonar-input
+          path: .
+
+      - name: Download frontend SonarCloud inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-sonar-input
+          path: .
+
+      - name: Validate downloaded SonarCloud inputs
+        run: |
+          test -s server/target/site/jacoco/jacoco.xml
+          test -s client/coverage/lcov.info
+          test -d server/target/classes
+          find server/target/classes -type f -name '*.class' -print -quit | grep -q .
+
+      - name: Require SonarCloud token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN is required for eligible SonarCloud analysis runs. Configure the repository secret with project analysis permission."
+            exit 1
+          fi
+
+      - name: Scan with SonarQube Cloud
+        uses: SonarSource/sonarqube-scan-action@v8.3.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
