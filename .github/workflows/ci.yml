@@ -40,8 +40,33 @@ jobs:
       - name: Verify Docker availability
         run: docker info --format '{{.ServerVersion}}'
 
-      - name: Run Maven verification
-        run: ./mvnw -B -ntp verify
+      - name: Run Maven verification and capture its test classpath
+        run: |
+          ./mvnw -B -ntp verify dependency:build-classpath \
+            -DincludeScope=test \
+            -Dmdep.outputFile=target/sonar-test-classpath.txt
+
+      - name: Stage SonarCloud inputs
+        run: |
+          test -s target/site/jacoco/jacoco.xml
+          test -s target/sonar-test-classpath.txt
+          test -d target/classes
+          test -d target/test-classes
+          find target/classes -type f -name '*.class' -print -quit | grep -q .
+          find target/test-classes -type f -name '*.class' -print -quit | grep -q .
+          mkdir -p "$RUNNER_TEMP/sonar-input/server/target/site/jacoco"
+          cp target/site/jacoco/jacoco.xml "$RUNNER_TEMP/sonar-input/server/target/site/jacoco/jacoco.xml"
+          cp -a target/classes "$RUNNER_TEMP/sonar-input/server/target/classes"
+          cp -a target/test-classes "$RUNNER_TEMP/sonar-input/server/target/test-classes"
+          cp target/sonar-test-classpath.txt "$RUNNER_TEMP/sonar-input/server/target/sonar-test-classpath.txt"
+
+      - name: Upload backend SonarCloud inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-sonar-input
+          path: ${{ runner.temp }}/sonar-input/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload test reports on failure
         if: failure()
@@ -75,20 +100,106 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps --ignore-scripts
 
-      - name: Run ESLint
-        run: npm run lint
+      - name: Run frontend verification
+        run: npm run verify
 
-      - name: Check Prettier formatting
-        run: npm run format:check
+      - name: Stage frontend SonarCloud inputs
+        run: |
+          test -s coverage/lcov.info
+          mkdir -p "$RUNNER_TEMP/sonar-input/client/coverage"
+          cp coverage/lcov.info "$RUNNER_TEMP/sonar-input/client/coverage/lcov.info"
 
-      - name: Run Vitest
-        run: npm run test
-
-      - name: Build frontend
-        run: npm run build
+      - name: Upload frontend SonarCloud inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-sonar-input
+          path: ${{ runner.temp }}/sonar-input/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Install Chromium for Playwright
         run: npm run test:e2e:install
 
       - name: Run Playwright browser tests
         run: npm run test:e2e
+
+  sonarcloud:
+    name: sonarcloud
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: [backend, frontend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Java 25 and restore Maven dependencies
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: |
+            server/pom.xml
+            server/.mvn/wrapper/maven-wrapper.properties
+
+      - name: Download backend SonarCloud inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: backend-sonar-input
+          path: .
+
+      - name: Download frontend SonarCloud inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-sonar-input
+          path: .
+
+      - name: Resolve Maven dependencies for SonarCloud
+        run: ./mvnw -B -ntp dependency:resolve -DincludeScope=test
+        working-directory: server
+
+      - name: Validate downloaded SonarCloud inputs
+        run: |
+          test -s server/target/site/jacoco/jacoco.xml
+          test -s server/target/sonar-test-classpath.txt
+          test -s client/coverage/lcov.info
+          test -d server/target/classes
+          test -d server/target/test-classes
+          find server/target/classes -type f -name '*.class' -print -quit | grep -q .
+          find server/target/test-classes -type f -name '*.class' -print -quit | grep -q .
+
+      - name: Configure Java libraries from Maven classpath
+        run: |
+          classpath=$(cat server/target/sonar-test-classpath.txt)
+          IFS=: read -r -a libraries <<< "$classpath"
+          for library in "${libraries[@]}"; do
+            if [ ! -f "$library" ]; then
+              echo "::error::Maven dependency is missing from the restored cache: $library"
+              exit 1
+            fi
+          done
+          classpath_csv=${classpath//:/,}
+          printf 'sonar.java.libraries=%s\nsonar.java.test.libraries=%s,server/target/classes\n' \
+            "$classpath_csv" "$classpath_csv" >> sonar-project.properties
+
+      - name: Require SonarCloud token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN is required for eligible SonarCloud analysis runs. Configure the repository secret with project analysis permission."
+            exit 1
+          fi
+
+      - name: Scan with SonarQube Cloud
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

@@ -31,6 +31,7 @@
 		<spring-cloud.version>2025.1.1</spring-cloud.version>
 		<spotless.version>3.7.0</spotless.version>
 		<spotbugs-maven-plugin.version>4.10.2.0</spotbugs-maven-plugin.version>
+		<jacoco.version>0.8.16</jacoco.version>
 		<error-prone.version>2.50.0</error-prone.version>
 	</properties>
 	<dependencies>
@@ -238,11 +239,88 @@
 				</configuration>
 			</plugin>
 			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+						<configuration>
+							<append>false</append>
+						</configuration>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
-					<argLine>-Duser.timezone=UTC</argLine>
+					<argLine>@{argLine} -Duser.timezone=UTC</argLine>
 				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<version>3.1.0</version>
+				<executions>
+					<execution>
+						<id>validate-coverage-report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<target>
+								<available file="${project.build.directory}/jacoco.exec" property="jacoco.exec.exists"/>
+								<fail unless="jacoco.exec.exists" message="JaCoCo execution data is missing: ${project.build.directory}/jacoco.exec"/>
+								<length file="${project.build.directory}/jacoco.exec" property="jacoco.exec.length"/>
+								<condition property="jacoco.exec.nonempty">
+									<not>
+									<equals arg1="${jacoco.exec.length}" arg2="0"/>
+									</not>
+								</condition>
+								<fail unless="jacoco.exec.nonempty" message="JaCoCo execution data is empty: ${project.build.directory}/jacoco.exec"/>
+
+								<available file="${project.build.directory}/site/jacoco/jacoco.xml" property="jacoco.xml.exists"/>
+								<fail unless="jacoco.xml.exists" message="JaCoCo XML report is missing: ${project.build.directory}/site/jacoco/jacoco.xml"/>
+								<length file="${project.build.directory}/site/jacoco/jacoco.xml" property="jacoco.xml.length"/>
+								<condition property="jacoco.xml.nonempty">
+									<not>
+									<equals arg1="${jacoco.xml.length}" arg2="0"/>
+									</not>
+								</condition>
+								<fail unless="jacoco.xml.nonempty" message="JaCoCo XML report is empty: ${project.build.directory}/site/jacoco/jacoco.xml"/>
+								<xmlvalidate file="${project.build.directory}/site/jacoco/jacoco.xml" lenient="true" failonerror="true" warn="false">
+									<attribute name="http://apache.org/xml/features/nonvalidating/load-external-dtd" value="false"/>
+									<attribute name="http://xml.org/sax/features/external-general-entities" value="false"/>
+									<attribute name="http://xml.org/sax/features/external-parameter-entities" value="false"/>
+								</xmlvalidate>
+								<loadfile property="jacoco.xml.content" srcFile="${project.build.directory}/site/jacoco/jacoco.xml"/>
+								<condition property="jacoco.xml.has.classes">
+									<contains string="${jacoco.xml.content}" substring="&lt;class "/>
+								</condition>
+								<fail unless="jacoco.xml.has.classes" message="JaCoCo XML report contains no classes: ${project.build.directory}/site/jacoco/jacoco.xml"/>
+								<condition property="jacoco.xml.has.covered.lines">
+									<matches string="${jacoco.xml.content}" pattern="&lt;counter type=&quot;LINE&quot; missed=&quot;[0-9]+&quot; covered=&quot;[1-9][0-9]*&quot;"/>
+								</condition>
+								<fail unless="jacoco.xml.has.covered.lines" message="JaCoCo XML report has no covered lines; verify the agent instrumented test execution: ${project.build.directory}/site/jacoco/jacoco.xml"/>
+
+								<available file="${project.build.directory}/site/jacoco/index.html" property="jacoco.html.exists"/>
+								<fail unless="jacoco.html.exists" message="JaCoCo HTML report is missing: ${project.build.directory}/site/jacoco/index.html"/>
+							</target>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
