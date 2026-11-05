@@ -161,6 +161,10 @@ jobs:
           name: frontend-sonar-input
           path: .
 
+      - name: Resolve Maven dependencies for SonarCloud
+        run: ./mvnw -B -ntp dependency:resolve -DincludeScope=test
+        working-directory: server
+
       - name: Validate downloaded SonarCloud inputs
         run: |
           test -s server/target/site/jacoco/jacoco.xml
