@@ -182,7 +182,7 @@ jobs:
             fi
           done
           classpath_csv=${classpath//:/,}
-          printf 'sonar.java.libraries=%s\nsonar.java.test.libraries=%s\n' \
+          printf 'sonar.java.libraries=%s\nsonar.java.test.libraries=%s,server/target/classes\n' \
             "$classpath_csv" "$classpath_csv" >> sonar-project.properties
 
       - name: Require SonarCloud token
