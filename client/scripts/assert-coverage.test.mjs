@@ -7,7 +7,7 @@ import { assertCoverageReports } from './assert-coverage.mjs';
 
 const temporaryDirectories = [];
 
-function createCoverageDirectory({ lcov, html = '<html>coverage</html>' } = {}) {
+function createCoverageDirectory({ lcov, includeHtml = true } = {}) {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'horizon-coverage-'));
   temporaryDirectories.push(directory);
 
@@ -15,8 +15,8 @@ function createCoverageDirectory({ lcov, html = '<html>coverage</html>' } = {}) 
     writeFileSync(path.join(directory, 'lcov.info'), lcov);
   }
 
-  if (html !== null) {
-    writeFileSync(path.join(directory, 'index.html'), html);
+  if (includeHtml) {
+    writeFileSync(path.join(directory, 'index.html'), '<html>coverage</html>');
   }
 
   return directory;
@@ -67,6 +67,14 @@ test('rejects LCOV without source and line data', () => {
   assert.throws(() => assertCoverageReports(directory), /source and line records/);
 });
 
+test('rejects malformed LCOV line records', () => {
+  const directory = createCoverageDirectory({
+    lcov: 'SF:src/covered.ts\nDA:1,not-a-hit-count\nend_of_record\n',
+  });
+
+  assert.throws(() => assertCoverageReports(directory), /Malformed LCOV line record/);
+});
+
 test('rejects reports when no production line has a positive hit count', () => {
   const directory = createCoverageDirectory({
     lcov: 'SF:src/untested.ts\nDA:1,0\nLF:1\nLH:0\nend_of_record\n',
@@ -78,7 +86,7 @@ test('rejects reports when no production line has a positive hit count', () => {
 test('reports the expected path when the HTML index is missing', () => {
   const directory = createCoverageDirectory({
     lcov: 'SF:src/covered.ts\nDA:1,1\nLF:1\nLH:1\nend_of_record\n',
-    html: null,
+    includeHtml: false,
   });
 
   assert.throws(() => assertCoverageReports(directory), /coverage\/index\.html/);
