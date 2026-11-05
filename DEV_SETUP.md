@@ -5,7 +5,7 @@ This guide outlines how to set up your local development environment for Horizon
 ## Prerequisites
 
 - **Java:** OpenJDK 25 (Required for the backend)
-- **NodeJS:** Node 20+ and npm 10+ (Required for the frontend)
+- **Node.js:** Node.js 24 and npm 10+ (Required for frontend development and verification)
 - **Docker:** Docker Desktop or Docker Engine with Docker Compose (Required for PostgreSQL)
 
 ## Local Development Setup
@@ -95,7 +95,7 @@ npm run test:e2e
 
 ## CI-Equivalent Checks (Before Opening a PR)
 
-The local full-verification commands use Java 25 for the backend and Node.js 24 for the frontend, matching the GitHub Actions runners. Node.js 20+ remains suitable for ordinary frontend development; use Node.js 24 when reproducing CI results. Backend verification also needs a running Docker daemon because repository and integration tests start PostgreSQL with Testcontainers.
+The local full-verification commands use Java 25 for the backend and Node.js 24 for the frontend, matching the GitHub Actions runners. Backend verification also needs a running Docker daemon because repository and integration tests start PostgreSQL with Testcontainers.
 
 From the repository root, run the backend gate:
 
