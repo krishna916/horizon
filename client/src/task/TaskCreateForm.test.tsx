@@ -33,19 +33,32 @@ function renderForm(props: Partial<React.ComponentProps<typeof TaskCreateForm>> 
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  const view = render(
+  let currentProps = props;
+  const renderTree = () => (
     <QueryClientProvider client={queryClient}>
-      <TaskCreateForm
-        userId={1}
-        onCreated={onCreated}
-        onDirtyChange={onDirtyChange}
-        onSubmittingChange={vi.fn()}
-        onCancel={onCancel}
-        {...props}
-      />
+      <div hidden={currentProps.canAutoFocusTitle === false}>
+        <TaskCreateForm
+          userId={1}
+          onCreated={onCreated}
+          onDirtyChange={onDirtyChange}
+          onSubmittingChange={vi.fn()}
+          onCancel={onCancel}
+          {...currentProps}
+        />
+      </div>
     </QueryClientProvider>
   );
-  return { ...view, onCreated, onDirtyChange, onCancel };
+  const view = render(renderTree());
+  return {
+    ...view,
+    rerenderForm(nextProps: Partial<React.ComponentProps<typeof TaskCreateForm>>) {
+      currentProps = { ...currentProps, ...nextProps };
+      view.rerender(renderTree());
+    },
+    onCreated,
+    onDirtyChange,
+    onCancel,
+  };
 }
 
 beforeEach(() => {
@@ -64,6 +77,17 @@ afterEach(() => {
 });
 
 describe('TaskCreateForm', () => {
+  it('focuses the title after its mounted form becomes visible', async () => {
+    const view = renderForm({ canAutoFocusTitle: false });
+    const title = document.querySelector<HTMLInputElement>('#task-create-title');
+    expect(title).not.toBeNull();
+    expect(title).not.toHaveFocus();
+
+    view.rerenderForm({ canAutoFocusTitle: true });
+
+    await waitFor(() => expect(title).toHaveFocus());
+  });
+
   it('submits selected existing and new draft tags with the task payload', async () => {
     vi.mocked(tagApi.suggest).mockResolvedValueOnce({
       data: { items: [{ id: 12, name: 'Planning' }] },

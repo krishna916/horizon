@@ -326,6 +326,7 @@ export function TaskWorkspace({
               <TaskCreateSurface
                 key={userId}
                 userId={userId}
+                canAutoFocusTitle={!currentUser.isFetching}
                 onCreated={onCreated}
                 onDirtyChange={onCreationDirtyChange}
                 onSubmittingChange={onCreationSubmittingChange}

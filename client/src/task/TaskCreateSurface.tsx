@@ -6,6 +6,7 @@ import type { TaskDetail } from './types';
 
 interface TaskCreateSurfaceProps {
   readonly userId: number;
+  readonly canAutoFocusTitle?: boolean;
   readonly onCreated: (task: TaskDetail) => void;
   readonly onDirtyChange: (dirty: boolean) => void;
   readonly onSubmittingChange: (pending: boolean) => void;
@@ -15,6 +16,7 @@ interface TaskCreateSurfaceProps {
 
 export function TaskCreateSurface({
   userId,
+  canAutoFocusTitle = true,
   onCreated,
   onDirtyChange,
   onSubmittingChange,
@@ -38,6 +40,7 @@ export function TaskCreateSurface({
       <div className="min-h-0 flex-1">
         <TaskCreateForm
           userId={userId}
+          canAutoFocusTitle={canAutoFocusTitle}
           onCreated={onCreated}
           onDirtyChange={onDirtyChange}
           onSubmittingChange={onSubmittingChange}

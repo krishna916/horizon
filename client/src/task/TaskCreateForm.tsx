@@ -34,6 +34,7 @@ interface TaskCreateRecovery {
 
 interface TaskCreateFormProps {
   readonly userId: number;
+  readonly canAutoFocusTitle?: boolean;
   readonly onCreated: (task: TaskDetail) => void;
   readonly onDirtyChange: (dirty: boolean) => void;
   readonly onSubmittingChange: (pending: boolean) => void;
@@ -78,6 +79,7 @@ function isAmbiguousFailure(error: unknown): boolean {
 
 export function TaskCreateForm({
   userId,
+  canAutoFocusTitle = true,
   onCreated,
   onDirtyChange,
   onSubmittingChange,
@@ -121,8 +123,8 @@ export function TaskCreateForm({
   }, [checklistDrafts.length, form.formState.isDirty, tagDraft?.length]);
 
   useEffect(() => {
-    titleInputRef.current?.focus();
-  }, []);
+    if (canAutoFocusTitle) titleInputRef.current?.focus();
+  }, [canAutoFocusTitle]);
 
   const reportDirtyFromCurrentValues = () => {
     const values = form.getValues();
