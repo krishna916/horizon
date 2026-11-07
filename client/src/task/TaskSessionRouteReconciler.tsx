@@ -2,6 +2,7 @@ import { useLocation, useRouter } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useOptionalAuthSession } from '@/user/session/AuthSessionProvider';
+import { getCurrentOwnerRevision } from '@/user/session/sessionRuntime';
 import { taskApi } from './api';
 import { parseTaskSelection } from './taskNavigation';
 
@@ -40,17 +41,18 @@ export function TasksRouteReconciler(): null {
     const previousOwnerRevision = lastOwnerRevisionByRouter.get(router);
     if (previousOwnerRevision === undefined) {
       lastOwnerRevisionByRouter.set(router, ownerRevision);
+      if (ownerRevision === 0) return;
+    } else if (ownerRevision === previousOwnerRevision) {
       return;
+    } else {
+      lastOwnerRevisionByRouter.set(router, ownerRevision);
     }
-    if (ownerRevision === previousOwnerRevision) return;
-    lastOwnerRevisionByRouter.set(router, ownerRevision);
     if (phase !== 'verified' || verifiedUserId === null) return;
 
     const taskId = selectedTaskId(location.pathname, location.searchStr);
     if (taskId === null) return;
 
     const requestedHref = location.href;
-    let active = true;
     void queryClient
       .fetchQuery({
         queryKey: ['tasks', verifiedUserId, 'detail', taskId],
@@ -59,8 +61,8 @@ export function TasksRouteReconciler(): null {
       })
       .catch((error: unknown) => {
         if (
-          !active ||
           responseStatus(error) !== 404 ||
+          getCurrentOwnerRevision() !== ownerRevision ||
           router.state.location.href !== requestedHref
         ) {
           return;
@@ -72,10 +74,6 @@ export function TasksRouteReconciler(): null {
           state: { horizonTaskNavigation: undefined },
         });
       });
-
-    return () => {
-      active = false;
-    };
   }, [
     location.href,
     location.pathname,
