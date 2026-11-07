@@ -4,6 +4,8 @@ spring:
   docker:
     compose:
       enabled: false
+  # Development-only connection to the local PostgreSQL service in server/compose.yaml.
+  # Do not use these credentials with a shared or production database.
   datasource:
     url: jdbc:postgresql://localhost:5433/horizon?sslmode=disable&TimeZone=UTC
     username: horizon
