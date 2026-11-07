@@ -59,6 +59,19 @@ public class UserCommandService {
      */
     @Transactional
     public CurrentUserResponse register(String email, String rawPassword) {
+        User user = createUser(email, rawPassword);
+        return new CurrentUserResponse(user.getId(), user.getEmail());
+    }
+
+    /** Registers a user through HTTP and establishes the new user's authenticated session. */
+    @Transactional
+    public CurrentUserResponse registerAndAuthenticate(String email, String rawPassword) {
+        User user = createUser(email, rawPassword);
+        establishAuthenticatedSession(user);
+        return new CurrentUserResponse(user.getId(), user.getEmail());
+    }
+
+    private User createUser(String email, String rawPassword) {
         String normalizedEmail = email.toLowerCase(Locale.ROOT).trim();
 
         if (userRepository.existsByEmail(normalizedEmail)) {
@@ -71,10 +84,7 @@ public class UserCommandService {
 
         UserSettings settings = UserSettings.createDefault(user);
         userSettingsRepository.save(settings);
-
-        establishAuthenticatedSession(user);
-
-        return new CurrentUserResponse(user.getId(), user.getEmail());
+        return user;
     }
 
     /**

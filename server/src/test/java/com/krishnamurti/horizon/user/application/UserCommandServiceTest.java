@@ -19,7 +19,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * Unit tests for {@link UserCommandService}.
@@ -55,6 +59,30 @@ class UserCommandServiceTest {
 
         assertThat(response.id()).isEqualTo(1L);
         assertThat(response.email()).isEqualTo("user@example.com");
+    }
+
+    @Test
+    void programmaticRegistrationDoesNotEstablishAnHttpSession() {
+        when(userRepository.existsByEmail("user@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("rawPassword123")).thenReturn("$2a$10$encoded");
+        when(userRepository.save(any(User.class)))
+                .thenAnswer(
+                        invocation -> {
+                            User user = invocation.getArgument(0);
+                            user.setId(1L);
+                            return user;
+                        });
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request, response));
+
+        try {
+            userCommandService.register("user@example.com", "rawPassword123");
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
+        }
+
+        assertThat(request.getSession(false)).isNull();
     }
 
     @Test
