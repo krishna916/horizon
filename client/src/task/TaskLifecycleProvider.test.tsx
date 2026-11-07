@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { taskApi } from './api';
 import { TaskCompletionProvider, useTaskCompletion } from './TaskCompletionProvider';
 import { TaskLifecycleProvider, useTaskLifecycle } from './TaskLifecycleProvider';
+import { setCurrentOwnerRevision } from '@/user/session/sessionRuntime';
 import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 
 vi.mock('./api', async (importOriginal) => {
@@ -146,7 +147,10 @@ function createHarness(ownerId: number | undefined, task: TaskSummary) {
 }
 
 describe('TaskLifecycleProvider', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setCurrentOwnerRevision(0);
+  });
 
   it('patches archive and restore facts into owner-scoped list and detail caches', async () => {
     const task = taskSummary(7);
@@ -613,5 +617,104 @@ describe('TaskLifecycleProvider', () => {
 
     harness.rerenderOwner(2);
     await waitFor(() => expect(harness.lifecycle().notices).toHaveLength(0));
+  });
+
+  it('does not restore a previous owner cache after a late archive response', async () => {
+    const task = taskSummary(31);
+    const pendingArchive = deferred<AxiosResponse<TaskDetail>>();
+    const harness = createHarness(1, task);
+    const oldListKey = ['tasks', 1] as const;
+    const oldDetailKey = ['tasks', 1, 'detail', task.id] as const;
+    const newListKey = ['tasks', 2] as const;
+    harness.queryClient.setQueryData<TaskListResponse>(oldListKey, { items: [task] });
+    harness.queryClient.setQueryData<TaskDetail>(oldDetailKey, taskDetail(task.id));
+    harness.queryClient.setQueryData<TaskListResponse>(newListKey, { items: [] });
+    vi.mocked(taskApi.archive).mockReturnValue(pendingArchive.promise);
+    const cacheCancellation = deferred<void>();
+    let cancelCount = 0;
+    const cancelQueries = harness.queryClient.cancelQueries.bind(harness.queryClient);
+    vi.spyOn(harness.queryClient, 'cancelQueries').mockImplementation((filters) => {
+      cancelCount += 1;
+      return cancelCount > 2 ? cacheCancellation.promise : cancelQueries(filters);
+    });
+    setCurrentOwnerRevision(4);
+
+    let request!: Promise<boolean>;
+    act(() => {
+      request = harness.lifecycle().run(1, task, 'archive');
+    });
+    await waitFor(() => expect(taskApi.archive).toHaveBeenCalledWith(task.id));
+    pendingArchive.resolve(response(taskDetail(task.id, { archivedAt: '2026-10-24T09:00:00Z' })));
+    await waitFor(() => expect(cancelCount).toBe(4));
+
+    harness.unmount();
+    setCurrentOwnerRevision(5);
+    harness.queryClient.removeQueries({ queryKey: oldListKey });
+    await act(async () => {
+      cacheCancellation.resolve();
+      await request;
+    });
+
+    expect(harness.queryClient.getQueryData(oldListKey)).toBeUndefined();
+    expect(harness.queryClient.getQueryData(oldDetailKey)).toBeUndefined();
+    expect(harness.queryClient.getQueryData(newListKey)).toEqual({ items: [] });
+  });
+
+  it('does not create a failed-delete notice for an owner that has switched away', async () => {
+    const task = taskSummary(32);
+    const pendingDelete = deferred<AxiosResponse<void>>();
+    const harness = createHarness(1, task);
+    const oldListKey = ['tasks', 1] as const;
+    harness.queryClient.setQueryData<TaskListResponse>(oldListKey, { items: [task] });
+    vi.mocked(taskApi.softDelete).mockReturnValue(pendingDelete.promise);
+    setCurrentOwnerRevision(6);
+
+    let request!: Promise<boolean>;
+    act(() => {
+      request = harness.lifecycle().run(1, task, 'delete');
+    });
+    await waitFor(() => expect(taskApi.softDelete).toHaveBeenCalledWith(task.id));
+    harness.rerenderOwner(2);
+    setCurrentOwnerRevision(7);
+    harness.queryClient.removeQueries({ queryKey: oldListKey });
+    pendingDelete.reject(new Error('request failed after owner switch'));
+    await request;
+
+    expect(harness.queryClient.getQueryData(oldListKey)).toBeUndefined();
+    expect(harness.lifecycle().notices).toEqual([]);
+  });
+
+  it('does not restore cache or notice state from a late archive undo', async () => {
+    const task = taskSummary(33);
+    const pendingRestore = deferred<AxiosResponse<TaskDetail>>();
+    const harness = createHarness(1, task);
+    const oldListKey = ['tasks', 1] as const;
+    const oldDetailKey = ['tasks', 1, 'detail', task.id] as const;
+    harness.queryClient.setQueryData<TaskListResponse>(oldListKey, { items: [task] });
+    harness.queryClient.setQueryData<TaskDetail>(oldDetailKey, taskDetail(task.id));
+    vi.mocked(taskApi.archive).mockResolvedValue(
+      response(taskDetail(task.id, { archivedAt: '2026-10-24T09:00:00Z' }))
+    );
+    setCurrentOwnerRevision(8);
+    await act(async () => {
+      await harness.lifecycle().run(1, task, 'archive');
+    });
+    const noticeId = harness.lifecycle().notices[0]!.id;
+    vi.mocked(taskApi.restoreArchive).mockReturnValue(pendingRestore.promise);
+
+    let undo!: Promise<boolean>;
+    act(() => {
+      undo = harness.lifecycle().undo(noticeId);
+    });
+    await waitFor(() => expect(taskApi.restoreArchive).toHaveBeenCalledWith(task.id));
+    harness.rerenderOwner(2);
+    setCurrentOwnerRevision(9);
+    harness.queryClient.removeQueries({ queryKey: oldListKey });
+    pendingRestore.resolve(response(taskDetail(task.id)));
+    await undo;
+
+    expect(harness.queryClient.getQueryData(oldListKey)).toBeUndefined();
+    expect(harness.queryClient.getQueryData(oldDetailKey)).toBeUndefined();
+    expect(harness.lifecycle().notices).toEqual([]);
   });
 });

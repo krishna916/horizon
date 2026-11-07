@@ -73,6 +73,104 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
+    void shouldAccessProtectedEndpointImmediatelyAfterRegistration() throws Exception {
+        RegisterUserRequest request =
+                new RegisterUserRequest("session-after-register@example.com", "password123");
+
+        MvcResult result =
+                mockMvc.perform(
+                                post("/api/v1/auth/register")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(objectMapper.writeValueAsString(request)))
+                        .andExpect(status().isCreated())
+                        .andReturn();
+
+        Cookie sessionCookie = result.getResponse().getCookie("SESSION");
+        assertThat(sessionCookie).isNotNull();
+
+        mockMvc.perform(get("/api/v1/users/me").cookie(sessionCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("session-after-register@example.com"));
+    }
+
+    @Test
+    void shouldReplaceExistingAccountSessionOnRegistration() throws Exception {
+        LoginRequest loginRequest = new LoginRequest(TEST_EMAIL, TEST_PASSWORD);
+        MvcResult loginResult =
+                mockMvc.perform(
+                                post("/api/v1/auth/login")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(objectMapper.writeValueAsString(loginRequest)))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        Cookie accountASession = loginResult.getResponse().getCookie("SESSION");
+        assertThat(accountASession).isNotNull();
+
+        RegisterUserRequest registerRequest =
+                new RegisterUserRequest("session-replaces-account@example.com", "password123");
+        MvcResult registerResult =
+                mockMvc.perform(
+                                post("/api/v1/auth/register")
+                                        .cookie(accountASession)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(objectMapper.writeValueAsString(registerRequest)))
+                        .andExpect(status().isCreated())
+                        .andReturn();
+
+        Cookie accountBSession = registerResult.getResponse().getCookie("SESSION");
+        assertThat(accountBSession).isNotNull();
+        assertThat(accountBSession.getValue()).isNotEqualTo(accountASession.getValue());
+        mockMvc.perform(get("/api/v1/users/me").cookie(accountBSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("session-replaces-account@example.com"));
+        mockMvc.perform(get("/api/v1/users/me").cookie(accountASession))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldNotSwitchSessionOnRejectedRegistration() throws Exception {
+        RegisterUserRequest existingAccount =
+                new RegisterUserRequest("already-registered@example.com", "password123");
+        MvcResult existingAccountResult =
+                mockMvc.perform(
+                                post("/api/v1/auth/register")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(objectMapper.writeValueAsString(existingAccount)))
+                        .andExpect(status().isCreated())
+                        .andReturn();
+        Cookie existingAccountSession = existingAccountResult.getResponse().getCookie("SESSION");
+        assertThat(existingAccountSession).isNotNull();
+
+        LoginRequest loginRequest = new LoginRequest(TEST_EMAIL, TEST_PASSWORD);
+        MvcResult loginResult =
+                mockMvc.perform(
+                                post("/api/v1/auth/login")
+                                        .cookie(existingAccountSession)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(objectMapper.writeValueAsString(loginRequest)))
+                        .andExpect(status().isOk())
+                        .andReturn();
+        Cookie accountASession = loginResult.getResponse().getCookie("SESSION");
+        assertThat(accountASession).isNotNull();
+
+        RegisterUserRequest duplicate =
+                new RegisterUserRequest("already-registered@example.com", "password123");
+        MvcResult rejected =
+                mockMvc.perform(
+                                post("/api/v1/auth/register")
+                                        .cookie(accountASession)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(objectMapper.writeValueAsString(duplicate)))
+                        .andExpect(status().isConflict())
+                        .andReturn();
+
+        assertThat(rejected.getResponse().getCookie("SESSION")).isNull();
+        mockMvc.perform(get("/api/v1/users/me").cookie(accountASession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(TEST_EMAIL));
+    }
+
+    @Test
     void shouldRejectDuplicateRegistration() throws Exception {
         RegisterUserRequest request =
                 new RegisterUserRequest("duplicate-auth@example.com", "password123");

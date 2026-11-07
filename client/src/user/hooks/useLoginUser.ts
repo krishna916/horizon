@@ -1,7 +1,9 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { userApi } from '../api';
 import type { LoginRequest, CurrentUserResponse } from '../types';
+import { useAuthSession } from '../session/AuthSessionProvider';
+import { publishSessionMarker } from '../session/sessionMarker';
 
 /**
  * Hook for authenticating an existing user.
@@ -10,15 +12,15 @@ import type { LoginRequest, CurrentUserResponse } from '../types';
  * can refresh the authenticated user information.
  */
 export const useLoginUser = () => {
-  const queryClient = useQueryClient();
+  const { acceptLocalAuthentication } = useAuthSession();
   return useMutation<CurrentUserResponse, AxiosError<{ title?: string }>, LoginRequest>({
     mutationFn: async (data) => {
       const response = await userApi.login(data);
       return response.data;
     },
-    onSuccess: () => {
-      // Invalidate any cached current‑user query so it refetches.
-      queryClient.invalidateQueries({ queryKey: ['me'] });
+    onSuccess: (user) => {
+      acceptLocalAuthentication(user);
+      publishSessionMarker();
     },
   });
 };

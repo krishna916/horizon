@@ -59,6 +59,19 @@ public class UserCommandService {
      */
     @Transactional
     public CurrentUserResponse register(String email, String rawPassword) {
+        User user = createUser(email, rawPassword);
+        return new CurrentUserResponse(user.getId(), user.getEmail());
+    }
+
+    /** Registers a user through HTTP and establishes the new user's authenticated session. */
+    @Transactional
+    public CurrentUserResponse registerAndAuthenticate(String email, String rawPassword) {
+        User user = createUser(email, rawPassword);
+        establishAuthenticatedSession(user);
+        return new CurrentUserResponse(user.getId(), user.getEmail());
+    }
+
+    private User createUser(String email, String rawPassword) {
         String normalizedEmail = email.toLowerCase(Locale.ROOT).trim();
 
         if (userRepository.existsByEmail(normalizedEmail)) {
@@ -71,8 +84,7 @@ public class UserCommandService {
 
         UserSettings settings = UserSettings.createDefault(user);
         userSettingsRepository.save(settings);
-
-        return new CurrentUserResponse(user.getId(), user.getEmail());
+        return user;
     }
 
     /**
@@ -95,38 +107,42 @@ public class UserCommandService {
             throw new InvalidCredentialsException();
         }
 
-        ServletRequestAttributes attributes =
-                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        if (attributes != null) {
-            HttpServletRequest request = attributes.getRequest();
-            HttpServletResponse response = attributes.getResponse();
-
-            // Session fixation protection: invalidate old session
-            HttpSession session = request.getSession(false);
-            if (session != null) {
-                session.invalidate();
-            }
-
-            // Create new session (side-effect: establishes a fresh session after invalidation)
-            request.getSession(true);
-
-            // Set Spring Security context
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(
-                            user.getId(),
-                            null,
-                            java.util.List.of(
-                                    new org.springframework.security.core.authority
-                                            .SimpleGrantedAuthority("ROLE_USER")));
-            SecurityContext context = SecurityContextHolder.createEmptyContext();
-            context.setAuthentication(authentication);
-            SecurityContextHolder.setContext(context);
-
-            // Persist the SecurityContext to the session
-            new HttpSessionSecurityContextRepository().saveContext(context, request, response);
-        }
+        establishAuthenticatedSession(user);
 
         return new CurrentUserResponse(user.getId(), user.getEmail());
+    }
+
+    private void establishAuthenticatedSession(User user) {
+        ServletRequestAttributes attributes =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes == null) {
+            return;
+        }
+
+        HttpServletRequest request = attributes.getRequest();
+        HttpServletResponse response = attributes.getResponse();
+
+        // Session fixation protection: invalidate old session
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
+
+        // Create a fresh session after invalidation.
+        request.getSession(true);
+
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(
+                        user.getId(),
+                        null,
+                        java.util.List.of(
+                                new org.springframework.security.core.authority
+                                        .SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+
+        new HttpSessionSecurityContextRepository().saveContext(context, request, response);
     }
 
     /** Terminates the current user session and clears security context. */

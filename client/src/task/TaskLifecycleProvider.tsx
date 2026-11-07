@@ -1,7 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { getCurrentOwnerRevision } from '@/user/session/sessionRuntime';
 import type { TaskDetail, TaskListResponse, TaskSummary } from './types';
 import { taskApi } from './api';
 
@@ -83,6 +84,29 @@ export function TaskLifecycleProvider({
   const retryIntentsRef = useRef(new Map<string, RetryIntent>());
   const runningRef = useRef(new Map<string, Promise<boolean>>());
   const currentUserIdRef = useRef(userId);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    const retryIntents = retryIntentsRef.current;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      currentUserIdRef.current = undefined;
+      retryIntents.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    currentUserIdRef.current = userId;
+  }, [userId]);
+
+  const isCurrentOperation = useCallback(
+    (ownerId: number, ownerRevision: number) =>
+      mountedRef.current &&
+      currentUserIdRef.current === ownerId &&
+      getCurrentOwnerRevision() === ownerRevision,
+    []
+  );
 
   const publishNotices = useCallback(
     (update: (current: LifecycleNotice[]) => LifecycleNotice[]) => {
@@ -102,13 +126,19 @@ export function TaskLifecycleProvider({
   }, []);
 
   const reconcileTask = useCallback(
-    async (ownerId: number, task: TaskDetail, mode: 'lifecycle' | 'restore-deleted') => {
+    async (
+      ownerId: number,
+      ownerRevision: number,
+      task: TaskDetail,
+      mode: 'lifecycle' | 'restore-deleted'
+    ) => {
       const listKey = ['tasks', ownerId] as const;
       const detailKey = ['tasks', ownerId, 'detail', task.id] as const;
       await Promise.all([
         queryClient.cancelQueries({ queryKey: listKey, exact: true }),
         queryClient.cancelQueries({ queryKey: detailKey, exact: true }),
       ]);
+      if (!isCurrentOperation(ownerId, ownerRevision)) return;
       if (mode === 'restore-deleted') {
         queryClient.setQueryData<TaskDetail>(detailKey, task);
         queryClient.setQueryData<TaskListResponse>(listKey, (current) => {
@@ -137,17 +167,18 @@ export function TaskLifecycleProvider({
       }
       void queryClient.invalidateQueries({ queryKey: listKey, exact: true });
     },
-    [queryClient]
+    [isCurrentOperation, queryClient]
   );
 
   const removeDeletedTask = useCallback(
-    async (ownerId: number, taskId: number) => {
+    async (ownerId: number, ownerRevision: number, taskId: number) => {
       const listKey = ['tasks', ownerId] as const;
       const detailKey = ['tasks', ownerId, 'detail', taskId] as const;
       await Promise.all([
         queryClient.cancelQueries({ queryKey: listKey, exact: true }),
         queryClient.cancelQueries({ queryKey: detailKey, exact: true }),
       ]);
+      if (!isCurrentOperation(ownerId, ownerRevision)) return;
       queryClient.setQueryData<TaskListResponse>(listKey, (current) =>
         current
           ? { ...current, items: current.items.filter((item) => item.id !== taskId) }
@@ -156,12 +187,53 @@ export function TaskLifecycleProvider({
       queryClient.removeQueries({ queryKey: detailKey, exact: true });
       void queryClient.invalidateQueries({ queryKey: listKey, exact: true });
     },
-    [queryClient]
+    [isCurrentOperation, queryClient]
+  );
+
+  const publishRunFailure = useCallback(
+    (ownerId: number, task: TaskSummary, operation: LifecycleOperation, key: string) => {
+      publishState(key, { pending: false, error: responseError(operation) });
+      if (operation !== 'delete') return;
+      publishNotices((current) => {
+        const existing = current.find(
+          (notice) =>
+            notice.kind === 'delete-unconfirmed' &&
+            notice.userId === ownerId &&
+            notice.taskId === task.id
+        );
+        if (existing) {
+          return current.map((notice) =>
+            notice.id === existing.id
+              ? {
+                  ...notice,
+                  error: 'Retry failed. Deletion is still unconfirmed.',
+                  retrying: false,
+                }
+              : notice
+          );
+        }
+        return [
+          ...current.filter((notice) => notice.userId !== ownerId || notice.taskId !== task.id),
+          {
+            id: `${ownerId}:${task.id}:delete-unconfirmed`,
+            userId: ownerId,
+            taskId: task.id,
+            taskKey: task.key,
+            kind: 'delete-unconfirmed',
+            action: 'delete',
+            error: null,
+            retrying: false,
+          },
+        ];
+      });
+    },
+    [publishNotices, publishState]
   );
 
   const run = useCallback(
     (ownerId: number, task: TaskSummary, operation: LifecycleOperation): Promise<boolean> => {
-      if (currentUserIdRef.current !== ownerId) return Promise.resolve(false);
+      const ownerRevision = getCurrentOwnerRevision();
+      if (!isCurrentOperation(ownerId, ownerRevision)) return Promise.resolve(false);
       const key = operationKey(ownerId, task.id);
       const inFlight = runningRef.current.get(key);
       if (inFlight) return inFlight;
@@ -175,19 +247,23 @@ export function TaskLifecycleProvider({
           queryClient.cancelQueries({ queryKey: listKey, exact: true }),
           queryClient.cancelQueries({ queryKey: detailKey, exact: true }),
         ]);
+        if (!isCurrentOperation(ownerId, ownerRevision)) return false;
         try {
           if (operation === 'delete') {
             await taskApi.softDelete(task.id);
-            await removeDeletedTask(ownerId, task.id);
+            if (!isCurrentOperation(ownerId, ownerRevision)) return false;
+            await removeDeletedTask(ownerId, ownerRevision, task.id);
           } else {
             const response =
               operation === 'archive'
                 ? await taskApi.archive(task.id)
                 : await taskApi.restoreArchive(task.id);
-            await reconcileTask(ownerId, response.data, 'lifecycle');
+            if (!isCurrentOperation(ownerId, ownerRevision)) return false;
+            await reconcileTask(ownerId, ownerRevision, response.data, 'lifecycle');
           }
+          if (!isCurrentOperation(ownerId, ownerRevision)) return false;
           retryIntentsRef.current.delete(key);
-          if (currentUserIdRef.current === ownerId) {
+          if (isCurrentOperation(ownerId, ownerRevision)) {
             publishState(key, null);
             publishNotices((current) => {
               const remaining = current.filter(
@@ -210,44 +286,8 @@ export function TaskLifecycleProvider({
           }
           return true;
         } catch {
-          if (currentUserIdRef.current === ownerId) {
-            publishState(key, { pending: false, error: responseError(operation) });
-            if (operation === 'delete') {
-              publishNotices((current) => {
-                const existing = current.find(
-                  (notice) =>
-                    notice.kind === 'delete-unconfirmed' &&
-                    notice.userId === ownerId &&
-                    notice.taskId === task.id
-                );
-                if (existing) {
-                  return current.map((notice) =>
-                    notice.id === existing.id
-                      ? {
-                          ...notice,
-                          error: 'Retry failed. Deletion is still unconfirmed.',
-                          retrying: false,
-                        }
-                      : notice
-                  );
-                }
-                return [
-                  ...current.filter(
-                    (notice) => notice.userId !== ownerId || notice.taskId !== task.id
-                  ),
-                  {
-                    id: `${ownerId}:${task.id}:delete-unconfirmed`,
-                    userId: ownerId,
-                    taskId: task.id,
-                    taskKey: task.key,
-                    kind: 'delete-unconfirmed',
-                    action: 'delete',
-                    error: null,
-                    retrying: false,
-                  },
-                ];
-              });
-            }
+          if (isCurrentOperation(ownerId, ownerRevision)) {
+            publishRunFailure(ownerId, task, operation, key);
           }
           return false;
         }
@@ -258,7 +298,15 @@ export function TaskLifecycleProvider({
       });
       return request;
     },
-    [publishNotices, publishState, queryClient, reconcileTask, removeDeletedTask]
+    [
+      isCurrentOperation,
+      publishRunFailure,
+      publishNotices,
+      publishState,
+      queryClient,
+      reconcileTask,
+      removeDeletedTask,
+    ]
   );
 
   const undo = useCallback(
@@ -267,6 +315,8 @@ export function TaskLifecycleProvider({
       if (!notice || notice.kind !== 'undo' || currentUserIdRef.current !== notice.userId) {
         return false;
       }
+      const ownerRevision = getCurrentOwnerRevision();
+      if (!isCurrentOperation(notice.userId, ownerRevision)) return false;
       const key = operationKey(notice.userId, notice.taskId);
       publishNotices((current) =>
         current.map((item) =>
@@ -276,25 +326,32 @@ export function TaskLifecycleProvider({
       try {
         if (notice.action === 'archive') {
           const response = await taskApi.restoreArchive(notice.taskId);
-          await reconcileTask(notice.userId, response.data, 'lifecycle');
+          if (!isCurrentOperation(notice.userId, ownerRevision)) return false;
+          await reconcileTask(notice.userId, ownerRevision, response.data, 'lifecycle');
         } else {
           const response = await taskApi.restoreDeleted(notice.taskId);
-          await reconcileTask(notice.userId, response.data, 'restore-deleted');
+          if (!isCurrentOperation(notice.userId, ownerRevision)) return false;
+          await reconcileTask(notice.userId, ownerRevision, response.data, 'restore-deleted');
         }
+        if (!isCurrentOperation(notice.userId, ownerRevision)) return false;
         publishNotices((current) => current.filter((item) => item.id !== noticeId));
         publishState(key, null);
         retryIntentsRef.current.delete(key);
         return true;
       } catch {
-        publishNotices((current) =>
-          current.map((item) =>
-            item.id === noticeId ? { ...item, error: responseError('undo'), retrying: false } : item
-          )
-        );
+        if (isCurrentOperation(notice.userId, ownerRevision)) {
+          publishNotices((current) =>
+            current.map((item) =>
+              item.id === noticeId
+                ? { ...item, error: responseError('undo'), retrying: false }
+                : item
+            )
+          );
+        }
         return false;
       }
     },
-    [publishNotices, publishState, reconcileTask]
+    [isCurrentOperation, publishNotices, publishState, reconcileTask]
   );
 
   const retryDelete = useCallback(
@@ -303,7 +360,8 @@ export function TaskLifecycleProvider({
       if (
         !notice ||
         notice.kind !== 'delete-unconfirmed' ||
-        currentUserIdRef.current !== notice.userId
+        currentUserIdRef.current !== notice.userId ||
+        !isCurrentOperation(notice.userId, getCurrentOwnerRevision())
       ) {
         return Promise.resolve(false);
       }
@@ -318,7 +376,7 @@ export function TaskLifecycleProvider({
       );
       return run(notice.userId, intent.task, 'delete');
     },
-    [publishNotices, run]
+    [isCurrentOperation, publishNotices, run]
   );
 
   const dismiss = useCallback(

@@ -26,7 +26,7 @@ public class AuthController {
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
     public CurrentUserResponse register(@Valid @RequestBody RegisterUserRequest request) {
-        return userCommandService.register(request.email(), request.password());
+        return userCommandService.registerAndAuthenticate(request.email(), request.password());
     }
 
     @PostMapping("/login")

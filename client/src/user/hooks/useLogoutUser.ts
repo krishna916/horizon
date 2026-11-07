@@ -1,17 +1,18 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import { userApi } from '../api';
+import { useAuthSession } from '../session/AuthSessionProvider';
+import { publishSessionMarker } from '../session/sessionMarker';
 
 export const useLogoutUser = () => {
-  const queryClient = useQueryClient();
+  const { acceptLocalLogout } = useAuthSession();
   return useMutation<void, AxiosError>({
     mutationFn: async () => {
       await userApi.logout();
     },
     onSuccess: () => {
-      // Invalidate current user query and set query data to null
-      queryClient.setQueryData(['me'], null);
-      queryClient.invalidateQueries({ queryKey: ['me'] });
+      acceptLocalLogout();
+      publishSessionMarker();
     },
   });
 };

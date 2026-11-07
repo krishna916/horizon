@@ -2,7 +2,8 @@ import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { routeTree } from './routeTree.gen';
 import { ThemeProvider } from '@/components/theme-provider';
-import { TaskCompletionProvider } from '@/task/TaskCompletionProvider';
+import { AuthSessionProvider } from '@/user/session/AuthSessionProvider';
+import { SessionOwnedTree } from '@/app/SessionOwnedTree';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,9 +31,11 @@ export function App() {
   return (
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <TaskCompletionProvider>
-          <RouterProvider router={router} />
-        </TaskCompletionProvider>
+        <AuthSessionProvider>
+          <SessionOwnedTree>
+            <RouterProvider router={router} />
+          </SessionOwnedTree>
+        </AuthSessionProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );
