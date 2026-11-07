@@ -66,63 +66,68 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
     setState(next);
   }, []);
 
-  const verifySession = useCallback(async (): Promise<void> => {
-    const generation = ++generationRef.current;
-    const previous = stateRef.current;
-    const epoch = previous.epoch + 1;
-    updateState({ ...previous, phase: 'verifying', userId: null, epoch });
+  const verifySession = useCallback(
+    async (cancelCurrentUserQuery = true): Promise<void> => {
+      const generation = ++generationRef.current;
+      const previous = stateRef.current;
+      const epoch = previous.epoch + 1;
+      updateState({ ...previous, phase: 'verifying', userId: null, epoch });
 
-    void Promise.all([
-      queryClient.cancelQueries({ queryKey: ['me'], exact: true }),
-      queryClient.cancelQueries({ predicate: (query) => isPrivateQuery(query.queryKey) }),
-    ]);
+      void Promise.all([
+        ...(cancelCurrentUserQuery
+          ? [queryClient.cancelQueries({ queryKey: ['me'], exact: true })]
+          : []),
+        queryClient.cancelQueries({ predicate: (query) => isPrivateQuery(query.queryKey) }),
+      ]);
 
-    const promise = (async () => {
-      try {
-        const response = await userApi.getCurrentUser();
-        if (generation !== generationRef.current) return;
+      const promise = (async () => {
+        try {
+          const response = await userApi.getCurrentUser();
+          if (generation !== generationRef.current) return;
 
-        const user = response.data;
-        const priorOwnerId = lastVerifiedUserIdRef.current;
-        const ownerRevision =
-          priorOwnerId !== null && priorOwnerId !== user.id
-            ? stateRef.current.ownerRevision + 1
-            : stateRef.current.ownerRevision;
+          const user = response.data;
+          const priorOwnerId = lastVerifiedUserIdRef.current;
+          const ownerRevision =
+            priorOwnerId !== null && priorOwnerId !== user.id
+              ? stateRef.current.ownerRevision + 1
+              : stateRef.current.ownerRevision;
 
-        queryClient.setQueryData(['me'], user);
-        if (priorOwnerId !== null && priorOwnerId !== user.id) {
-          queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
+          queryClient.setQueryData(['me'], user);
+          if (priorOwnerId !== null && priorOwnerId !== user.id) {
+            queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
+          }
+
+          lastVerifiedUserIdRef.current = user.id;
+          updateState({ phase: 'verified', userId: user.id, ownerRevision, epoch });
+        } catch (error) {
+          if (generation !== generationRef.current) return;
+          if (isUnauthorized(error)) {
+            lastVerifiedUserIdRef.current = null;
+            queryClient.removeQueries({ queryKey: ['me'], exact: true });
+            queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
+            updateState({
+              phase: 'unauthenticated',
+              userId: null,
+              ownerRevision: stateRef.current.ownerRevision,
+              epoch,
+            });
+          } else {
+            updateState({
+              phase: 'retryable-error',
+              userId: null,
+              ownerRevision: stateRef.current.ownerRevision,
+              epoch,
+            });
+          }
+        } finally {
+          if (inFlightRef.current?.generation === generation) inFlightRef.current = null;
         }
-
-        lastVerifiedUserIdRef.current = user.id;
-        updateState({ phase: 'verified', userId: user.id, ownerRevision, epoch });
-      } catch (error) {
-        if (generation !== generationRef.current) return;
-        if (isUnauthorized(error)) {
-          lastVerifiedUserIdRef.current = null;
-          queryClient.removeQueries({ queryKey: ['me'], exact: true });
-          queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
-          updateState({
-            phase: 'unauthenticated',
-            userId: null,
-            ownerRevision: stateRef.current.ownerRevision,
-            epoch,
-          });
-        } else {
-          updateState({
-            phase: 'retryable-error',
-            userId: null,
-            ownerRevision: stateRef.current.ownerRevision,
-            epoch,
-          });
-        }
-      } finally {
-        if (inFlightRef.current?.generation === generation) inFlightRef.current = null;
-      }
-    })();
-    inFlightRef.current = { generation, promise };
-    return promise;
-  }, [queryClient, updateState]);
+      })();
+      inFlightRef.current = { generation, promise };
+      return promise;
+    },
+    [queryClient, updateState]
+  );
 
   const acceptLocalAuthentication = useCallback(
     (user: CurrentUserResponse) => {
@@ -187,7 +192,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
     window.addEventListener('storage', handleStorage);
     window.addEventListener('focus', handleResume);
     document.addEventListener('visibilitychange', handleVisibility);
-    void verifySession();
+    void verifySession(false);
 
     return () => {
       window.removeEventListener('storage', handleStorage);
@@ -216,4 +221,8 @@ export function useAuthSession(): AuthSessionValue {
   const value = useContext(AuthSessionContext);
   if (!value) throw new Error('useAuthSession must be used within AuthSessionProvider.');
   return value;
+}
+
+export function useOptionalAuthSession(): AuthSessionValue | null {
+  return useContext(AuthSessionContext);
 }
