@@ -40,7 +40,9 @@ function AuthMutationControls() {
       <output data-testid="register-status">
         {register.isSuccess ? 'register success' : register.isError ? 'register error' : ''}
       </output>
-      <output data-testid="logout-status">{logout.isSuccess ? 'logout success' : ''}</output>
+      <output data-testid="logout-status">
+        {logout.isSuccess ? 'logout success' : logout.isError ? 'logout error' : ''}
+      </output>
     </div>
   );
 }
@@ -135,7 +137,9 @@ describe('auth mutation session changes', () => {
       expect(screen.getByTestId('register-status')).toHaveTextContent('register error')
     );
     fireEvent.click(screen.getByRole('button', { name: 'Logout' }));
-    await waitFor(() => expect(userApi.logout).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByTestId('logout-status')).toHaveTextContent('logout error')
+    );
 
     expect(localStorage.getItem(SESSION_MARKER_KEY)).toBeNull();
     expect(screen.getByTestId('session')).toHaveTextContent('verified:1');

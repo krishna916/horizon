@@ -118,7 +118,8 @@ class AuthControllerIntegrationTest {
                         .andReturn();
 
         Cookie accountBSession = registerResult.getResponse().getCookie("SESSION");
-        assertThat(accountBSession).isNotNull().isNotEqualTo(accountASession);
+        assertThat(accountBSession).isNotNull();
+        assertThat(accountBSession.getValue()).isNotEqualTo(accountASession.getValue());
         mockMvc.perform(get("/api/v1/users/me").cookie(accountBSession))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("session-replaces-account@example.com"));
