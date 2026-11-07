@@ -243,6 +243,40 @@ test('receiving tab hides A and routes to Login after logout in the other tab', 
   await context.close();
 });
 
+test('confirmed cross-tab logout discards a dirty task draft and reaches Login', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ baseURL: 'http://localhost:5173' });
+  const session = new MockSession();
+  const { first, second } = await openPair(context, session);
+  await first.goto('/tasks?task=41');
+  await second.goto('/tasks');
+  await expect(first.getByText('Account A private task').first()).toBeVisible();
+  await expect(first.getByText('Account A saved note')).toBeVisible();
+  await first.getByRole('button', { name: 'Edit task description' }).click();
+  const editor = first.getByLabel('Task description editor');
+  await editor.fill('A dirty draft before cross-tab logout');
+  await expect(editor).toContainText('A dirty draft before cross-tab logout');
+
+  const paused = session.pauseNextMe();
+  session.queueMeResponse(first, 'deferred');
+  await second.getByRole('button', { name: 'Sign out' }).click();
+  await paused.started;
+
+  await expect(first.getByTestId('private-content')).toHaveAttribute('aria-hidden', 'true');
+  await expect(first.getByText('Account A private task').first()).toBeHidden();
+  await expect(first.getByText('account-a@example.com')).toBeHidden();
+  await expect(editor).toBeHidden();
+
+  session.releaseDeferredMe();
+  await expect(first).toHaveURL(/\/login$/);
+  await expect(first.getByRole('alertdialog')).toHaveCount(0);
+  await expect(first.getByText('Account A private task')).toHaveCount(0);
+  await expect(first.getByText('account-a@example.com')).toHaveCount(0);
+  await expect(first.getByText('A dirty draft before cross-tab logout')).toHaveCount(0);
+  await context.close();
+});
+
 test('recovers a marker missed while the tab was suspended when focus returns', async ({
   browser,
 }) => {

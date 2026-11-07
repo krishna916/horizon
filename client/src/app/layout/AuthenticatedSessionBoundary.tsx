@@ -27,12 +27,9 @@ export function AuthenticatedSessionBoundary({ children }: { readonly children: 
         {children}
       </div>
       {phase === 'verifying' && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-background"
-          role="status"
-        >
+        <output className="fixed inset-0 z-50 flex items-center justify-center bg-background">
           Verifying session…
-        </div>
+        </output>
       )}
       {phase === 'retryable-error' && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background">
@@ -43,12 +40,9 @@ export function AuthenticatedSessionBoundary({ children }: { readonly children: 
         </div>
       )}
       {phase === 'unauthenticated' && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-background"
-          role="status"
-        >
+        <output className="fixed inset-0 z-50 flex items-center justify-center bg-background">
           Your session has ended. Redirecting to Login…
-        </div>
+        </output>
       )}
     </>
   );

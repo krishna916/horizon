@@ -25,8 +25,11 @@ apiClient.interceptors.response.use(
   (error: unknown) => {
     if (axios.isAxiosError(error) && error.response?.status === 401 && error.config) {
       const path = (error.config.url ?? '').split('?')[0] ?? '';
-      const isPublicAuthRequest = /\/auth\/(login|register|logout)$/.test(path);
-      const isCurrentUserCheck = /\/users\/me$/.test(path);
+      const isPublicAuthRequest =
+        path.endsWith('/auth/login') ||
+        path.endsWith('/auth/register') ||
+        path.endsWith('/auth/logout');
+      const isCurrentUserCheck = path.endsWith('/users/me');
       if (!isPublicAuthRequest && !isCurrentUserCheck) {
         notifySessionUnauthorized(requestEpochs.get(error.config) ?? getCurrentSessionEpoch());
       }

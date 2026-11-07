@@ -53,7 +53,6 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
   const registrationRef = useRef<TaskDraftRegistration | null>(null);
   const ownerRevision = useOptionalAuthSession()?.ownerRevision;
   const ownerRevisionRef = useRef(ownerRevision);
-  ownerRevisionRef.current = ownerRevision;
   const registrationOwnerRevisionRef = useRef(ownerRevision);
   const registrationGenerationRef = useRef(0);
   const queuedActionRef = useRef<QueuedAction | null>(null);

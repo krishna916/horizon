@@ -85,16 +85,20 @@ export function TaskLifecycleProvider({
   const runningRef = useRef(new Map<string, Promise<boolean>>());
   const currentUserIdRef = useRef(userId);
   const mountedRef = useRef(true);
-  currentUserIdRef.current = userId;
 
   useEffect(() => {
+    const retryIntents = retryIntentsRef.current;
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       currentUserIdRef.current = undefined;
-      retryIntentsRef.current.clear();
+      retryIntents.clear();
     };
   }, []);
+
+  useEffect(() => {
+    currentUserIdRef.current = userId;
+  }, [userId]);
 
   const isCurrentOperation = useCallback(
     (ownerId: number, ownerRevision: number) =>
