@@ -73,6 +73,50 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
     setState(next);
   }, []);
 
+  const acceptVerifiedUser = useCallback(
+    (user: CurrentUserResponse, epoch: number) => {
+      const priorOwnerId = lastVerifiedUserIdRef.current;
+      const ownerRevision =
+        priorOwnerId !== null && priorOwnerId !== user.id
+          ? stateRef.current.ownerRevision + 1
+          : stateRef.current.ownerRevision;
+
+      queryClient.setQueryData(['me'], user);
+      if (priorOwnerId !== null && priorOwnerId !== user.id) {
+        queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
+      }
+
+      lastVerifiedUserIdRef.current = user.id;
+      updateState({ phase: 'verified', userId: user.id, ownerRevision, epoch });
+    },
+    [queryClient, updateState]
+  );
+
+  const handleVerificationFailure = useCallback(
+    (error: unknown, epoch: number) => {
+      if (isUnauthorized(error)) {
+        const hadVerifiedOwner = lastVerifiedUserIdRef.current !== null;
+        lastVerifiedUserIdRef.current = null;
+        queryClient.removeQueries({ queryKey: ['me'], exact: true });
+        queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
+        updateState({
+          phase: 'unauthenticated',
+          userId: null,
+          ownerRevision: stateRef.current.ownerRevision + (hadVerifiedOwner ? 1 : 0),
+          epoch,
+        });
+      } else {
+        updateState({
+          phase: 'retryable-error',
+          userId: null,
+          ownerRevision: stateRef.current.ownerRevision,
+          epoch,
+        });
+      }
+    },
+    [queryClient, updateState]
+  );
+
   const verifySession = useCallback(
     async (cancelCurrentUserQuery = true): Promise<void> => {
       const generation = ++generationRef.current;
@@ -93,42 +137,10 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
           if (generation !== generationRef.current) return;
           const response = await userApi.getCurrentUser();
           if (generation !== generationRef.current) return;
-
-          const user = response.data;
-          const priorOwnerId = lastVerifiedUserIdRef.current;
-          const ownerRevision =
-            priorOwnerId !== null && priorOwnerId !== user.id
-              ? stateRef.current.ownerRevision + 1
-              : stateRef.current.ownerRevision;
-
-          queryClient.setQueryData(['me'], user);
-          if (priorOwnerId !== null && priorOwnerId !== user.id) {
-            queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
-          }
-
-          lastVerifiedUserIdRef.current = user.id;
-          updateState({ phase: 'verified', userId: user.id, ownerRevision, epoch });
+          acceptVerifiedUser(response.data, epoch);
         } catch (error) {
           if (generation !== generationRef.current) return;
-          if (isUnauthorized(error)) {
-            const hadVerifiedOwner = lastVerifiedUserIdRef.current !== null;
-            lastVerifiedUserIdRef.current = null;
-            queryClient.removeQueries({ queryKey: ['me'], exact: true });
-            queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
-            updateState({
-              phase: 'unauthenticated',
-              userId: null,
-              ownerRevision: stateRef.current.ownerRevision + (hadVerifiedOwner ? 1 : 0),
-              epoch,
-            });
-          } else {
-            updateState({
-              phase: 'retryable-error',
-              userId: null,
-              ownerRevision: stateRef.current.ownerRevision,
-              epoch,
-            });
-          }
+          handleVerificationFailure(error, epoch);
         } finally {
           if (inFlightRef.current?.generation === generation) inFlightRef.current = null;
         }
@@ -136,7 +148,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
       inFlightRef.current = { generation, promise };
       return promise;
     },
-    [queryClient, updateState]
+    [acceptVerifiedUser, handleVerificationFailure, queryClient, updateState]
   );
 
   const acceptLocalAuthentication = useCallback(

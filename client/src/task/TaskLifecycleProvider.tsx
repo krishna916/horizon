@@ -190,6 +190,46 @@ export function TaskLifecycleProvider({
     [isCurrentOperation, queryClient]
   );
 
+  const publishRunFailure = useCallback(
+    (ownerId: number, task: TaskSummary, operation: LifecycleOperation, key: string) => {
+      publishState(key, { pending: false, error: responseError(operation) });
+      if (operation !== 'delete') return;
+      publishNotices((current) => {
+        const existing = current.find(
+          (notice) =>
+            notice.kind === 'delete-unconfirmed' &&
+            notice.userId === ownerId &&
+            notice.taskId === task.id
+        );
+        if (existing) {
+          return current.map((notice) =>
+            notice.id === existing.id
+              ? {
+                  ...notice,
+                  error: 'Retry failed. Deletion is still unconfirmed.',
+                  retrying: false,
+                }
+              : notice
+          );
+        }
+        return [
+          ...current.filter((notice) => notice.userId !== ownerId || notice.taskId !== task.id),
+          {
+            id: `${ownerId}:${task.id}:delete-unconfirmed`,
+            userId: ownerId,
+            taskId: task.id,
+            taskKey: task.key,
+            kind: 'delete-unconfirmed',
+            action: 'delete',
+            error: null,
+            retrying: false,
+          },
+        ];
+      });
+    },
+    [publishNotices, publishState]
+  );
+
   const run = useCallback(
     (ownerId: number, task: TaskSummary, operation: LifecycleOperation): Promise<boolean> => {
       const ownerRevision = getCurrentOwnerRevision();
@@ -246,44 +286,8 @@ export function TaskLifecycleProvider({
           }
           return true;
         } catch {
-          if (currentUserIdRef.current === ownerId) {
-            publishState(key, { pending: false, error: responseError(operation) });
-            if (operation === 'delete') {
-              publishNotices((current) => {
-                const existing = current.find(
-                  (notice) =>
-                    notice.kind === 'delete-unconfirmed' &&
-                    notice.userId === ownerId &&
-                    notice.taskId === task.id
-                );
-                if (existing) {
-                  return current.map((notice) =>
-                    notice.id === existing.id
-                      ? {
-                          ...notice,
-                          error: 'Retry failed. Deletion is still unconfirmed.',
-                          retrying: false,
-                        }
-                      : notice
-                  );
-                }
-                return [
-                  ...current.filter(
-                    (notice) => notice.userId !== ownerId || notice.taskId !== task.id
-                  ),
-                  {
-                    id: `${ownerId}:${task.id}:delete-unconfirmed`,
-                    userId: ownerId,
-                    taskId: task.id,
-                    taskKey: task.key,
-                    kind: 'delete-unconfirmed',
-                    action: 'delete',
-                    error: null,
-                    retrying: false,
-                  },
-                ];
-              });
-            }
+          if (isCurrentOperation(ownerId, ownerRevision)) {
+            publishRunFailure(ownerId, task, operation, key);
           }
           return false;
         }
@@ -296,6 +300,7 @@ export function TaskLifecycleProvider({
     },
     [
       isCurrentOperation,
+      publishRunFailure,
       publishNotices,
       publishState,
       queryClient,
