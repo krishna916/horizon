@@ -130,7 +130,9 @@ describe('AuthSessionProvider', () => {
     await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('1'));
 
     act(() => changeMarker('epoch-2'));
+    await waitFor(() => expect(userApi.getCurrentUser).toHaveBeenCalledTimes(2));
     act(() => changeMarker('epoch-3'));
+    await waitFor(() => expect(userApi.getCurrentUser).toHaveBeenCalledTimes(3));
     await act(async () => newer.resolve(user(3)));
     await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('3'));
     await act(async () => older.resolve(user(2)));

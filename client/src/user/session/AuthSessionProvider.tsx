@@ -80,7 +80,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
       const epoch = previous.epoch + 1;
       updateState({ ...previous, phase: 'verifying', userId: null, epoch });
 
-      void Promise.all([
+      const cancelQueries = Promise.all([
         ...(cancelCurrentUserQuery
           ? [queryClient.cancelQueries({ queryKey: ['me'], exact: true })]
           : []),
@@ -89,6 +89,8 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
 
       const promise = (async () => {
         try {
+          await cancelQueries;
+          if (generation !== generationRef.current) return;
           const response = await userApi.getCurrentUser();
           if (generation !== generationRef.current) return;
 
