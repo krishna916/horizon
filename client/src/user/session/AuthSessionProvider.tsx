@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { userApi } from '../api';
 import type { CurrentUserResponse } from '../types';
 import { readSessionMarker, SESSION_MARKER_KEY } from './sessionMarker';
+import { setCurrentSessionEpoch, subscribeToSessionUnauthorized } from './sessionRuntime';
 
 export type AuthSessionPhase = 'verified' | 'verifying' | 'retryable-error' | 'unauthenticated';
 
@@ -63,6 +64,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
 
   const updateState = useCallback((next: AuthSessionState) => {
     stateRef.current = next;
+    setCurrentSessionEpoch(next.epoch);
     setState(next);
   }, []);
 
@@ -169,6 +171,26 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
     });
   }, [queryClient, updateState]);
 
+  const handleProtectedUnauthorized = useCallback(
+    (requestEpoch: number) => {
+      const previous = stateRef.current;
+      if (requestEpoch !== previous.epoch || previous.phase !== 'verified') return;
+
+      generationRef.current += 1;
+      lastVerifiedUserIdRef.current = null;
+      inFlightRef.current = null;
+      queryClient.removeQueries({ queryKey: ['me'], exact: true });
+      queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
+      updateState({
+        phase: 'unauthenticated',
+        userId: null,
+        ownerRevision: previous.ownerRevision + (previous.userId === null ? 0 : 1),
+        epoch: previous.epoch + 1,
+      });
+    },
+    [queryClient, updateState]
+  );
+
   useEffect(() => {
     const observeMarker = (marker: string | null) => {
       if (marker === lastMarkerRef.current) return false;
@@ -192,14 +214,16 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
     window.addEventListener('storage', handleStorage);
     window.addEventListener('focus', handleResume);
     document.addEventListener('visibilitychange', handleVisibility);
+    const unsubscribeUnauthorized = subscribeToSessionUnauthorized(handleProtectedUnauthorized);
     void verifySession(false);
 
     return () => {
+      unsubscribeUnauthorized();
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('focus', handleResume);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [verifySession]);
+  }, [handleProtectedUnauthorized, verifySession]);
 
   const value = useMemo<AuthSessionValue>(
     () => ({

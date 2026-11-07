@@ -16,7 +16,7 @@ describe('session marker', () => {
     expect(second).not.toBe(first);
     expect(localStorage.getItem(SESSION_MARKER_KEY)).toBe(second);
     expect(second?.toLowerCase()).not.toMatch(/email|password|token|user/);
-    expect(second).not.toContain('42');
+    expect(second).not.toContain('one@example.com');
   });
 
   it('ignores storage security errors', () => {
