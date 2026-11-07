@@ -6,6 +6,7 @@ import { useCurrentUser } from '@/user/hooks/useCurrentUser';
 import { TaskDraftNavigationGuard } from './TaskDraftNavigationGuard';
 import { TaskLifecycleProvider } from './TaskLifecycleProvider';
 import { TaskLifecycleNoticeList } from './TaskLifecycleNoticeList';
+import { TasksRouteReconciler } from './TaskSessionRouteReconciler';
 import type { TaskSortMode } from './task-sort';
 
 export interface TaskViewState {
@@ -66,6 +67,7 @@ export function TasksRouteLayout() {
           setListRatio={setListRatio}
         >
           <div className="h-full min-h-0 w-full">
+            <TasksRouteReconciler />
             {sessionVerified && <TaskLifecycleNoticeList />}
             <Outlet />
           </div>
