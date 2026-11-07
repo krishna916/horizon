@@ -85,13 +85,16 @@ cd client
 npm run test
 ```
 
-Runs E2E integration tests:
+Runs the Chromium E2E suite. Playwright starts the Vite test server from its existing configuration; the scenarios intercept API requests, so no backend, PostgreSQL, Docker, or secrets are needed:
 
 ```bash
 cd client
-npx playwright install
+npm ci --legacy-peer-deps --ignore-scripts
+npm run test:e2e:install
 npm run test:e2e
 ```
+
+The `test:e2e:install` script installs Chromium and its Linux dependencies. Local development keeps the existing Playwright reporter and server reuse behavior.
 
 ## CI-Equivalent Checks (Before Opening a PR)
 
@@ -115,7 +118,7 @@ npm ci --legacy-peer-deps --ignore-scripts
 npm run verify
 ```
 
-`npm ci` recreates `node_modules`, and `--ignore-scripts` disables dependency lifecycle scripts during installation. `npm run verify` runs ESLint, Prettier, Vitest once with V8 coverage, the TypeScript/Vite production build, and a report check. `npm run test` remains the fast unit-test command without coverage. Playwright stays separate from unit coverage and can be run with `npm run test:e2e:install` followed by `npm run test:e2e`.
+`npm ci` recreates `node_modules`, and `--ignore-scripts` disables dependency lifecycle scripts during installation. `npm run verify` runs ESLint, Prettier, Vitest once with V8 coverage, the TypeScript/Vite production build, and a report check. `npm run test` remains the fast unit-test command without coverage. Playwright runs as a separate Chromium job and does not contribute to Vitest or SonarCloud unit coverage. It uses the existing [`client/playwright.config.ts`](client/playwright.config.ts) and the same local commands shown above.
 
 Full verification writes these local reports:
 
@@ -124,7 +127,9 @@ Full verification writes these local reports:
 
 The report directories are generated outputs and are ignored by Git. Maven `verify` checks the execution data, XML, HTML, and covered-line instrumentation. Frontend `verify` checks that LCOV contains source and line records with measured execution and that the HTML report is readable. Neither command needs a SonarCloud token or SonarCloud network access. Backend tests use Testcontainers to start PostgreSQL, so Docker must be available; starting the app with `docker compose up` is not required for those tests. Docker Compose remains useful when running the application locally.
 
-Pull requests targeting `master` and pushes to `master` run independent jobs named `backend` and `frontend`. The frontend job uses `npm run verify` once and then runs Playwright separately. After both jobs pass, one downstream `sonarcloud` job downloads their seven-day artifacts and scans the same workflow commit. The backend artifact contains JaCoCo XML and compiled Java classes; the frontend artifact contains LCOV. The scanner does not rerun Maven, Vitest, or Playwright, and routine CI artifacts do not include HTML reports. Fork pull requests keep running the backend/frontend jobs while the secret-bearing SonarCloud job is skipped.
+Pull requests targeting `master` and pushes to `master` run independently named `backend`, `frontend`, and `playwright` jobs. The frontend job runs `npm run verify`; the Playwright job installs Chromium and runs `npm run test:e2e` on its own runner. The `sonarcloud` job still depends only on `backend` and `frontend`, downloads their seven-day coverage artifacts, and scans the same workflow commit. Fork pull requests keep running the three verification jobs while the secret-bearing SonarCloud job is skipped.
+
+When the Playwright job fails, it uploads the `playwright-failure-diagnostics` artifact with the HTML report, failure screenshots, and any retry traces. The artifact is retained for seven days; successful Playwright runs do not upload browser diagnostics. To inspect it, open the failed GitHub Actions run, select the `playwright` job, and download `playwright-failure-diagnostics` from the run's Artifacts section. Extract it, then from `client/` open the report with `npx playwright show-report playwright-report`. Open a trace with `npx playwright show-trace test-results/<test-result-directory>/trace.zip` when that test retry produced a trace.
 
 ## SonarCloud CI Migration Checkpoint
 
@@ -144,7 +149,7 @@ If a report is missing locally, rerun the relevant full-verification command and
 
 Open the GitHub Actions run and select either verification job to inspect its steps and logs. On backend failure, check the run summary for the `backend-surefire-reports` artifact; it is uploaded when reports exist.
 
-To retry a failed job, open **Actions → the failed run → Re-run failed jobs**. A canceled PR run means a newer run for that same PR replaced it; cancellation is not a test failure, so check that the latest PR commit has both job results. If a check fails, use its step logs and reproduce it with the commands above. Do not bypass a required check. Local verification needs no credentials, `.env` file, repository secrets, or manually started PostgreSQL. Playwright runs as its own CI step after the frontend verification gate.
+To retry a failed job, open **Actions → the failed run → Re-run failed jobs**. A canceled PR run means a newer run for that same PR replaced it; cancellation is not a test failure, so check that the latest PR commit has the expected job results. If a check fails, use its step logs and reproduce it with the commands above. Do not bypass a required check. Local verification needs no credentials, `.env` file, repository secrets, or manually started PostgreSQL.
 
 ## IDE Settings & Extensions
 

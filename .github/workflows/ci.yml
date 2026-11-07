@@ -117,11 +117,45 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  playwright:
+    name: playwright
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --legacy-peer-deps --ignore-scripts
+
       - name: Install Chromium for Playwright
         run: npm run test:e2e:install
 
       - name: Run Playwright browser tests
         run: npm run test:e2e
+
+      - name: Upload Playwright diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-failure-diagnostics
+          path: |
+            client/playwright-report/
+            client/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   sonarcloud:
     name: sonarcloud
