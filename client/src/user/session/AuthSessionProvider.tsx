@@ -111,13 +111,14 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
         } catch (error) {
           if (generation !== generationRef.current) return;
           if (isUnauthorized(error)) {
+            const hadVerifiedOwner = lastVerifiedUserIdRef.current !== null;
             lastVerifiedUserIdRef.current = null;
             queryClient.removeQueries({ queryKey: ['me'], exact: true });
             queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
             updateState({
               phase: 'unauthenticated',
               userId: null,
-              ownerRevision: stateRef.current.ownerRevision,
+              ownerRevision: stateRef.current.ownerRevision + (hadVerifiedOwner ? 1 : 0),
               epoch,
             });
           } else {

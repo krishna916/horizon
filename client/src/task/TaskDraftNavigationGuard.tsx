@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { Button } from '@/components/ui/button';
 import { cancelPendingLogoutNavigations } from '@/user/logoutNavigation';
+import { useOptionalAuthSession } from '@/user/session/AuthSessionProvider';
 
 export interface TaskDraftRegistration {
   id: string;
@@ -37,6 +38,11 @@ interface DraftGuardApi {
 }
 
 const DraftGuardContext = createContext<DraftGuardApi | null>(null);
+const activeTaskDraftGuards = new Set<() => void>();
+
+export function discardActiveTaskDrafts(): void {
+  activeTaskDraftGuards.forEach((discard) => discard());
+}
 
 export function TaskDraftNavigationGuard({ children }: { children: React.ReactNode }) {
   type QueuedAction = {
@@ -45,6 +51,10 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
     generation: number;
   };
   const registrationRef = useRef<TaskDraftRegistration | null>(null);
+  const ownerRevision = useOptionalAuthSession()?.ownerRevision;
+  const ownerRevisionRef = useRef(ownerRevision);
+  ownerRevisionRef.current = ownerRevision;
+  const registrationOwnerRevisionRef = useRef(ownerRevision);
   const registrationGenerationRef = useRef(0);
   const queuedActionRef = useRef<QueuedAction | null>(null);
   const saveInProgressRef = useRef(false);
@@ -55,12 +65,14 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
   const shouldBlockNavigation = useCallback(
     () =>
       !skipBlocker.current &&
+      registrationOwnerRevisionRef.current === ownerRevisionRef.current &&
       Boolean(registrationRef.current?.dirty || registrationRef.current?.pending),
     []
   );
   const blocker = useBlocker({
     shouldBlockFn: shouldBlockNavigation,
     enableBeforeUnload: () =>
+      registrationOwnerRevisionRef.current === ownerRevisionRef.current &&
       Boolean(registrationRef.current?.dirty || registrationRef.current?.pending),
     withResolver: true,
   });
@@ -69,9 +81,40 @@ export function TaskDraftNavigationGuard({ children }: { children: React.ReactNo
     blockerRef.current = blocker;
   }, [blocker]);
 
+  useEffect(() => {
+    const discardDraft = () => {
+      registrationRef.current?.discard();
+      registrationRef.current = null;
+      registrationGenerationRef.current += 1;
+      queuedActionRef.current = null;
+      setQueuedAction(null);
+      setRegistrationState(null);
+      setSaveFailed(false);
+      if (blockerRef.current.status === 'blocked') blockerRef.current.reset();
+    };
+    activeTaskDraftGuards.add(discardDraft);
+    return () => {
+      activeTaskDraftGuards.delete(discardDraft);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (ownerRevisionRef.current === ownerRevision) return;
+    ownerRevisionRef.current = ownerRevision;
+    registrationRef.current?.discard();
+    registrationRef.current = null;
+    registrationGenerationRef.current += 1;
+    queuedActionRef.current = null;
+    setQueuedAction(null);
+    setRegistrationState(null);
+    setSaveFailed(false);
+    if (blockerRef.current.status === 'blocked') blockerRef.current.reset();
+  }, [ownerRevision]);
+
   const register = useCallback((registration: TaskDraftRegistration | null) => {
     const previous = registrationRef.current;
     registrationRef.current = registration;
+    if (registration) registrationOwnerRevisionRef.current = ownerRevisionRef.current;
     if (previous?.id !== registration?.id) {
       registrationGenerationRef.current += 1;
       if (

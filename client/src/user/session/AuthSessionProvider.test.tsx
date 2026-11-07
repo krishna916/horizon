@@ -162,6 +162,32 @@ describe('AuthSessionProvider', () => {
     act(() => changeMarker('unauthenticated'));
     await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unauthenticated'));
     expect(screen.getByTestId('user')).toHaveTextContent('none');
+    expect(screen.getByTestId('revision')).toHaveTextContent('1');
+  });
+
+  it('does not advance owner revision for a cold-start 401', async () => {
+    vi.mocked(userApi.getCurrentUser).mockRejectedValueOnce({ response: { status: 401 } });
+    renderSession();
+
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unauthenticated'));
+    expect(screen.getByTestId('revision')).toHaveTextContent('0');
+  });
+
+  it('preserves the owner revision when a retryable check later verifies the same owner', async () => {
+    vi.mocked(userApi.getCurrentUser)
+      .mockResolvedValueOnce(user(1))
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(user(1));
+    renderSession();
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('1'));
+
+    act(() => changeMarker('retry-same-owner'));
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('retryable-error'));
+    expect(screen.getByTestId('revision')).toHaveTextContent('0');
+
+    act(() => screen.getByText('retry').click());
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('1'));
+    expect(screen.getByTestId('revision')).toHaveTextContent('0');
   });
 
   it('still verifies on focus when storage cannot be read', async () => {

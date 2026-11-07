@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
+import { discardActiveTaskDrafts } from '@/task/TaskDraftNavigationGuard';
 
 export function AuthenticatedSessionBoundary({ children }: { readonly children: ReactNode }) {
   const { phase, verifySession } = useAuthSession();
@@ -10,6 +11,7 @@ export function AuthenticatedSessionBoundary({ children }: { readonly children: 
 
   useEffect(() => {
     if (phase === 'unauthenticated') {
+      discardActiveTaskDrafts();
       void navigate({ to: '/login', replace: true });
     }
   }, [navigate, phase]);
