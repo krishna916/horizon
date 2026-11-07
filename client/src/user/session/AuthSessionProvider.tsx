@@ -13,7 +13,11 @@ import type { ReactNode } from 'react';
 import { userApi } from '../api';
 import type { CurrentUserResponse } from '../types';
 import { readSessionMarker, SESSION_MARKER_KEY } from './sessionMarker';
-import { setCurrentSessionEpoch, subscribeToSessionUnauthorized } from './sessionRuntime';
+import {
+  setCurrentOwnerRevision,
+  setCurrentSessionEpoch,
+  subscribeToSessionUnauthorized,
+} from './sessionRuntime';
 
 export type AuthSessionPhase = 'verified' | 'verifying' | 'retryable-error' | 'unauthenticated';
 
@@ -65,6 +69,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
   const updateState = useCallback((next: AuthSessionState) => {
     stateRef.current = next;
     setCurrentSessionEpoch(next.epoch);
+    setCurrentOwnerRevision(next.ownerRevision);
     setState(next);
   }, []);
 

@@ -2,9 +2,8 @@ import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { routeTree } from './routeTree.gen';
 import { ThemeProvider } from '@/components/theme-provider';
-import { TaskCompletionProvider } from '@/task/TaskCompletionProvider';
-import { AuthSessionProvider, useAuthSession } from '@/user/session/AuthSessionProvider';
-import type { ReactNode } from 'react';
+import { AuthSessionProvider } from '@/user/session/AuthSessionProvider';
+import { SessionOwnedTree } from '@/app/SessionOwnedTree';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,16 +32,11 @@ export function App() {
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <AuthSessionProvider>
-          <SessionOwnedTaskCompletionProvider>
+          <SessionOwnedTree>
             <RouterProvider router={router} />
-          </SessionOwnedTaskCompletionProvider>
+          </SessionOwnedTree>
         </AuthSessionProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );
-}
-
-function SessionOwnedTaskCompletionProvider({ children }: { readonly children: ReactNode }) {
-  const { ownerRevision } = useAuthSession();
-  return <TaskCompletionProvider key={ownerRevision}>{children}</TaskCompletionProvider>;
 }

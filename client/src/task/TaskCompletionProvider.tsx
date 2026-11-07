@@ -4,10 +4,12 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState } fro
 import type { ReactNode } from 'react';
 import type { TaskDetail, TaskSummary } from './types';
 import { taskApi } from './api';
+import { getCurrentOwnerRevision } from '@/user/session/sessionRuntime';
 
 interface CompletionEntry {
   readonly userId: number;
   readonly taskId: number;
+  readonly ownerRevision: number;
   readonly confirmedAt: string | null;
   readonly desired: boolean;
   readonly saving: boolean;
@@ -35,14 +37,16 @@ async function setCompletionInCache(
   userId: number,
   taskId: number,
   completedAt: string | null,
-  updatedAt: string
-) {
+  updatedAt: string,
+  ownerRevision: number
+): Promise<boolean> {
   const detailKey = ['tasks', userId, 'detail', taskId] as const;
   const listKey = ['tasks', userId] as const;
   await Promise.all([
     queryClient.cancelQueries({ queryKey: detailKey, exact: true }),
     queryClient.cancelQueries({ queryKey: listKey, exact: true }),
   ]);
+  if (ownerRevision !== getCurrentOwnerRevision()) return false;
   queryClient.setQueryData<TaskDetail>(detailKey, (current) =>
     current ? { ...current, completedAt, updatedAt } : current
   );
@@ -55,6 +59,7 @@ async function setCompletionInCache(
         }
       : current
   );
+  return true;
 }
 
 export function TaskCompletionProvider({ children }: { children: ReactNode }): React.JSX.Element {
@@ -88,11 +93,13 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
         while (true) {
           const current = entriesRef.current.get(key);
           if (!current) return;
+          if (current.ownerRevision !== getCurrentOwnerRevision()) return;
           if (current.outcomeUnknown) {
             let reconciled: Awaited<ReturnType<typeof taskApi.get>>;
             try {
               reconciled = await taskApi.get(current.taskId);
             } catch {
+              if (current.ownerRevision !== getCurrentOwnerRevision()) return;
               const latest = entriesRef.current.get(key);
               if (!latest) return;
               publish((next) => {
@@ -110,13 +117,16 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
               });
               return;
             }
-            await setCompletionInCache(
+            if (current.ownerRevision !== getCurrentOwnerRevision()) return;
+            const cacheUpdated = await setCompletionInCache(
               queryClient,
               current.userId,
               current.taskId,
               reconciled.data.completedAt,
-              reconciled.data.updatedAt
+              reconciled.data.updatedAt,
+              current.ownerRevision
             );
+            if (!cacheUpdated) return;
             const latest = entriesRef.current.get(key);
             if (!latest) return;
             if (reconciled.data.completedAt === null && !latest.desired) {
@@ -151,14 +161,17 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
 
           try {
             const response = await request;
+            if (current.ownerRevision !== getCurrentOwnerRevision()) return;
             const task = response.data;
-            await setCompletionInCache(
+            const cacheUpdated = await setCompletionInCache(
               queryClient,
               current.userId,
               current.taskId,
               task.completedAt,
-              task.updatedAt
+              task.updatedAt,
+              current.ownerRevision
             );
+            if (!cacheUpdated) return;
             const latest = entriesRef.current.get(key);
             if (!latest) return;
             if (task.completedAt === null && !latest.desired) {
@@ -181,23 +194,28 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
                 });
             });
           } catch {
+            if (current.ownerRevision !== getCurrentOwnerRevision()) return;
             let confirmedAt = entriesRef.current.get(key)?.confirmedAt ?? null;
             let outcomeUnknown = true;
             try {
               const reconciled = await taskApi.get(current.taskId);
+              if (current.ownerRevision !== getCurrentOwnerRevision()) return;
               confirmedAt = reconciled.data.completedAt;
               outcomeUnknown = false;
-              await setCompletionInCache(
+              const cacheUpdated = await setCompletionInCache(
                 queryClient,
                 current.userId,
                 current.taskId,
                 confirmedAt,
-                reconciled.data.updatedAt
+                reconciled.data.updatedAt,
+                current.ownerRevision
               );
+              if (!cacheUpdated) return;
             } catch {
               // Preserve the last confirmed state when the authoritative read also fails.
             }
 
+            if (current.ownerRevision !== getCurrentOwnerRevision()) return;
             const latest = entriesRef.current.get(key);
             if (!latest) return;
             if (!outcomeUnknown && confirmedAt === null && !latest.desired) {
@@ -273,6 +291,7 @@ export function TaskCompletionProvider({ children }: { children: ReactNode }): R
       const nextEntry: CompletionEntry = {
         userId,
         taskId: task.id,
+        ownerRevision: getCurrentOwnerRevision(),
         confirmedAt: existing ? existing.confirmedAt : task.completedAt,
         desired,
         saving: true,
