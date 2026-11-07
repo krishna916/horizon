@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { userApi } from '../api';
 import { SESSION_MARKER_KEY } from './sessionMarker';
@@ -188,6 +188,61 @@ describe('AuthSessionProvider', () => {
     act(() => screen.getByText('retry').click());
     await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('1'));
     expect(screen.getByTestId('revision')).toHaveTextContent('0');
+  });
+
+  it('prevents a pending current-user query from replacing a locally accepted account', async () => {
+    vi.mocked(userApi.getCurrentUser).mockResolvedValueOnce(user(1));
+    const harness = renderSession();
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('1'));
+
+    const stale = deferred<{ id: number; email: string }>();
+    const staleRequest = harness.queryClient.fetchQuery({
+      queryKey: ['me'],
+      queryFn: () => stale.promise,
+      staleTime: 0,
+    });
+    await waitFor(() => expect(harness.queryClient.isFetching({ queryKey: ['me'] })).toBe(1));
+
+    fireEvent.click(screen.getByText('accept'));
+    expect(harness.queryClient.getQueryData(['me'])).toEqual({
+      id: 8,
+      email: 'eight@example.com',
+    });
+    await act(async () => {
+      stale.resolve({ id: 1, email: '1@example.com' });
+      await staleRequest;
+    });
+
+    expect(screen.getByTestId('user')).toHaveTextContent('8');
+    expect(harness.queryClient.getQueryData(['me'])).toEqual({
+      id: 8,
+      email: 'eight@example.com',
+    });
+  });
+
+  it('ignores a stale current-user 401 after local login and allows a fresh B verification', async () => {
+    vi.mocked(userApi.getCurrentUser).mockResolvedValueOnce(user(1)).mockResolvedValueOnce(user(8));
+    const harness = renderSession();
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('1'));
+
+    const stale = deferred<{ id: number; email: string }>();
+    const staleRequest = harness.queryClient
+      .fetchQuery({ queryKey: ['me'], queryFn: () => stale.promise, staleTime: 0 })
+      .catch(() => undefined);
+    await waitFor(() => expect(harness.queryClient.isFetching({ queryKey: ['me'] })).toBe(1));
+
+    fireEvent.click(screen.getByText('accept'));
+    stale.reject({ response: { status: 401 } });
+    await staleRequest;
+    expect(screen.getByTestId('user')).toHaveTextContent('8');
+    expect(harness.queryClient.getQueryData(['me'])).toEqual({
+      id: 8,
+      email: 'eight@example.com',
+    });
+
+    fireEvent.click(screen.getByText('retry'));
+    await waitFor(() => expect(userApi.getCurrentUser).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('8'));
   });
 
   it('still verifies on focus when storage cannot be read', async () => {

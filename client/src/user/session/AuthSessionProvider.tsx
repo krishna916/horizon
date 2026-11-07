@@ -146,6 +146,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
       const changedOwner = priorOwnerId !== null && priorOwnerId !== user.id;
       generationRef.current += 1;
       inFlightRef.current = null;
+      void queryClient.cancelQueries({ queryKey: ['me'], exact: true });
       if (changedOwner) {
         queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
       }
