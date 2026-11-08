@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Horizon · Notes design review</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to Notes</a>
+    <div class="review-bar">
+      <span
+        ><strong>Notes design review</strong
+        ><span class="review-detail">
+          · Proposed baseline · Local simulation only</span
+        ></span
+      >
+      <div class="review-actions">
+        <label class="sr-only" for="scene">Review scenario</label>
+        <select id="scene">
+          <option value="workspace">Populated workspace</option>
+          <option value="empty">Empty workspace</option>
+          <option value="loading">Loading workspace</option>
+          <option value="error">Workspace error</option>
+          <option value="editor">Rich document</option>
+          <option value="save-error">Failed save</option>
+          <option value="arm-failure">Fail next save</option>
+          <option value="upload">Mixed upload results</option>
+          <option value="preview-error">Preview error</option>
+          <option value="missing">Unavailable note</option>
+          <option value="session">Session change</option>
+        </select>
+        <button id="theme" class="review-button">Light theme</button>
+        <button id="reset" class="review-button">Reset demo</button>
+      </div>
+    </div>
+    <div class="shell">
+      <aside class="sidebar" aria-label="Horizon sidebar">
+        <div class="brand">Horizon<span>PRODUCTIVITY</span></div>
+        <button class="capture" disabled>
+          <span data-icon="plus"></span>Capture
+        </button>
+        <nav aria-label="Main navigation">
+          <span class="nav-item"
+            ><span data-icon="home"></span><span>Home</span></span
+          >
+          <span class="nav-item"
+            ><span data-icon="calendar"></span><span>Today</span></span
+          >
+          <span class="nav-item"
+            ><span data-icon="inbox"></span><span>Inbox</span></span
+          >
+          <span class="nav-item"
+            ><span data-icon="check-circle"></span><span>Tasks</span></span
+          >
+          <a class="nav-item active" aria-current="page" href="#/notes"
+            ><span data-icon="file-text"></span><span>Notes</span></a
+          >
+        </nav>
+        <footer class="sidebar-footer">
+          <span class="nav-item"
+            ><span data-icon="settings"></span><span>Settings</span></span
+          >
+          <div class="profile">
+            <span class="avatar">K</span>
+            <div><small>Profile</small><span>Local design review</span></div>
+            <span data-icon="log-out"></span>
+          </div>
+        </footer>
+      </aside>
+      <div class="main-shell">
+        <header class="app-header">
+          <h2>Notes</h2>
+          <div class="shell-search" aria-label="Search placeholder">
+            <span data-icon="search"></span><span>Search notes…</span>
+          </div>
+          <div class="header-icons">
+            <span data-icon="bell"></span><span data-icon="help"></span>
+          </div>
+        </header>
+        <main id="main" tabindex="-1"></main>
+      </div>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <dialog id="modal" aria-labelledby="modal-title"></dialog>
+    <script src="mockup.js"></script>
+  </body>
+</html>
