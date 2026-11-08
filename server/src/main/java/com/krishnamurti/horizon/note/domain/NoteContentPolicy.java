@@ -268,7 +268,8 @@ public final class NoteContentPolicy {
                 invalid("table cell span is invalid");
         if (attrs.containsKey(COLWIDTH) && attrs.get(COLWIDTH) != null) {
             for (Object width : asList(attrs.get(COLWIDTH), "table colwidth must be an array"))
-                if (!positiveBoundedInteger(width)) invalid("table column width is invalid");
+                if (!nonNegativeBoundedInteger(width, 10_000))
+                    invalid("table column width is invalid");
         }
     }
 
@@ -415,6 +416,15 @@ public final class NoteContentPolicy {
         return value instanceof Number number
                 && number.intValue() > 0
                 && number.doubleValue() == number.intValue();
+    }
+
+    private static boolean nonNegativeBoundedInteger(Object value, int maximum) {
+        if (!(value instanceof Number number)) return false;
+        double numericValue = number.doubleValue();
+        return Double.isFinite(numericValue)
+                && numericValue >= 0
+                && numericValue <= maximum
+                && numericValue == Math.rint(numericValue);
     }
 
     private static boolean positiveBoundedInteger(Object value) {

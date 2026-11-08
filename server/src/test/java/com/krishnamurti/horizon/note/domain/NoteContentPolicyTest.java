@@ -110,7 +110,19 @@ class NoteContentPolicyTest {
         assertInvalid(doc(node("heading", Map.of("level", 4), List.of(paragraph()))));
         assertInvalid(doc(node("orderedList", Map.of("start", 0), List.of(listItem(paragraph())))));
         assertInvalid(doc(node("codeBlock", Map.of("language", "x".repeat(101)), List.of())));
-        assertInvalid(doc(node("tableCell", Map.of("colspan", 101), List.of(paragraph()))));
+        assertInvalidWithMessage(
+                doc(
+                        node(
+                                "table",
+                                List.of(
+                                        node(
+                                                "tableRow",
+                                                List.of(
+                                                        node(
+                                                                "tableCell",
+                                                                Map.of("colspan", 101),
+                                                                List.of(paragraph()))))))),
+                "table cell span is invalid");
         assertInvalid(
                 doc(
                         paragraph(
@@ -227,6 +239,48 @@ class NoteContentPolicyTest {
     }
 
     @Test
+    void acceptsPixelWidthsAndZeroForUnspecifiedSpannedColumns() {
+        Map<String, Object> document =
+                doc(
+                        node(
+                                "table",
+                                List.of(
+                                        node(
+                                                "tableRow",
+                                                List.of(
+                                                        node(
+                                                                "tableCell",
+                                                                Map.of(
+                                                                        "colspan",
+                                                                        2,
+                                                                        "colwidth",
+                                                                        List.of(0, 160)),
+                                                                List.of(paragraph(text("wide")))),
+                                                        node(
+                                                                "tableCell",
+                                                                Map.of("colwidth", List.of(160)),
+                                                                List.of(paragraph(text("normal")))),
+                                                        node(
+                                                                "tableCell",
+                                                                Map.of("colwidth", List.of(10_000)),
+                                                                List.of(
+                                                                        paragraph(
+                                                                                text(
+                                                                                        "maximum")))))))));
+
+        assertThat(NoteContentPolicy.validateAndCopy(document)).isEqualTo(document);
+    }
+
+    @Test
+    void rejectsInvalidColumnPixelWidthsWithoutRelaxingCellSpanBounds() {
+        assertInvalidWithMessage(tableCellWithColumnWidths(-1), "table column width is invalid");
+        assertInvalidWithMessage(
+                tableCellWithColumnWidths(10_001), "table column width is invalid");
+        assertInvalidWithMessage(tableCellWithColumnWidths(1.5), "table column width is invalid");
+        assertInvalidWithMessage(tableCellWithColspan(101), "table cell span is invalid");
+    }
+
+    @Test
     void acceptsOneMibSerializedContentAndRejectsLargerDocuments() {
         int overhead = serializedSize();
         String boundaryText = "x".repeat(1_048_576 - overhead);
@@ -261,6 +315,40 @@ class NoteContentPolicyTest {
     private static void assertInvalid(Map<String, Object> document) {
         assertThatThrownBy(() -> NoteContentPolicy.validateAndCopy(document))
                 .isInstanceOf(InvalidNoteException.class);
+    }
+
+    private static void assertInvalidWithMessage(Map<String, Object> document, String message) {
+        assertThatThrownBy(() -> NoteContentPolicy.validateAndCopy(document))
+                .isInstanceOf(InvalidNoteException.class)
+                .hasMessageContaining(message);
+    }
+
+    private static Map<String, Object> tableCellWithColumnWidths(Number width) {
+        return doc(
+                node(
+                        "table",
+                        List.of(
+                                node(
+                                        "tableRow",
+                                        List.of(
+                                                node(
+                                                        "tableCell",
+                                                        Map.of("colwidth", List.of(width)),
+                                                        List.of(paragraph(text("cell")))))))));
+    }
+
+    private static Map<String, Object> tableCellWithColspan(int colspan) {
+        return doc(
+                node(
+                        "table",
+                        List.of(
+                                node(
+                                        "tableRow",
+                                        List.of(
+                                                node(
+                                                        "tableCell",
+                                                        Map.of("colspan", colspan),
+                                                        List.of(paragraph(text("cell")))))))));
     }
 
     private static int serializedSize() {
