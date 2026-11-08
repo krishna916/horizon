@@ -153,6 +153,80 @@ class NoteControllerIntegrationTest {
     }
 
     @Test
+    void limitsRawNoteBodiesBeforeParsingAndKeepsSemanticContentLimit() throws Exception {
+        String oversizedText = "x".repeat((int) NoteRequestBodyLimitAdvice.MAX_REQUEST_BYTES + 1);
+        String oversizedBody = noteBody("Large", oversizedText);
+
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
+                                .header(
+                                        "Content-Length",
+                                        NoteRequestBodyLimitAdvice.MAX_REQUEST_BYTES + 1)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{}"))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.status").value(413))
+                .andExpect(jsonPath("$.title").value("Note Request Too Large"));
+
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
+                                .header("Transfer-Encoding", "chunked")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(oversizedBody))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.status").value(413));
+
+        long id =
+                createNote(
+                        "{\"title\":\"Before\",\"content\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"unchanged\"}]}]}}");
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":0,\"content\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\""
+                                                + oversizedText
+                                                + "\"}]}]}}"))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.status").value(413));
+        mockMvc.perform(get("/api/v1/notes/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.content[0].content[0].text").value("unchanged"));
+
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(noteBody("Large but semantic", "x".repeat(1_048_577))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(oversizedBody))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private static String noteBody(String title, String text) {
+        return "{\"title\":\""
+                + title
+                + "\",\"content\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + text
+                + "\"}]}]}}";
+    }
+
+    @Test
     void rejectsInvalidCreatePayloadsReplayConflictsAndBrowseParameters() throws Exception {
         String key = UUID.randomUUID().toString();
         mockMvc.perform(

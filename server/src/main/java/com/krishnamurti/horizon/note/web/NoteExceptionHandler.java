@@ -10,6 +10,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -51,6 +52,32 @@ public class NoteExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ProblemDetail handleInvalidNote(InvalidNoteException exception) {
         return validationFailure(exception.getField(), exception.getMessage());
+    }
+
+    @ExceptionHandler(NoteRequestBodyLimitAdvice.NoteRequestBodyTooLargeException.class)
+    public ProblemDetail handleOversizedBody(
+            NoteRequestBodyLimitAdvice.NoteRequestBodyTooLargeException exception) {
+        return oversizedBodyProblem();
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException exception) {
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof NoteRequestBodyLimitAdvice.NoteRequestBodyTooLargeException)
+                return oversizedBodyProblem();
+            cause = cause.getCause();
+        }
+        return validationFailure("body", "The Note request body is invalid.");
+    }
+
+    private ProblemDetail oversizedBodyProblem() {
+        ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.PAYLOAD_TOO_LARGE);
+        detail.setTitle("Note Request Too Large");
+        detail.setDetail("The Note request body exceeds the maximum allowed size.");
+        detail.setInstance(URI.create(NOTES_PATH));
+        return detail;
     }
 
     private ProblemDetail validationFailure(String field, String message) {
