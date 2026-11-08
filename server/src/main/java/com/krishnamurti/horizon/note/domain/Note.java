@@ -48,10 +48,17 @@ public class Note extends BaseEntity {
     public static Note create(Long userId, String title, Map<String, Object> content) {
         Note note = new Note();
         note.userId = Objects.requireNonNull(userId, "userId must not be null");
-        note.title = title;
+        note.title = normalizeTitle(title);
         note.content = copyJsonMap(content);
+        if (note.title == null && note.content == null) {
+            throw new InvalidNoteException("content", "a Note requires a title or content");
+        }
         note.inbox = false;
         return note;
+    }
+
+    public void updateTitle(String title) {
+        this.title = normalizeTitle(title);
     }
 
     public Long getUserId() {
@@ -80,6 +87,20 @@ public class Note extends BaseEntity {
 
     public java.time.OffsetDateTime getDeletedAt() {
         return deletedAt;
+    }
+
+    private static String normalizeTitle(String title) {
+        if (title == null) {
+            return null;
+        }
+        String normalized = title.strip();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (normalized.length() > 255) {
+            throw new InvalidNoteException("title", "title must be at most 255 characters");
+        }
+        return normalized;
     }
 
     @SuppressWarnings("unchecked")
