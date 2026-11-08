@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Horizon · Notes review gallery</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      body {
+        padding: 36px;
+        max-width: 1600px;
+        margin: auto;
+      }
+      header {
+        margin-bottom: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+      h1 {
+        font-size: 30px;
+        font-weight: 500;
+        letter-spacing: -0.6px;
+      }
+      header p {
+        margin-top: 7px;
+        color: var(--soft);
+      }
+      .gallery {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 32px 24px;
+      }
+      figure {
+        margin: 0;
+        min-width: 0;
+      }
+      figure > a {
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--panel);
+      }
+      figure img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      figcaption {
+        font-size: 14px;
+        margin-top: 10px;
+        color: var(--soft);
+      }
+      .mobile > a {
+        width: min(100%, 390px);
+        margin: auto;
+      }
+      .mobile figcaption {
+        text-align: center;
+      }
+      .gallery h2 {
+        grid-column: 1/-1;
+        font-size: 22px;
+        font-weight: 500;
+        border-top: 1px solid var(--line);
+        padding-top: 24px;
+        margin-top: 10px;
+      }
+      .links {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 22px 0;
+      }
+      .footnote {
+        font-size: 14px;
+        color: var(--soft);
+        margin: 32px 0;
+      }
+      @media (max-width: 700px) {
+        body {
+          padding: 22px 16px;
+        }
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 18px;
+        }
+        .gallery {
+          grid-template-columns: 1fr;
+        }
+        h1 {
+          font-size: 26px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Notes workspace · review gallery</h1>
+        <p>Proposed baseline · 8 November 2026 · Local mock data</p>
+      </div>
+      <a class="button primary" href="index.html">Open interactive mockup →</a>
+    </header>
+    <p>
+      The mockup is the review source. These captures show its desktop and
+      mobile states. Click any image to inspect it at full size.
+    </p>
+    <div class="links">
+      <a class="button" href="DESIGN-SPEC.md">Decisions & specification</a
+      ><a class="button" href="VERIFICATION.md">Verification & limitations</a>
+    </div>
+    <div class="gallery">
+      <figure>
+        <a href="screenshots/01-desktop-cards.jpg"
+          ><img
+            src="screenshots/01-desktop-cards.jpg"
+            alt="Dark desktop Cards with natural-height document previews"
+        /></a>
+        <figcaption>
+          Cards · natural heights, in-position images and row gaps
+        </figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/02-desktop-list.jpg"
+          ><img
+            src="screenshots/02-desktop-list.jpg"
+            alt="Desktop List View of the same collection"
+        /></a>
+        <figcaption>List · same collection, compact rows</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/03-desktop-editor.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/03-desktop-editor.jpg"
+            alt="Full-page document editor with a visible toolbar and inline image"
+        /></a>
+        <figcaption>Full-page editor · writing-first layout</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/04-new-untouched.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/04-new-untouched.jpg"
+            alt="Untouched new note with optional title and no saved record"
+        /></a>
+        <figcaption>Untouched New · nothing created yet</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/05-save-failure-guard.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/05-save-failure-guard.jpg"
+            alt="Navigation guard while edits have failed to save"
+        /></a>
+        <figcaption>Failed save · navigation waits for recovery</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/06-file-removal-confirmation.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/06-file-removal-confirmation.jpg"
+            alt="File removal confirmation with Cancel focused"
+        /></a>
+        <figcaption>
+          File removal · confirmation before a successful save
+        </figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/07-independent-upload-failure.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/07-independent-upload-failure.jpg"
+            alt="Independent upload failure with Retry while other files remain"
+        /></a>
+        <figcaption>Uploads · one failure keeps successful siblings</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/18-inline-upload-failure.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/18-inline-upload-failure.jpg"
+            alt="Image-only new note with inline upload failure and Retry"
+        /></a>
+        <figcaption>
+          Inline upload · image-only note and independent Retry
+        </figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/08-markdown-mermaid-preview.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/08-markdown-mermaid-preview.jpg"
+            alt="Read-only Markdown file preview with a Mermaid diagram"
+        /></a>
+        <figcaption>File preview · Markdown and Mermaid fixture</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/09-preview-failure.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/09-preview-failure.jpg"
+            alt="Failed file preview with Retry and original download"
+        /></a>
+        <figcaption>
+          Preview failure · original download remains available
+        </figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/10-pdf-preview.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/10-pdf-preview.jpg"
+            alt="PDF sample-page fallback with native-viewer and original-download options"
+        /></a>
+        <figcaption>
+          PDF · labeled sample-page fallback for this browser
+        </figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/11-archived-workspace.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/11-archived-workspace.jpg"
+            alt="Archived Notes collection with retained image and file metadata"
+        /></a>
+        <figcaption>Archived collection · separate browsing context</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/12-archived-editor.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/12-archived-editor.jpg"
+            alt="Editable archived note with Restore action"
+        /></a>
+        <figcaption>Archived note · editable and restorable</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/15-light-desktop-cards.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/15-light-desktop-cards.jpg"
+            alt="The same Cards workspace in Horizon light theme"
+        /></a>
+        <figcaption>Light theme · same content and hierarchy</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/16-empty-workspace.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/16-empty-workspace.jpg"
+            alt="Empty workspace inviting creation of the first note"
+        /></a>
+        <figcaption>Empty workspace · a useful first action</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/19-session-change.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/19-session-change.jpg"
+            alt="Session-change dialog with prior note content hidden"
+        /></a>
+        <figcaption>Session transition · previous content hidden</figcaption>
+      </figure>
+      <h2>Mobile · 390 × 844</h2>
+      <figure class="mobile">
+        <a href="screenshots/13-mobile-cards.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/13-mobile-cards.jpg"
+            alt="Mobile single-column Cards workspace"
+        /></a>
+        <figcaption>Cards · one column</figcaption>
+      </figure>
+      <figure class="mobile">
+        <a href="screenshots/20-mobile-list.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/20-mobile-list.jpg"
+            alt="Mobile List View with title, excerpt and updated date"
+        /></a>
+        <figcaption>List · compact metadata</figcaption>
+      </figure>
+      <figure class="mobile">
+        <a href="screenshots/14-mobile-editor.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/14-mobile-editor.jpg"
+            alt="Mobile document editor with scrollable formatting toolbar"
+        /></a>
+        <figcaption>Writing · readable text and scrollable toolbar</figcaption>
+      </figure>
+      <figure class="mobile">
+        <a href="screenshots/17-mobile-files.jpg"
+          ><img
+            loading="lazy"
+            src="screenshots/17-mobile-files.jpg"
+            alt="Mobile Files section with download and removal actions"
+        /></a>
+        <figcaption>Files · distinct from document images</figcaption>
+      </figure>
+    </div>
+    <p class="footnote">
+      The top review strip is prototype scaffolding. Native PDF rendering did
+      not display in the in-app browser; its explicitly labeled fallback is
+      shown here. Final product/UX approval is pending.
+    </p>
+  </body>
+</html>
