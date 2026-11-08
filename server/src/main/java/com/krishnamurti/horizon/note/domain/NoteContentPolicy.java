@@ -382,11 +382,14 @@ public final class NoteContentPolicy {
                         default ->
                                 codePoint < 0x20
                                         ? 6
-                                        : codePoint <= 0x7f
-                                                ? 1
-                                                : codePoint <= 0x7ff
-                                                        ? 2
-                                                        : codePoint <= 0xffff ? 3 : 4;
+                                        : codePoint >= Character.MIN_SURROGATE
+                                                        && codePoint <= Character.MAX_SURROGATE
+                                                ? 6
+                                                : codePoint <= 0x7f
+                                                        ? 1
+                                                        : codePoint <= 0x7ff
+                                                                ? 2
+                                                                : codePoint <= 0xffff ? 3 : 4;
                     };
         }
         return bytes;

@@ -25,7 +25,7 @@ public class NotePreviewBuilder {
             TextBudget candidateTextBudget = new TextBudget(textBudget.remaining());
             Map<String, Object> block = copyNode(asMap(sourceBlock), candidateTextBudget);
             if (block == null) break;
-            while (block != null) {
+            while (true) {
                 List<Map<String, Object>> candidateBlocks = new ArrayList<>(previewBlocks);
                 candidateBlocks.add(block);
                 Map<String, Object> candidate = document(candidateBlocks);

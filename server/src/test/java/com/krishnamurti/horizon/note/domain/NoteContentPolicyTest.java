@@ -307,7 +307,7 @@ class NoteContentPolicyTest {
         Map<String, Object> value =
                 Map.of(
                         "line\nkey\té😀",
-                        List.of("\b\f\n\r\t\"\\\u0000\u0001\u001f", "ASCII é 😀"),
+                        List.of("\b\f\n\r\t\"\\\u0000\u0001\u001f", "ASCII é 😀", "\uD800"),
                         "nul\u0000",
                         Map.of("quote\"slash\\", "x"));
         byte[] serialized = new ObjectMapper().writeValueAsBytes(value);

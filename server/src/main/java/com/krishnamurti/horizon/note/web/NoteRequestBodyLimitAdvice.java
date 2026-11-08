@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.note.web;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpHeaders;
@@ -22,9 +23,8 @@ public final class NoteRequestBodyLimitAdvice extends RequestBodyAdviceAdapter {
             MethodParameter parameter,
             Type targetType,
             Class<? extends HttpMessageConverter<?>> converterType) {
-        return parameter.getMethod() != null
-                && ("create".equals(parameter.getMethod().getName())
-                        || "update".equals(parameter.getMethod().getName()));
+        Method method = parameter.getMethod();
+        return method != null && java.util.Set.of("create", "update").contains(method.getName());
     }
 
     @Override
