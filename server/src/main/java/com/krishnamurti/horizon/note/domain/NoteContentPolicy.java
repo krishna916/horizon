@@ -441,7 +441,7 @@ public final class NoteContentPolicy {
         if (values.isEmpty()) invalid(message);
     }
 
-    private static boolean isWhitespace(int codePoint) {
+    static boolean isWhitespace(int codePoint) {
         return Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint);
     }
 

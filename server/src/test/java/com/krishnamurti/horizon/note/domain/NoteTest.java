@@ -32,6 +32,20 @@ class NoteTest {
     }
 
     @Test
+    void titleNormalizationTrimsUnicodeSpaceCharactersAndKeepsInternalSpaces() {
+        assertThat(Note.create(41L, "\u00a0\u00a0", bodyDocument()).getTitle()).isNull();
+        assertThat(Note.create(41L, "\u2003Research\u00a0", null).getTitle()).isEqualTo("Research");
+        assertThat(Note.create(41L, "left\u00a0right", null).getTitle())
+                .isEqualTo("left\u00a0right");
+        assertThat(Note.create(41L, "\u00a0" + "x".repeat(255) + "\u2003", null).getTitle())
+                .hasSize(255);
+        assertThatThrownBy(() -> Note.create(41L, "\u00a0" + "x".repeat(256) + "\u2003", null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> Note.create(41L, "\u00a0", null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void emptyTitleAndContentCannotCreateAndDisplayFallbackIsNeverPersisted() {
         assertThatThrownBy(() -> Note.create(41L, null, null))
                 .isInstanceOf(IllegalArgumentException.class);

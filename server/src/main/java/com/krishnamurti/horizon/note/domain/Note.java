@@ -97,10 +97,22 @@ public class Note extends BaseEntity {
         if (title == null) {
             return null;
         }
-        String normalized = title.strip();
-        if (normalized.isEmpty()) {
+        int start = 0;
+        int end = title.length();
+        while (start < end) {
+            int codePoint = title.codePointAt(start);
+            if (!NoteContentPolicy.isWhitespace(codePoint)) break;
+            start += Character.charCount(codePoint);
+        }
+        while (start < end) {
+            int codePoint = title.codePointBefore(end);
+            if (!NoteContentPolicy.isWhitespace(codePoint)) break;
+            end -= Character.charCount(codePoint);
+        }
+        if (start == end) {
             return null;
         }
+        String normalized = title.substring(start, end);
         if (normalized.length() > 255) {
             throw new InvalidNoteException("title", "title must be at most 255 characters");
         }
