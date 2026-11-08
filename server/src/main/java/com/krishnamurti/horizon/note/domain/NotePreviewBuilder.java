@@ -18,37 +18,49 @@ public class NotePreviewBuilder {
     public Map<String, Object> build(Map<String, Object> document) {
         if (document == null || !NoteContentPolicy.hasMeaningfulContent(document)) return null;
         List<?> sourceBlocks = (List<?>) document.get(CONTENT);
+        List<Map<String, Object>> previewBlocks = copyPrefix(sourceBlocks);
+        Map<String, Object> preview = document(previewBlocks);
+        return NoteContentPolicy.hasMeaningfulContent(preview) ? preview : null;
+    }
+
+    private List<Map<String, Object>> copyPrefix(List<?> sourceBlocks) {
         List<Map<String, Object>> previewBlocks = new ArrayList<>();
         TextBudget textBudget = new TextBudget(MAX_TEXT_CHARACTERS);
         for (Object sourceBlock : sourceBlocks) {
-            if (previewBlocks.size() >= MAX_TOP_LEVEL_BLOCKS || textBudget.remaining() == 0) break;
+            if (!hasCapacity(previewBlocks, textBudget)) return previewBlocks;
             TextBudget candidateTextBudget = new TextBudget(textBudget.remaining());
             Map<String, Object> block = copyNode(asMap(sourceBlock), candidateTextBudget);
-            if (block == null) break;
-            while (true) {
-                List<Map<String, Object>> candidateBlocks = new ArrayList<>(previewBlocks);
-                candidateBlocks.add(block);
-                Map<String, Object> candidate = document(candidateBlocks);
-                if (NoteContentPolicy.serializedJsonSize(candidate) <= MAX_SERIALIZED_BYTES) {
-                    try {
-                        NoteContentPolicy.validateAndCopy(candidate);
-                        break;
-                    } catch (RuntimeException invalidPreview) {
-                        // Keep trimming this block until its remaining prefix is structurally
-                        // valid.
-                    }
-                }
-                if (!removeLastDescendant(block)) {
-                    block = null;
-                    break;
-                }
-            }
-            if (block == null) break;
+            if (block == null) return previewBlocks;
+            block = fitBlock(block, previewBlocks);
+            if (block == null) return previewBlocks;
             previewBlocks.add(block);
             textBudget.consume(textLength(block));
         }
-        Map<String, Object> preview = document(previewBlocks);
-        return NoteContentPolicy.hasMeaningfulContent(preview) ? preview : null;
+        return previewBlocks;
+    }
+
+    private boolean hasCapacity(List<Map<String, Object>> blocks, TextBudget textBudget) {
+        return blocks.size() < MAX_TOP_LEVEL_BLOCKS && textBudget.remaining() > 0;
+    }
+
+    private Map<String, Object> fitBlock(
+            Map<String, Object> block, List<Map<String, Object>> existingBlocks) {
+        while (true) {
+            List<Map<String, Object>> candidateBlocks = new ArrayList<>(existingBlocks);
+            candidateBlocks.add(block);
+            if (isValidCandidate(document(candidateBlocks))) return block;
+            if (!removeLastDescendant(block)) return null;
+        }
+    }
+
+    private boolean isValidCandidate(Map<String, Object> candidate) {
+        if (NoteContentPolicy.serializedJsonSize(candidate) > MAX_SERIALIZED_BYTES) return false;
+        try {
+            NoteContentPolicy.validateAndCopy(candidate);
+            return true;
+        } catch (RuntimeException invalidPreview) {
+            return false;
+        }
     }
 
     private Map<String, Object> copyNode(Map<String, Object> source, TextBudget budget) {

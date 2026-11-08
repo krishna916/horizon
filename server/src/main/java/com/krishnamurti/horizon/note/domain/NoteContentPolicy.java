@@ -376,23 +376,30 @@ public final class NoteContentPolicy {
         for (int offset = 0; offset < value.length(); ) {
             int codePoint = value.codePointAt(offset);
             offset += Character.charCount(codePoint);
-            bytes +=
-                    switch (codePoint) {
-                        case '"', '\\', '\b', '\f', '\n', '\r', '\t' -> 2;
-                        default ->
-                                codePoint < 0x20
-                                        ? 6
-                                        : codePoint >= Character.MIN_SURROGATE
-                                                        && codePoint <= Character.MAX_SURROGATE
-                                                ? 6
-                                                : codePoint <= 0x7f
-                                                        ? 1
-                                                        : codePoint <= 0x7ff
-                                                                ? 2
-                                                                : codePoint <= 0xffff ? 3 : 4;
-                    };
+            bytes += quotedCodePointSize(codePoint);
         }
         return bytes;
+    }
+
+    private static int quotedCodePointSize(int codePoint) {
+        if (codePoint == '"'
+                || codePoint == '\\'
+                || codePoint == '\b'
+                || codePoint == '\f'
+                || codePoint == '\n'
+                || codePoint == '\r'
+                || codePoint == '\t') return 2;
+        if (codePoint < 0x20
+                || (codePoint >= Character.MIN_SURROGATE && codePoint <= Character.MAX_SURROGATE))
+            return 6;
+        return utf8CodePointSize(codePoint);
+    }
+
+    private static int utf8CodePointSize(int codePoint) {
+        if (codePoint <= 0x7f) return 1;
+        if (codePoint <= 0x7ff) return 2;
+        if (codePoint <= 0xffff) return 3;
+        return 4;
     }
 
     private static String nodeType(Object value) {
