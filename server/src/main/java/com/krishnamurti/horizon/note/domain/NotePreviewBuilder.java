@@ -1,6 +1,5 @@
 package com.krishnamurti.horizon.note.domain;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,7 +27,7 @@ public class NotePreviewBuilder {
             List<Map<String, Object>> candidateBlocks = new ArrayList<>(previewBlocks);
             candidateBlocks.add(block);
             Map<String, Object> candidate = document(candidateBlocks);
-            if (serializedSize(candidate) > MAX_SERIALIZED_BYTES) break;
+            if (NoteContentPolicy.serializedJsonSize(candidate) > MAX_SERIALIZED_BYTES) break;
             try {
                 NoteContentPolicy.validateAndCopy(candidate);
             } catch (RuntimeException invalidPreview) {
@@ -124,49 +123,6 @@ public class NotePreviewBuilder {
             break;
         }
         return offset;
-    }
-
-    private static int serializedSize(Object value) {
-        if (value instanceof String text) return quotedStringSize(text);
-        if (value instanceof Number number)
-            return number.toString().getBytes(StandardCharsets.UTF_8).length;
-        if (value instanceof Boolean bool) return bool ? 4 : 5;
-        if (value == null) return 4;
-        if (value instanceof Map<?, ?> map) {
-            int bytes = 2 + Math.max(0, map.size() - 1);
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                bytes +=
-                        quotedStringSize((String) entry.getKey())
-                                + 1
-                                + serializedSize(entry.getValue());
-            }
-            return bytes;
-        }
-        if (value instanceof List<?> list) {
-            int bytes = 2 + Math.max(0, list.size() - 1);
-            for (Object item : list) bytes += serializedSize(item);
-            return bytes;
-        }
-        throw new IllegalArgumentException("Note preview contains a non-JSON value");
-    }
-
-    private static int quotedStringSize(String value) {
-        int bytes = 2;
-        for (int offset = 0; offset < value.length(); ) {
-            int codePoint = value.codePointAt(offset);
-            offset += Character.charCount(codePoint);
-            bytes +=
-                    switch (codePoint) {
-                        case '"', '\\', '\b', '\f', '\n', '\r', '\t' -> 2;
-                        default ->
-                                codePoint < 0x20
-                                        ? 6
-                                        : new String(Character.toChars(codePoint))
-                                                .getBytes(StandardCharsets.UTF_8)
-                                                .length;
-                    };
-        }
-        return bytes;
     }
 
     @SuppressWarnings("unchecked")

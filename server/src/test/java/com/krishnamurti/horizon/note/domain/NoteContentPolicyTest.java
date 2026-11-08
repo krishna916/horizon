@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 class NoteContentPolicyTest {
 
@@ -290,15 +291,44 @@ class NoteContentPolicyTest {
         String unicodeBoundary = "x".repeat(1_048_576 - overhead - 2) + "é";
         assertThat(NoteContentPolicy.validateAndCopy(doc(paragraph(text(unicodeBoundary)))))
                 .isNotNull();
+
+        String escapedBoundaryText = "\n".repeat((1_048_576 - overhead - 1) / 2) + "x";
+        assertThat(NoteContentPolicy.serializedJsonSize(doc(paragraph(text(escapedBoundaryText)))))
+                .isEqualTo(1_048_576);
+        assertThat(NoteContentPolicy.validateAndCopy(doc(paragraph(text(escapedBoundaryText)))))
+                .isNotNull();
+        assertInvalidWithMessage(
+                doc(paragraph(text("\n" + escapedBoundaryText))),
+                "content exceeds the maximum serialized size");
     }
 
     @Test
-    void rejectsExcessiveNodeCountAndNestingAndReturnsDefensiveCopy() {
-        List<Map<String, Object>> manyNodes = new ArrayList<>();
-        for (int index = 0; index < 10_001; index++) {
-            manyNodes.add(node("horizontalRule"));
-        }
-        assertInvalid(doc(manyNodes));
+    void jsonByteAccountingMatchesJacksonThreeForEscapesUnicodeAndPropertyNames() throws Exception {
+        Map<String, Object> value =
+                Map.of(
+                        "line\nkey\té😀",
+                        List.of("\b\f\n\r\t\"\\\u0000\u0001\u001f", "ASCII é 😀"),
+                        "nul\u0000",
+                        Map.of("quote\"slash\\", "x"));
+        byte[] serialized = new ObjectMapper().writeValueAsBytes(value);
+
+        assertThat(NoteContentPolicy.serializedJsonSize(value)).isEqualTo(serialized.length);
+    }
+
+    @Test
+    void countsAggregateDocumentNodesSeparatelyFromMarksAndReturnsDefensiveCopy() {
+        List<Map<String, Object>> atLimit = new ArrayList<>();
+        for (int index = 0; index < 4_999; index++) atLimit.add(paragraph(text("x")));
+        assertThat(NoteContentPolicy.validateAndCopy(doc(atLimit))).isNotNull();
+
+        atLimit.add(paragraph(text("x")));
+        assertInvalidWithMessage(doc(atLimit), "content exceeds the maximum node count");
+
+        List<Map<String, Object>> markedBlocks = new ArrayList<>();
+        Map<String, Object>[] threeMarks = new Map[] {bold(), bold(), bold()};
+        for (int index = 0; index < 3_334; index++)
+            markedBlocks.add(paragraph(text("x", threeMarks)));
+        assertInvalidWithMessage(doc(markedBlocks), "content exceeds the maximum mark count");
 
         Map<String, Object> deep = paragraph(text("bottom"));
         for (int index = 0; index < 33; index++) {

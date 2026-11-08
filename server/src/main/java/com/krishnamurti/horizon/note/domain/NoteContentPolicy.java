@@ -88,6 +88,7 @@ public final class NoteContentPolicy {
 
     private static void validateNode(Object value, String expected, int depth, Counters counters) {
         if (depth > MAX_NESTING_DEPTH) invalid("content exceeds the maximum nesting depth");
+        // The root doc is a structural node and consumes one slot in the document budget.
         if (++counters.nodes > MAX_DOCUMENT_NODES)
             invalid("content exceeds the maximum node count");
         Map<String, Object> node = asStringMap(value, CONTENT_NODES_MUST_BE_OBJECTS);
@@ -187,8 +188,8 @@ public final class NoteContentPolicy {
 
     private static void validateMarks(Object value, Counters counters) {
         for (Object item : asList(value, "text marks must be an array")) {
-            if (++counters.nodes > MAX_DOCUMENT_NODES)
-                invalid("content exceeds the maximum node count");
+            if (++counters.marks > MAX_DOCUMENT_NODES)
+                invalid("content exceeds the maximum mark count");
             Map<String, Object> mark = asStringMap(item, "text marks must be objects");
             String type = string(mark.get(TYPE), "text mark type must be a string");
             if (!Set.of("bold", "italic", "code", "link").contains(type))
@@ -320,7 +321,7 @@ public final class NoteContentPolicy {
                 && tokens.containsAll(Set.of("noopener", "noreferrer"));
     }
 
-    private static long serializedJsonSize(Object root) {
+    static long serializedJsonSize(Object root) {
         long bytes = 0;
         int values = 0;
         Deque<Object> pending = new ArrayDeque<>();
@@ -375,13 +376,18 @@ public final class NoteContentPolicy {
         for (int offset = 0; offset < value.length(); ) {
             int codePoint = value.codePointAt(offset);
             offset += Character.charCount(codePoint);
-            if (codePoint == '"' || codePoint == '\\') bytes += 2;
-            else if (codePoint < 0x20) bytes += 6;
-            else
-                bytes +=
-                        new String(Character.toChars(codePoint))
-                                .getBytes(StandardCharsets.UTF_8)
-                                .length;
+            bytes +=
+                    switch (codePoint) {
+                        case '"', '\\', '\b', '\f', '\n', '\r', '\t' -> 2;
+                        default ->
+                                codePoint < 0x20
+                                        ? 6
+                                        : codePoint <= 0x7f
+                                                ? 1
+                                                : codePoint <= 0x7ff
+                                                        ? 2
+                                                        : codePoint <= 0xffff ? 3 : 4;
+                    };
         }
         return bytes;
     }
@@ -468,6 +474,7 @@ public final class NoteContentPolicy {
 
     private static final class Counters {
         private int nodes;
+        private int marks;
     }
 
     private enum JsonNull {
