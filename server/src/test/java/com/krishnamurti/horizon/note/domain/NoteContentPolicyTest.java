@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 package com.krishnamurti.horizon.note.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,6 +71,162 @@ class NoteContentPolicyTest {
         assertInvalid(doc(paragraph(text("unsafe", link("javascript:alert(1)")))));
         assertInvalid(
                 doc(paragraph(text("extra", Map.of("type", "text", "text", "bad", "id", "x")))));
+    }
+
+    @Test
+    void validatesAttributesMarksAndSerializedJsonValues() {
+        assertThat(
+                        NoteContentPolicy.validateAndCopy(
+                                doc(
+                                        node("heading", Map.of("level", 3), List.of(text("h"))),
+                                        node(
+                                                "orderedList",
+                                                Map.of("start", 2, "type", "i"),
+                                                List.of(listItem(paragraph(text("item"))))),
+                                        node(
+                                                "codeBlock",
+                                                Map.of("language", "java"),
+                                                List.of(text("code"))),
+                                        node(
+                                                "table",
+                                                List.of(
+                                                        node(
+                                                                "tableRow",
+                                                                List.of(
+                                                                        node(
+                                                                                "tableHeader",
+                                                                                Map.of(
+                                                                                        "colspan",
+                                                                                        2,
+                                                                                        "rowspan",
+                                                                                        1,
+                                                                                        "colwidth",
+                                                                                        List.of(10),
+                                                                                        "align",
+                                                                                        "center"),
+                                                                                List.of(
+                                                                                        paragraph(
+                                                                                                text(
+                                                                                                        "head")))))))))))
+                .isNotNull();
+
+        assertInvalid(doc(node("heading", Map.of("level", 4), List.of(paragraph()))));
+        assertInvalid(doc(node("orderedList", Map.of("start", 0), List.of(listItem(paragraph())))));
+        assertInvalid(doc(node("codeBlock", Map.of("language", "x".repeat(101)), List.of())));
+        assertInvalid(doc(node("tableCell", Map.of("colspan", 101), List.of(paragraph()))));
+        assertInvalid(
+                doc(
+                        paragraph(
+                                text(
+                                        "bad",
+                                        Map.of(
+                                                "type",
+                                                "link",
+                                                "attrs",
+                                                Map.of("href", "https://user@example.com"))))));
+        assertInvalid(
+                doc(
+                        paragraph(
+                                text(
+                                        "bad",
+                                        Map.of(
+                                                "type",
+                                                "link",
+                                                "attrs",
+                                                Map.of(
+                                                        "href",
+                                                        "https://example.com",
+                                                        "rel",
+                                                        "noopener"))))));
+        assertInvalid(
+                doc(
+                        paragraph(
+                                Map.of(
+                                        "type",
+                                        "text",
+                                        "text",
+                                        "x",
+                                        "marks",
+                                        List.of(Map.of("type", "bold", "extra", true))))));
+        assertInvalid(
+                doc(
+                        paragraph(text("x")),
+                        Map.of("type", "horizontalRule", "attrs", Map.of("extra", true))));
+        assertInvalid(
+                Map.of("type", "doc", "content", List.of(Map.of("type", "text", "text", "x"))));
+        assertInvalid(
+                doc(
+                        paragraph(
+                                Map.of(
+                                        "type",
+                                        "text",
+                                        "text",
+                                        "x",
+                                        "marks",
+                                        List.of(Map.of("type", "link"))))));
+        assertInvalid(
+                doc(
+                        paragraph(
+                                Map.of(
+                                        "type",
+                                        "text",
+                                        "text",
+                                        "x",
+                                        "marks",
+                                        List.of(
+                                                Map.of(
+                                                        "type",
+                                                        "link",
+                                                        "attrs",
+                                                        Map.of("href", "mailto://bad")))))));
+        assertInvalid(
+                doc(
+                        paragraph(
+                                Map.of(
+                                        "type",
+                                        "text",
+                                        "text",
+                                        "x",
+                                        "marks",
+                                        List.of(
+                                                Map.of(
+                                                        "type",
+                                                        "link",
+                                                        "attrs",
+                                                        Map.of(
+                                                                "href",
+                                                                "https://example.com",
+                                                                "target",
+                                                                "_self")))))));
+        assertInvalid(
+                doc(
+                        paragraph(
+                                Map.of(
+                                        "type",
+                                        "text",
+                                        "text",
+                                        "x",
+                                        "marks",
+                                        List.of(
+                                                Map.of(
+                                                        "type",
+                                                        "link",
+                                                        "attrs",
+                                                        Map.of(
+                                                                "href",
+                                                                "https://example.com",
+                                                                "class",
+                                                                "unsafe")))))));
+        assertInvalid(
+                doc(
+                        paragraph(
+                                Map.of(
+                                        "type",
+                                        "text",
+                                        "text",
+                                        "x",
+                                        "marks",
+                                        List.of(Map.of("type", "unknown"))))));
     }
 
     @Test

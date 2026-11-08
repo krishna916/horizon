@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 package com.krishnamurti.horizon.note.domain;
 
 import java.net.URI;
@@ -20,17 +23,35 @@ public final class NoteContentPolicy {
     public static final int MAX_DOCUMENT_NODES = 10_000;
     public static final int MAX_NESTING_DEPTH = 32;
 
+    private static final String TYPE = "type";
+    private static final String CONTENT = "content";
+    private static final String ATTRS = "attrs";
+    private static final String MARKS = "marks";
+    private static final String PARAGRAPH = "paragraph";
+    private static final String HEADING = "heading";
+    private static final String ORDERED_LIST = "orderedList";
+    private static final String CODE_BLOCK = "codeBlock";
+    private static final String BLOCKQUOTE = "blockquote";
+    private static final String TABLE = "table";
+    private static final String TABLE_ROW = "tableRow";
+    private static final String TABLE_CELL = "tableCell";
+    private static final String TABLE_HEADER = "tableHeader";
+    private static final String LIST_ITEM = "listItem";
+    private static final String HARD_BREAK = "hardBreak";
+    private static final String COLWIDTH = "colwidth";
+    private static final String CONTENT_NODES_MUST_BE_OBJECTS = "content nodes must be objects";
+
     private static final Set<String> BLOCKS =
             Set.of(
-                    "paragraph",
-                    "heading",
+                    PARAGRAPH,
+                    HEADING,
                     "bulletList",
-                    "orderedList",
-                    "codeBlock",
-                    "blockquote",
-                    "table",
+                    ORDERED_LIST,
+                    CODE_BLOCK,
+                    BLOCKQUOTE,
+                    TABLE,
                     "horizontalRule");
-    private static final Set<String> INLINE = Set.of("text", "hardBreak");
+    private static final Set<String> INLINE = Set.of("text", HARD_BREAK);
     private static final Pattern REL_SEPARATOR = Pattern.compile("\\s+");
 
     private NoteContentPolicy() {}
@@ -51,14 +72,14 @@ public final class NoteContentPolicy {
         Deque<Object> pending = new ArrayDeque<>();
         pending.push(content);
         while (!pending.isEmpty()) {
-            Map<String, Object> node = asStringMap(pending.pop(), "content nodes must be objects");
-            String type = (String) node.get("type");
-            if ("table".equals(type) || "horizontalRule".equals(type)) return true;
+            Map<String, Object> node = asStringMap(pending.pop(), CONTENT_NODES_MUST_BE_OBJECTS);
+            String type = (String) node.get(TYPE);
+            if (TABLE.equals(type) || "horizontalRule".equals(type)) return true;
             if ("text".equals(type)) {
                 String text = (String) node.get("text");
                 if (!text.codePoints().allMatch(NoteContentPolicy::isWhitespace)) return true;
             }
-            Object children = node.get("content");
+            Object children = node.get(CONTENT);
             if (children instanceof List<?> list) for (Object child : list) pending.push(child);
         }
         return false;
@@ -68,25 +89,25 @@ public final class NoteContentPolicy {
         if (depth > MAX_NESTING_DEPTH) invalid("content exceeds the maximum nesting depth");
         if (++counters.nodes > MAX_DOCUMENT_NODES)
             invalid("content exceeds the maximum node count");
-        Map<String, Object> node = asStringMap(value, "content nodes must be objects");
-        String type = string(node.get("type"), "content node type must be a string");
+        Map<String, Object> node = asStringMap(value, CONTENT_NODES_MUST_BE_OBJECTS);
+        String type = string(node.get(TYPE), "content node type must be a string");
         if (!expected.equals(type)) invalid("invalid " + expected + " child node");
         validateNodeKeys(node, type);
-        if (node.containsKey("attrs")) validateAttrs(node.get("attrs"), type);
+        if (node.containsKey(ATTRS)) validateAttrs(node.get(ATTRS), type);
         if ("text".equals(type)) {
             string(node.get("text"), "text content must be a string");
-            if (node.containsKey("marks")) validateMarks(node.get("marks"), counters);
+            if (node.containsKey(MARKS)) validateMarks(node.get(MARKS), counters);
             return;
         }
-        if ("hardBreak".equals(type) || "horizontalRule".equals(type)) {
-            if (node.containsKey("content")
-                    && !asList(node.get("content"), "leaf content must be an array").isEmpty())
+        if (HARD_BREAK.equals(type) || "horizontalRule".equals(type)) {
+            if (node.containsKey(CONTENT)
+                    && !asList(node.get(CONTENT), "leaf content must be an array").isEmpty())
                 invalid("leaf nodes cannot contain child nodes");
             return;
         }
         List<?> children =
-                node.containsKey("content")
-                        ? asList(node.get("content"), "node content must be an array")
+                node.containsKey(CONTENT)
+                        ? asList(node.get(CONTENT), "node content must be an array")
                         : List.of();
         validateChildren(type, children, depth, counters);
     }
@@ -94,25 +115,25 @@ public final class NoteContentPolicy {
     private static void validateNodeKeys(Map<String, Object> node, String type) {
         Set<String> allowed =
                 switch (type) {
-                    case "text" -> Set.of("type", "text", "marks");
-                    case "doc" -> Set.of("type", "content");
-                    case "paragraph",
-                            "heading",
+                    case "text" -> Set.of(TYPE, "text", MARKS);
+                    case "doc" -> Set.of(TYPE, CONTENT);
+                    case PARAGRAPH,
+                            HEADING,
                             "bulletList",
-                            "orderedList",
-                            "listItem",
-                            "codeBlock",
-                            "blockquote",
-                            "table",
-                            "tableRow",
-                            "tableCell",
-                            "tableHeader" ->
-                            Set.of("type", "attrs", "content");
-                    case "hardBreak", "horizontalRule" -> Set.of("type", "attrs");
+                            ORDERED_LIST,
+                            LIST_ITEM,
+                            CODE_BLOCK,
+                            BLOCKQUOTE,
+                            TABLE,
+                            TABLE_ROW,
+                            TABLE_CELL,
+                            TABLE_HEADER ->
+                            Set.of(TYPE, ATTRS, CONTENT);
+                    case HARD_BREAK, "horizontalRule" -> Set.of(TYPE, ATTRS);
                     default -> throw invalidException("unsupported content node type");
                 };
         if (!allowed.containsAll(node.keySet())) invalid("content node has unsupported properties");
-        if ("doc".equals(type) && !node.containsKey("content"))
+        if ("doc".equals(type) && !node.containsKey(CONTENT))
             invalid("document content must be an array");
         if ("text".equals(type) && !node.containsKey("text"))
             invalid("text node content is required");
@@ -122,31 +143,31 @@ public final class NoteContentPolicy {
             String type, List<?> children, int depth, Counters counters) {
         switch (type) {
             case "doc" -> validateChildrenAs(children, BLOCKS, depth, counters);
-            case "paragraph", "heading" -> validateChildrenAs(children, INLINE, depth, counters);
-            case "bulletList", "orderedList" -> {
+            case PARAGRAPH, HEADING -> validateChildrenAs(children, INLINE, depth, counters);
+            case "bulletList", ORDERED_LIST -> {
                 requireNonEmpty(children, "lists must contain a list item");
-                validateChildrenAs(children, Set.of("listItem"), depth, counters);
+                validateChildrenAs(children, Set.of(LIST_ITEM), depth, counters);
             }
-            case "listItem" -> {
+            case LIST_ITEM -> {
                 requireNonEmpty(children, "list items must contain a paragraph");
-                if (!"paragraph".equals(nodeType(children.getFirst())))
+                if (!PARAGRAPH.equals(nodeType(children.getFirst())))
                     invalid("list items must start with a paragraph");
                 validateChildrenAs(children, BLOCKS, depth, counters);
             }
-            case "blockquote" -> {
+            case BLOCKQUOTE -> {
                 requireNonEmpty(children, "block quotes must contain block content");
                 validateChildrenAs(children, BLOCKS, depth, counters);
             }
-            case "codeBlock" -> validateChildrenAs(children, Set.of("text"), depth, counters);
-            case "table" -> {
+            case CODE_BLOCK -> validateChildrenAs(children, Set.of("text"), depth, counters);
+            case TABLE -> {
                 requireNonEmpty(children, "tables must contain a row");
-                validateChildrenAs(children, Set.of("tableRow"), depth, counters);
+                validateChildrenAs(children, Set.of(TABLE_ROW), depth, counters);
             }
-            case "tableRow" -> {
+            case TABLE_ROW -> {
                 requireNonEmpty(children, "table rows must contain cells");
-                validateChildrenAs(children, Set.of("tableCell", "tableHeader"), depth, counters);
+                validateChildrenAs(children, Set.of(TABLE_CELL, TABLE_HEADER), depth, counters);
             }
-            case "tableCell", "tableHeader" -> {
+            case TABLE_CELL, TABLE_HEADER -> {
                 requireNonEmpty(children, "table cells must contain block content");
                 validateChildrenAs(children, BLOCKS, depth, counters);
             }
@@ -168,13 +189,13 @@ public final class NoteContentPolicy {
             if (++counters.nodes > MAX_DOCUMENT_NODES)
                 invalid("content exceeds the maximum node count");
             Map<String, Object> mark = asStringMap(item, "text marks must be objects");
-            String type = string(mark.get("type"), "text mark type must be a string");
+            String type = string(mark.get(TYPE), "text mark type must be a string");
             if (!Set.of("bold", "italic", "code", "link").contains(type))
                 invalid("unsupported content mark type");
-            Set<String> allowed = "link".equals(type) ? Set.of("type", "attrs") : Set.of("type");
+            Set<String> allowed = "link".equals(type) ? Set.of(TYPE, ATTRS) : Set.of(TYPE);
             if (!allowed.containsAll(mark.keySet()))
                 invalid("content mark has unsupported properties");
-            if ("link".equals(type)) validateLinkAttrs(mark.get("attrs"));
+            if ("link".equals(type)) validateLinkAttrs(mark.get(ATTRS));
         }
     }
 
@@ -182,25 +203,25 @@ public final class NoteContentPolicy {
         Map<String, Object> attrs = asStringMap(value, "node attributes must be an object");
         Set<String> allowed =
                 switch (type) {
-                    case "heading" -> Set.of("level");
-                    case "orderedList" -> Set.of("start", "type");
-                    case "codeBlock" -> Set.of("language");
-                    case "tableCell", "tableHeader" ->
-                            Set.of("colspan", "rowspan", "colwidth", "align");
-                    case "paragraph",
+                    case HEADING -> Set.of("level");
+                    case ORDERED_LIST -> Set.of("start", TYPE);
+                    case CODE_BLOCK -> Set.of("language");
+                    case TABLE_CELL, TABLE_HEADER ->
+                            Set.of("colspan", "rowspan", COLWIDTH, "align");
+                    case PARAGRAPH,
                             "bulletList",
-                            "listItem",
-                            "blockquote",
-                            "table",
-                            "tableRow",
-                            "hardBreak",
+                            LIST_ITEM,
+                            BLOCKQUOTE,
+                            TABLE,
+                            TABLE_ROW,
+                            HARD_BREAK,
                             "horizontalRule" ->
                             Set.of();
                     default -> throw invalidException("unsupported content node attributes");
                 };
         if (!allowed.containsAll(attrs.keySet())) invalid("node attributes are not supported");
         switch (type) {
-            case "heading" -> {
+            case HEADING -> {
                 Object level = attrs.get("level");
                 if (!(level instanceof Number number)
                         || number.intValue() < 1
@@ -208,22 +229,22 @@ public final class NoteContentPolicy {
                         || number.doubleValue() != number.intValue())
                     invalid("heading level must be between 1 and 3");
             }
-            case "orderedList" -> {
+            case ORDERED_LIST -> {
                 if (attrs.containsKey("start") && !positiveInteger(attrs.get("start")))
                     invalid("ordered list start must be a positive integer");
-                Object listType = attrs.get("type");
+                Object listType = attrs.get(TYPE);
                 if (listType != null
                         && (!(listType instanceof String)
                                 || !Set.of("1", "a", "A", "i", "I").contains(listType)))
                     invalid("ordered list type is invalid");
             }
-            case "codeBlock" -> {
+            case CODE_BLOCK -> {
                 Object language = attrs.get("language");
                 if (language != null
                         && (!(language instanceof String) || ((String) language).length() > 100))
                     invalid("code block language is invalid");
             }
-            case "tableCell", "tableHeader" -> validateCellAttrs(attrs);
+            case TABLE_CELL, TABLE_HEADER -> validateCellAttrs(attrs);
             default -> {}
         }
     }
@@ -237,8 +258,8 @@ public final class NoteContentPolicy {
         for (String key : Set.of("colspan", "rowspan"))
             if (attrs.containsKey(key) && !positiveBoundedInteger(attrs.get(key)))
                 invalid("table cell span is invalid");
-        if (attrs.containsKey("colwidth") && attrs.get("colwidth") != null) {
-            for (Object width : asList(attrs.get("colwidth"), "table colwidth must be an array"))
+        if (attrs.containsKey(COLWIDTH) && attrs.get(COLWIDTH) != null) {
+            for (Object width : asList(attrs.get(COLWIDTH), "table colwidth must be an array"))
                 if (!positiveBoundedInteger(width)) invalid("table column width is invalid");
         }
     }
@@ -299,33 +320,45 @@ public final class NoteContentPolicy {
             Object value = pending.pop();
             if (++values > MAX_DOCUMENT_NODES * 10)
                 invalid("content contains too many JSON values");
-            if (value == JsonNull.INSTANCE) bytes += 4;
-            else if (value instanceof String text) bytes += quotedStringSize(text);
-            else if (value instanceof Boolean bool) bytes += bool ? 4 : 5;
-            else if (value instanceof Number number) {
-                if ((number instanceof Double d && !Double.isFinite(d))
-                        || (number instanceof Float f && !Float.isFinite(f)))
-                    invalid("content contains a non-JSON number");
-                bytes += number.toString().getBytes(StandardCharsets.UTF_8).length;
-            } else if (value instanceof Map<?, ?> map) {
-                if (map.size() > MAX_DOCUMENT_NODES)
-                    invalid("content contains too many JSON properties");
-                bytes += 2L + Math.max(0, map.size() - 1);
-                for (Map.Entry<?, ?> entry : map.entrySet()) {
-                    if (!(entry.getKey() instanceof String))
-                        invalid("content object keys must be strings");
-                    bytes += quotedStringSize((String) entry.getKey()) + 1;
-                    pending.push(entry.getValue() == null ? JsonNull.INSTANCE : entry.getValue());
-                }
-            } else if (value instanceof List<?> list) {
-                if (list.size() > MAX_DOCUMENT_NODES)
-                    invalid("content contains too many JSON array values");
-                bytes += 2L + Math.max(0, list.size() - 1);
-                for (Object item : list) pending.push(item == null ? JsonNull.INSTANCE : item);
-            } else invalid("content contains a non-JSON value");
+            bytes += jsonValueSize(value, pending);
             if (bytes > MAX_SERIALIZED_BYTES) return bytes;
         }
         return bytes;
+    }
+
+    private static long jsonValueSize(Object value, Deque<Object> pending) {
+        if (value == JsonNull.INSTANCE) return 4;
+        if (value instanceof String text) return quotedStringSize(text);
+        if (value instanceof Boolean bool) return bool ? 4 : 5;
+        if (value instanceof Number number) return jsonNumberSize(number);
+        if (value instanceof Map<?, ?> map) return jsonObjectSize(map, pending);
+        if (value instanceof List<?> list) return jsonArraySize(list, pending);
+        throw invalidException("content contains a non-JSON value");
+    }
+
+    private static long jsonNumberSize(Number number) {
+        if ((number instanceof Double d && !Double.isFinite(d))
+                || (number instanceof Float f && !Float.isFinite(f)))
+            throw invalidException("content contains a non-JSON number");
+        return number.toString().getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private static long jsonObjectSize(Map<?, ?> map, Deque<Object> pending) {
+        if (map.size() > MAX_DOCUMENT_NODES) invalid("content contains too many JSON properties");
+        long bytes = 2L + Math.max(0, map.size() - 1);
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (!(entry.getKey() instanceof String)) invalid("content object keys must be strings");
+            bytes += quotedStringSize((String) entry.getKey()) + 1;
+            pending.push(entry.getValue() == null ? JsonNull.INSTANCE : entry.getValue());
+        }
+        return bytes;
+    }
+
+    private static long jsonArraySize(List<?> list, Deque<Object> pending) {
+        if (list.size() > MAX_DOCUMENT_NODES)
+            invalid("content contains too many JSON array values");
+        for (Object item : list) pending.push(item == null ? JsonNull.INSTANCE : item);
+        return 2L + Math.max(0, list.size() - 1);
     }
 
     private static long quotedStringSize(String value) {
@@ -346,7 +379,7 @@ public final class NoteContentPolicy {
 
     private static String nodeType(Object value) {
         return string(
-                asStringMap(value, "content nodes must be objects").get("type"),
+                asStringMap(value, CONTENT_NODES_MUST_BE_OBJECTS).get(TYPE),
                 "node type must be a string");
     }
 
@@ -412,7 +445,7 @@ public final class NoteContentPolicy {
     }
 
     private static InvalidNoteException invalidException(String message) {
-        return new InvalidNoteException("content", message);
+        return new InvalidNoteException(CONTENT, message);
     }
 
     private static final class Counters {

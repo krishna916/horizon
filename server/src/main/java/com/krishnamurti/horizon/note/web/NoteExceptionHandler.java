@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 package com.krishnamurti.horizon.note.web;
 
 import com.krishnamurti.horizon.note.application.NoteCreationConflictException;
@@ -19,13 +22,15 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class NoteExceptionHandler {
 
+    private static final String NOTES_PATH = "/api/v1/notes";
+
     @ExceptionHandler(NoteNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ProblemDetail handleNotFound(NoteNotFoundException exception) {
         ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
         detail.setTitle("Note Not Found");
         detail.setDetail("The requested Note was not found.");
-        detail.setInstance(URI.create("/api/v1/notes"));
+        detail.setInstance(URI.create(NOTES_PATH));
         return detail;
     }
 
@@ -35,7 +40,7 @@ public class NoteExceptionHandler {
         ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.CONFLICT);
         detail.setTitle("Note Conflict");
         detail.setDetail("The Note request conflicts with the current state.");
-        detail.setInstance(URI.create("/api/v1/notes"));
+        detail.setInstance(URI.create(NOTES_PATH));
         return detail;
     }
 
@@ -55,7 +60,7 @@ public class NoteExceptionHandler {
         ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         detail.setTitle("Validation Failed");
         detail.setDetail("The Note request contains invalid fields.");
-        detail.setInstance(URI.create("/api/v1/notes"));
+        detail.setInstance(URI.create(NOTES_PATH));
         detail.setProperty("errors", Map.of(field, message));
         return detail;
     }

@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 package com.krishnamurti.horizon.note.infrastructure;
 
 import com.krishnamurti.horizon.note.application.NoteCollection;
@@ -24,28 +27,21 @@ public class NoteCollectionRepository {
 
     public List<Note> findPage(
             Long userId, NoteCollection collection, NoteSort sort, int offset, int limit) {
-        String lifecycle =
-                switch (collection) {
-                    case ACTIVE -> "n.archived_at IS NULL";
-                    case ARCHIVED -> "n.archived_at IS NOT NULL";
-                };
-        String ordering =
-                switch (sort) {
-                    case UPDATED_DESC -> "n.updated_at DESC, n.id DESC";
-                    case UPDATED_ASC -> "n.updated_at ASC, n.id ASC";
-                    case TITLE_ASC ->
-                            "CASE WHEN n.title IS NULL THEN 1 ELSE 0 END ASC, LOWER(n.title) ASC,"
-                                    + " n.id ASC";
-                };
         String sql =
-                "SELECT n.* FROM note n WHERE n.user_id = :userId AND n.deleted_at IS NULL AND "
-                        + lifecycle
-                        + " ORDER BY "
-                        + ordering
+                "SELECT n.* FROM note n WHERE n.user_id = :userId AND n.deleted_at IS NULL"
+                        + " AND ((:archived = false AND n.archived_at IS NULL) OR"
+                        + " (:archived = true AND n.archived_at IS NOT NULL))"
+                        + " ORDER BY CASE WHEN :sort = 'TITLE_ASC' AND n.title IS NULL THEN 1"
+                        + " ELSE 0 END ASC, CASE WHEN :sort = 'TITLE_ASC' THEN LOWER(n.title) END"
+                        + " ASC, CASE WHEN :sort = 'UPDATED_DESC' THEN n.updated_at END DESC,"
+                        + " CASE WHEN :sort = 'UPDATED_ASC' THEN n.updated_at END ASC,"
+                        + " CASE WHEN :sort = 'UPDATED_DESC' THEN n.id END DESC, n.id ASC"
                         + " LIMIT :limit OFFSET :offset";
         return entityManager
                 .createNativeQuery(sql, Note.class)
                 .setParameter("userId", userId)
+                .setParameter("archived", collection == NoteCollection.ARCHIVED)
+                .setParameter("sort", sort.name())
                 .setParameter("limit", limit)
                 .setParameter("offset", offset)
                 .getResultList();

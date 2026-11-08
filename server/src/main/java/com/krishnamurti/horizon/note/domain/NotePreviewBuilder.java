@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 package com.krishnamurti.horizon.note.domain;
 
 import java.nio.charset.StandardCharsets;
@@ -9,6 +12,9 @@ import java.util.Map;
 /** Builds a small, valid Tiptap document suitable for collection responses. */
 public class NotePreviewBuilder {
 
+    private static final String CONTENT = "content";
+    private static final String TYPE = "type";
+    private static final String TEXT = "text";
     private static final int MAX_TEXT_CHARACTERS = 520;
     private static final int MAX_TOP_LEVEL_BLOCKS = 6;
     private static final int MAX_SERIALIZED_BYTES = 16 * 1024;
@@ -41,31 +47,36 @@ public class NotePreviewBuilder {
         Map<String, Object> result = new LinkedHashMap<>();
         source.forEach(
                 (key, value) -> {
-                    if (!"content".equals(key) && !"text".equals(key)) result.put(key, value);
+                    if (!CONTENT.equals(key) && !TEXT.equals(key)) result.put(key, value);
                 });
-        if ("text".equals(source.get("type"))) {
-            String text = (String) source.get("text");
+        if (TEXT.equals(source.get(TYPE))) {
+            String text = (String) source.get(TEXT);
             String prefix = takeGraphemes(text, budget.remaining());
             budget.consume(prefix.length());
             if (prefix.isEmpty()) return null;
-            result.put("text", prefix);
+            result.put(TEXT, prefix);
             return result;
         }
-        Object children = source.get("content");
+        Object children = source.get(CONTENT);
         if (children instanceof List<?> sourceChildren) {
-            List<Map<String, Object>> copiedChildren = new ArrayList<>();
-            for (Object child : sourceChildren) {
-                if (budget.remaining() == 0) break;
-                Map<String, Object> copied = copyNode(asMap(child), budget);
-                if (copied != null) copiedChildren.add(copied);
-            }
+            List<Map<String, Object>> copiedChildren = copyChildren(sourceChildren, budget);
             if (!copiedChildren.isEmpty() || allowsEmptyContent((String) source.get("type"))) {
-                result.put("content", copiedChildren);
+                result.put(CONTENT, copiedChildren);
             } else {
                 return null;
             }
         }
         return result;
+    }
+
+    private List<Map<String, Object>> copyChildren(List<?> sourceChildren, TextBudget budget) {
+        List<Map<String, Object>> copiedChildren = new ArrayList<>();
+        for (Object child : sourceChildren) {
+            if (budget.remaining() == 0) break;
+            Map<String, Object> copied = copyNode(asMap(child), budget);
+            if (copied != null) copiedChildren.add(copied);
+        }
+        return copiedChildren;
     }
 
     private static boolean allowsEmptyContent(String type) {

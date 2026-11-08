@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 package com.krishnamurti.horizon.note.web;
 
 import com.krishnamurti.horizon.note.application.FieldUpdate;
@@ -16,7 +19,10 @@ import tools.jackson.databind.JsonNode;
 @Component
 public class NoteRequestMapper {
 
-    private static final Set<String> MUTABLE_FIELDS = Set.of("title", "content");
+    private static final String TITLE_FIELD = "title";
+    private static final String CONTENT_FIELD = "content";
+    private static final String EXPECTED_VERSION_FIELD = "expectedVersion";
+    private static final Set<String> MUTABLE_FIELDS = Set.of(TITLE_FIELD, CONTENT_FIELD);
 
     public UUID parseIdempotencyKey(String value) {
         if (value == null) fail("Idempotency-Key", "A canonical UUID is required.");
@@ -33,25 +39,25 @@ public class NoteRequestMapper {
     public CreateFields toCreate(CreateNoteRequest request) {
         Map<String, JsonNode> fields = request.fields();
         rejectUnknown(fields, MUTABLE_FIELDS);
-        return new CreateFields(title(fields, "title"), content(fields, "content"));
+        return new CreateFields(title(fields, TITLE_FIELD), content(fields, CONTENT_FIELD));
     }
 
     public NotePatch toPatch(UpdateNoteRequest request) {
         Map<String, JsonNode> fields = request.fields();
-        rejectUnknown(fields, Set.of("expectedVersion", "title", "content"));
-        JsonNode expected = fields.get("expectedVersion");
+        rejectUnknown(fields, Set.of(EXPECTED_VERSION_FIELD, TITLE_FIELD, CONTENT_FIELD));
+        JsonNode expected = fields.get(EXPECTED_VERSION_FIELD);
         if (expected == null || !expected.isIntegralNumber() || !expected.canConvertToLong()) {
-            fail("expectedVersion", "A nonnegative integer is required.");
+            fail(EXPECTED_VERSION_FIELD, "A nonnegative integer is required.");
         }
         long version = expected.longValue();
-        if (version < 0) fail("expectedVersion", "A nonnegative integer is required.");
+        if (version < 0) fail(EXPECTED_VERSION_FIELD, "A nonnegative integer is required.");
         return new NotePatch(
                 version,
-                fields.containsKey("title")
-                        ? FieldUpdate.of(title(fields, "title"))
+                fields.containsKey(TITLE_FIELD)
+                        ? FieldUpdate.of(title(fields, TITLE_FIELD))
                         : FieldUpdate.absent(),
-                fields.containsKey("content")
-                        ? FieldUpdate.of(content(fields, "content"))
+                fields.containsKey(CONTENT_FIELD)
+                        ? FieldUpdate.of(content(fields, CONTENT_FIELD))
                         : FieldUpdate.absent());
     }
 
