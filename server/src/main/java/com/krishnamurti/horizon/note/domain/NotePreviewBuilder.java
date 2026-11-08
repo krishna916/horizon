@@ -18,7 +18,7 @@ public class NotePreviewBuilder {
 
     public Map<String, Object> build(Map<String, Object> document) {
         if (document == null || !NoteContentPolicy.hasMeaningfulContent(document)) return null;
-        List<?> sourceBlocks = (List<?>) document.get("content");
+        List<?> sourceBlocks = (List<?>) document.get(CONTENT);
         List<Map<String, Object>> previewBlocks = new ArrayList<>();
         TextBudget textBudget = new TextBudget(MAX_TEXT_CHARACTERS);
         for (Object sourceBlock : sourceBlocks) {

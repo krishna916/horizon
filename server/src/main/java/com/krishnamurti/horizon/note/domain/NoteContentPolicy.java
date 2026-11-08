@@ -35,6 +35,10 @@ public final class NoteContentPolicy {
     private static final String TABLE_HEADER = "tableHeader";
     private static final String LIST_ITEM = "listItem";
     private static final String HARD_BREAK = "hardBreak";
+    private static final String HORIZONTAL_RULE = "horizontalRule";
+    private static final String BULLET_LIST = "bulletList";
+    private static final String ORDERED_LIST_START = "start";
+    private static final String CLASS = "class";
     private static final String COLWIDTH = "colwidth";
     private static final String CONTENT_NODES_MUST_BE_OBJECTS = "content nodes must be objects";
 
@@ -42,12 +46,12 @@ public final class NoteContentPolicy {
             Set.of(
                     PARAGRAPH,
                     HEADING,
-                    "bulletList",
+                    BULLET_LIST,
                     ORDERED_LIST,
                     CODE_BLOCK,
                     BLOCKQUOTE,
                     TABLE,
-                    "horizontalRule");
+                    HORIZONTAL_RULE);
     private static final Set<String> INLINE = Set.of("text", HARD_BREAK);
     private static final Pattern REL_SEPARATOR = Pattern.compile("\\s+");
 
@@ -71,7 +75,7 @@ public final class NoteContentPolicy {
         while (!pending.isEmpty()) {
             Map<String, Object> node = asStringMap(pending.pop(), CONTENT_NODES_MUST_BE_OBJECTS);
             String type = (String) node.get(TYPE);
-            if (TABLE.equals(type) || "horizontalRule".equals(type)) return true;
+            if (TABLE.equals(type) || HORIZONTAL_RULE.equals(type)) return true;
             if ("text".equals(type)) {
                 String text = (String) node.get("text");
                 if (!text.codePoints().allMatch(NoteContentPolicy::isWhitespace)) return true;
@@ -96,7 +100,7 @@ public final class NoteContentPolicy {
             if (node.containsKey(MARKS)) validateMarks(node.get(MARKS), counters);
             return;
         }
-        if (HARD_BREAK.equals(type) || "horizontalRule".equals(type)) {
+        if (HARD_BREAK.equals(type) || HORIZONTAL_RULE.equals(type)) {
             if (node.containsKey(CONTENT)
                     && !asList(node.get(CONTENT), "leaf content must be an array").isEmpty())
                 invalid("leaf nodes cannot contain child nodes");
@@ -116,7 +120,7 @@ public final class NoteContentPolicy {
                     case "doc" -> Set.of(TYPE, CONTENT);
                     case PARAGRAPH,
                             HEADING,
-                            "bulletList",
+                            BULLET_LIST,
                             ORDERED_LIST,
                             LIST_ITEM,
                             CODE_BLOCK,
@@ -126,7 +130,7 @@ public final class NoteContentPolicy {
                             TABLE_CELL,
                             TABLE_HEADER ->
                             Set.of(TYPE, ATTRS, CONTENT);
-                    case HARD_BREAK, "horizontalRule" -> Set.of(TYPE, ATTRS);
+                    case HARD_BREAK, HORIZONTAL_RULE -> Set.of(TYPE, ATTRS);
                     default -> throw invalidException("unsupported content node type");
                 };
         if (!allowed.containsAll(node.keySet())) invalid("content node has unsupported properties");
@@ -141,7 +145,7 @@ public final class NoteContentPolicy {
         switch (type) {
             case "doc" -> validateChildrenAs(children, BLOCKS, depth, counters);
             case PARAGRAPH, HEADING -> validateChildrenAs(children, INLINE, depth, counters);
-            case "bulletList", ORDERED_LIST -> {
+            case BULLET_LIST, ORDERED_LIST -> {
                 requireNonEmpty(children, "lists must contain a list item");
                 validateChildrenAs(children, Set.of(LIST_ITEM), depth, counters);
             }
@@ -201,22 +205,26 @@ public final class NoteContentPolicy {
         Set<String> allowed =
                 switch (type) {
                     case HEADING -> Set.of("level");
-                    case ORDERED_LIST -> Set.of("start", TYPE);
+                    case ORDERED_LIST -> Set.of(ORDERED_LIST_START, TYPE);
                     case CODE_BLOCK -> Set.of("language");
                     case TABLE_CELL, TABLE_HEADER ->
                             Set.of("colspan", "rowspan", COLWIDTH, "align");
                     case PARAGRAPH,
-                            "bulletList",
+                            BULLET_LIST,
                             LIST_ITEM,
                             BLOCKQUOTE,
                             TABLE,
                             TABLE_ROW,
                             HARD_BREAK,
-                            "horizontalRule" ->
+                            HORIZONTAL_RULE ->
                             Set.of();
                     default -> throw invalidException("unsupported content node attributes");
                 };
         if (!allowed.containsAll(attrs.keySet())) invalid("node attributes are not supported");
+        validateAttrValues(attrs, type);
+    }
+
+    private static void validateAttrValues(Map<String, Object> attrs, String type) {
         switch (type) {
             case HEADING -> {
                 Object level = attrs.get("level");
@@ -227,7 +235,8 @@ public final class NoteContentPolicy {
                     invalid("heading level must be between 1 and 3");
             }
             case ORDERED_LIST -> {
-                if (attrs.containsKey("start") && !positiveInteger(attrs.get("start")))
+                if (attrs.containsKey(ORDERED_LIST_START)
+                        && !positiveInteger(attrs.get(ORDERED_LIST_START)))
                     invalid("ordered list start must be a positive integer");
                 Object listType = attrs.get(TYPE);
                 if (listType != null
@@ -242,7 +251,9 @@ public final class NoteContentPolicy {
                     invalid("code block language is invalid");
             }
             case TABLE_CELL, TABLE_HEADER -> validateCellAttrs(attrs);
-            default -> {}
+            default -> {
+                // These supported node types have no additional attribute value constraints.
+            }
         }
     }
 
@@ -263,7 +274,7 @@ public final class NoteContentPolicy {
 
     private static void validateLinkAttrs(Object value) {
         Map<String, Object> attrs = asStringMap(value, "link attributes must be an object");
-        if (!Set.of("href", "target", "rel", "class", "title").containsAll(attrs.keySet())
+        if (!Set.of("href", "target", "rel", CLASS, "title").containsAll(attrs.keySet())
                 || !attrs.containsKey("href")) invalid("link attributes are invalid");
         String href = string(attrs.get("href"), "link href must be a string");
         if (!isSafeHref(href)) invalid("link href must use an absolute http, https, or mailto URL");
@@ -271,7 +282,7 @@ public final class NoteContentPolicy {
         if (target != null && !"_blank".equals(target)) invalid("link target is invalid");
         Object rel = attrs.get("rel");
         if (rel != null && !isSafeRel(rel)) invalid("link rel is invalid");
-        if (attrs.containsKey("class") && attrs.get("class") != null)
+        if (attrs.containsKey(CLASS) && attrs.get(CLASS) != null)
             invalid("link class must be null");
         Object title = attrs.get("title");
         if (title != null && (!(title instanceof String) || ((String) title).length() > 512))
