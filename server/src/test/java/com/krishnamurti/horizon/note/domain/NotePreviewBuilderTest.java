@@ -3,7 +3,6 @@ package com.krishnamurti.horizon.note.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,21 +38,60 @@ class NotePreviewBuilderTest {
 
     @Test
     void enforcesSerializedByteBudgetAndHandlesEmptyContent() throws Exception {
-        List<Map<String, Object>> manyBreaks = new ArrayList<>();
-        for (int index = 0; index < 9_990; index++) manyBreaks.add(Map.of("type", "hardBreak"));
         Map<String, Object> source =
                 Map.of(
                         "type",
                         "doc",
                         "content",
-                        List.of(Map.of("type", "paragraph", "content", manyBreaks)));
+                        List.of(
+                                paragraphWithBreaks("first", 700),
+                                paragraphWithBreaks("second", 700)));
 
         Map<String, Object> preview = builder.build(source);
+        byte[] previewBytes = new ObjectMapper().writeValueAsBytes(preview);
+        byte[] sourceBytes = new ObjectMapper().writeValueAsBytes(source);
 
-        assertThat(new ObjectMapper().writeValueAsString(preview).getBytes(StandardCharsets.UTF_8))
+        assertThat(preview).isNotNull();
+        assertThat(previewBytes).hasSizeLessThanOrEqualTo(16 * 1024);
+        assertThat(previewBytes.length).isLessThan(sourceBytes.length);
+        assertThat(content(preview)).hasSizeLessThanOrEqualTo(6);
+        assertThat(text(preview)).startsWith("first").contains("second");
+        assertThat(NoteContentPolicy.validateAndCopy(preview)).isEqualTo(preview);
+
+        Map<String, Object> oversizedFirstBlock =
+                Map.of(
+                        "type",
+                        "doc",
+                        "content",
+                        List.of(
+                                paragraphWithBreaks("lead", 1_500),
+                                Map.of(
+                                        "type",
+                                        "paragraph",
+                                        "content",
+                                        List.of(
+                                                Map.of(
+                                                        "type",
+                                                        "text",
+                                                        "text",
+                                                        "later-sentinel")))));
+        Map<String, Object> truncated = builder.build(oversizedFirstBlock);
+
+        assertThat(truncated).isNotNull();
+        assertThat(text(truncated)).isEqualTo("lead");
+        assertThat(content(truncated)).hasSize(1);
+        assertThat(new ObjectMapper().writeValueAsBytes(truncated))
                 .hasSizeLessThanOrEqualTo(16 * 1024);
+        assertThat(NoteContentPolicy.validateAndCopy(truncated)).isEqualTo(truncated);
         assertThat(builder.build(null)).isNull();
         assertThat(builder.build(Map.of("type", "doc", "content", List.of()))).isNull();
+    }
+
+    private static Map<String, Object> paragraphWithBreaks(String text, int breaks) {
+        List<Map<String, Object>> children = new ArrayList<>();
+        children.add(Map.of("type", "text", "text", text));
+        for (int index = 0; index < breaks; index++) children.add(Map.of("type", "hardBreak"));
+        return Map.of("type", "paragraph", "content", children);
     }
 
     @Test

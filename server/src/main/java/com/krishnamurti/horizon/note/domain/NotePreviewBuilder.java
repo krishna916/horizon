@@ -22,18 +22,30 @@ public class NotePreviewBuilder {
         TextBudget textBudget = new TextBudget(MAX_TEXT_CHARACTERS);
         for (Object sourceBlock : sourceBlocks) {
             if (previewBlocks.size() >= MAX_TOP_LEVEL_BLOCKS || textBudget.remaining() == 0) break;
-            Map<String, Object> block = copyNode(asMap(sourceBlock), textBudget);
-            if (block == null) continue;
-            List<Map<String, Object>> candidateBlocks = new ArrayList<>(previewBlocks);
-            candidateBlocks.add(block);
-            Map<String, Object> candidate = document(candidateBlocks);
-            if (NoteContentPolicy.serializedJsonSize(candidate) > MAX_SERIALIZED_BYTES) break;
-            try {
-                NoteContentPolicy.validateAndCopy(candidate);
-            } catch (RuntimeException invalidPreview) {
-                continue;
+            TextBudget candidateTextBudget = new TextBudget(textBudget.remaining());
+            Map<String, Object> block = copyNode(asMap(sourceBlock), candidateTextBudget);
+            if (block == null) break;
+            while (block != null) {
+                List<Map<String, Object>> candidateBlocks = new ArrayList<>(previewBlocks);
+                candidateBlocks.add(block);
+                Map<String, Object> candidate = document(candidateBlocks);
+                if (NoteContentPolicy.serializedJsonSize(candidate) <= MAX_SERIALIZED_BYTES) {
+                    try {
+                        NoteContentPolicy.validateAndCopy(candidate);
+                        break;
+                    } catch (RuntimeException invalidPreview) {
+                        // Keep trimming this block until its remaining prefix is structurally
+                        // valid.
+                    }
+                }
+                if (!removeLastDescendant(block)) {
+                    block = null;
+                    break;
+                }
             }
+            if (block == null) break;
             previewBlocks.add(block);
+            textBudget.consume(textLength(block));
         }
         Map<String, Object> preview = document(previewBlocks);
         return NoteContentPolicy.hasMeaningfulContent(preview) ? preview : null;
@@ -73,6 +85,28 @@ public class NotePreviewBuilder {
             if (copied != null) copiedChildren.add(copied);
         }
         return copiedChildren;
+    }
+
+    private static boolean removeLastDescendant(Map<String, Object> node) {
+        Object value = node.get(CONTENT);
+        if (!(value instanceof List<?> children) || children.isEmpty()) return false;
+        @SuppressWarnings("unchecked")
+        List<Object> mutableChildren = (List<Object>) children;
+        Object last = mutableChildren.getLast();
+        if (last instanceof Map<?, ?> lastMap
+                && removeLastDescendant((Map<String, Object>) lastMap)) return true;
+        mutableChildren.removeLast();
+        return true;
+    }
+
+    private static int textLength(Object node) {
+        if (!(node instanceof Map<?, ?> map)) return 0;
+        int length = map.get(TEXT) instanceof String text ? text.length() : 0;
+        Object children = map.get(CONTENT);
+        if (children instanceof List<?> list) {
+            for (Object child : list) length += textLength(child);
+        }
+        return length;
     }
 
     private static boolean allowsEmptyContent(String type) {
