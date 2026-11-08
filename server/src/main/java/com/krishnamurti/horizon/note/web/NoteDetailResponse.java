@@ -12,7 +12,6 @@ public record NoteDetailResponse(
         long version,
         boolean inbox,
         OffsetDateTime archivedAt,
-        OffsetDateTime deletedAt,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt) {
 

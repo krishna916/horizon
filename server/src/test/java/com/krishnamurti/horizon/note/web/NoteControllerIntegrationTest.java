@@ -102,6 +102,7 @@ class NoteControllerIntegrationTest {
                         .andExpect(jsonPath("$.title").value(org.hamcrest.Matchers.nullValue()))
                         .andExpect(jsonPath("$.inbox").value(false))
                         .andExpect(jsonPath("$.version").value(0))
+                        .andExpect(jsonPath("$.deletedAt").doesNotExist())
                         .andReturn();
         Number createdId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
         long id = createdId.longValue();
@@ -124,6 +125,10 @@ class NoteControllerIntegrationTest {
                 .andExpect(jsonPath("$.counts.active").value(1));
         mockMvc.perform(get("/api/v1/notes/{id}", id).cookie(ownerCookie))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletedAt").doesNotExist())
+                .andExpect(jsonPath("$.archivedAt").doesNotExist())
+                .andExpect(jsonPath("$.createdAt").exists())
+                .andExpect(jsonPath("$.updatedAt").exists())
                 .andExpect(jsonPath("$.content.content[0].content[0].text").value("A note body"));
     }
 
@@ -134,10 +139,23 @@ class NoteControllerIntegrationTest {
                         patch("/api/v1/notes/{id}", id)
                                 .cookie(ownerCookie)
                                 .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":0,\"title\":\"\\u00a0Before\\u00a0\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Before"))
+                .andExpect(jsonPath("$.version").value(0))
+                .andExpect(jsonPath("$.deletedAt").doesNotExist());
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"expectedVersion\":0,\"title\":null}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.version").value(1));
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.deletedAt").doesNotExist())
+                .andExpect(jsonPath("$.createdAt").exists())
+                .andExpect(jsonPath("$.updatedAt").exists());
         mockMvc.perform(
                         patch("/api/v1/notes/{id}", id)
                                 .cookie(ownerCookie)

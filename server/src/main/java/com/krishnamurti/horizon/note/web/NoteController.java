@@ -1,6 +1,7 @@
 package com.krishnamurti.horizon.note.web;
 
 import com.krishnamurti.horizon.note.application.IdempotentNoteCreationService;
+import com.krishnamurti.horizon.note.application.NoteCommandService;
 import com.krishnamurti.horizon.note.application.NoteQueryService;
 import java.net.URI;
 import org.springframework.http.ResponseEntity;
@@ -21,16 +22,19 @@ public class NoteController {
 
     private final IdempotentNoteCreationService creationService;
     private final NoteQueryService queryService;
+    private final NoteCommandService commandService;
     private final NoteRequestMapper requestMapper;
     private final NoteResponseMapper responseMapper;
 
     public NoteController(
             IdempotentNoteCreationService creationService,
             NoteQueryService queryService,
+            NoteCommandService commandService,
             NoteRequestMapper requestMapper,
             NoteResponseMapper responseMapper) {
         this.creationService = creationService;
         this.queryService = queryService;
+        this.commandService = commandService;
         this.requestMapper = requestMapper;
         this.responseMapper = responseMapper;
     }
@@ -54,7 +58,7 @@ public class NoteController {
     @PatchMapping("/{id}")
     public NoteDetailResponse update(
             @PathVariable Long id, @RequestBody UpdateNoteRequest request) {
-        return responseMapper.toDetail(queryService.update(id, requestMapper.toPatch(request)));
+        return responseMapper.toDetail(commandService.update(id, requestMapper.toPatch(request)));
     }
 
     @GetMapping

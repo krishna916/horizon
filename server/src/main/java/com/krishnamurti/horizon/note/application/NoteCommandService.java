@@ -66,9 +66,8 @@ public class NoteCommandService {
         }
         try {
             return noteRepository.saveAndFlush(note);
-        } catch (ObjectOptimisticLockingFailureException exception) {
-            throw new NoteVersionConflictException();
-        } catch (jakarta.persistence.OptimisticLockException exception) {
+        } catch (ObjectOptimisticLockingFailureException
+                | jakarta.persistence.OptimisticLockException exception) {
             throw new NoteVersionConflictException();
         }
     }

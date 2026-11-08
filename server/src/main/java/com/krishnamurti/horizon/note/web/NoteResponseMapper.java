@@ -20,7 +20,6 @@ public class NoteResponseMapper {
                 note.getVersion(),
                 note.isInbox(),
                 note.getArchivedAt(),
-                note.getDeletedAt(),
                 note.getCreatedAt(),
                 note.getUpdatedAt());
     }
