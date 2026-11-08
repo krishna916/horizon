@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.note.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +18,7 @@ class NoteTest {
         assertThat(note.isInbox()).isFalse();
         assertThat(note.getArchivedAt()).isNull();
         assertThat(note.getDeletedAt()).isNull();
-        assertThat(Note.create(41L, "   ", Map.of("type", "doc")).getTitle()).isNull();
+        assertThat(Note.create(41L, "   ", bodyDocument()).getTitle()).isNull();
     }
 
     @Test
@@ -34,7 +35,9 @@ class NoteTest {
     void emptyTitleAndContentCannotCreateAndDisplayFallbackIsNeverPersisted() {
         assertThatThrownBy(() -> Note.create(41L, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(Note.create(41L, null, Map.of("type", "doc")).getTitle()).isNull();
+        assertThatThrownBy(() -> Note.create(41L, " ", emptyDocument()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(Note.create(41L, null, bodyDocument()).getTitle()).isNull();
     }
 
     @Test
@@ -47,5 +50,72 @@ class NoteTest {
         assertThat(note.getTitle()).isNull();
         assertThat(note.getId()).isEqualTo(originalId);
         assertThat(note.getUserId()).isEqualTo(41L);
+    }
+
+    @Test
+    void bodyOnlyAndIntentionalStructuralContentCanCreate() {
+        Note bodyOnly = Note.create(41L, null, doc(paragraph(text("Body"))));
+        Note tableOnly = Note.create(41L, null, doc(table()));
+        Note ruleOnly = Note.create(41L, null, doc(Map.of("type", "horizontalRule")));
+
+        assertThat(bodyOnly.getContent()).isNotNull();
+        assertThat(tableOnly.getContent()).isNotNull();
+        assertThat(ruleOnly.getContent()).isNotNull();
+        assertThatThrownBy(() -> Note.create(41L, null, doc(paragraph())))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void existingNoteCanClearContentAndTitleTogether() {
+        Note note = Note.create(41L, "Title", doc(paragraph(text("Body"))));
+
+        note.updateTitle(null);
+        note.updateContent(null);
+
+        assertThat(note.getTitle()).isNull();
+        assertThat(note.getContent()).isNull();
+    }
+
+    private static Map<String, Object> doc(Map<String, Object>... blocks) {
+        return Map.of("type", "doc", "content", List.of(blocks));
+    }
+
+    private static Map<String, Object> emptyDocument() {
+        return Map.of("type", "doc", "content", List.of());
+    }
+
+    private static Map<String, Object> bodyDocument() {
+        return doc(paragraph(text("Body")));
+    }
+
+    private static Map<String, Object> paragraph(Map<String, Object>... children) {
+        return Map.of("type", "paragraph", "content", List.of(children));
+    }
+
+    private static Map<String, Object> text(String value) {
+        return Map.of("type", "text", "text", value);
+    }
+
+    private static Map<String, Object> table() {
+        return Map.of(
+                "type",
+                "table",
+                "content",
+                List.of(
+                        Map.of(
+                                "type",
+                                "tableRow",
+                                "content",
+                                List.of(
+                                        Map.of(
+                                                "type",
+                                                "tableCell",
+                                                "content",
+                                                List.of(
+                                                        Map.of(
+                                                                "type",
+                                                                "paragraph",
+                                                                "content",
+                                                                List.of())))))));
     }
 }

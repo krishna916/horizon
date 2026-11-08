@@ -49,8 +49,8 @@ public class Note extends BaseEntity {
         Note note = new Note();
         note.userId = Objects.requireNonNull(userId, "userId must not be null");
         note.title = normalizeTitle(title);
-        note.content = copyJsonMap(content);
-        if (note.title == null && note.content == null) {
+        note.content = NoteContentPolicy.validateAndCopy(content);
+        if (note.title == null && !NoteContentPolicy.hasMeaningfulContent(note.content)) {
             throw new InvalidNoteException("content", "a Note requires a title or content");
         }
         note.inbox = false;
@@ -59,6 +59,10 @@ public class Note extends BaseEntity {
 
     public void updateTitle(String title) {
         this.title = normalizeTitle(title);
+    }
+
+    public void updateContent(Map<String, Object> content) {
+        this.content = NoteContentPolicy.validateAndCopy(content);
     }
 
     public Long getUserId() {
