@@ -15,14 +15,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class NoteQueryService {
 
     private final NoteRepository noteRepository;
+    private final NoteCommandService commandService;
     private final NoteCollectionRepository collectionRepository;
     private final CurrentUserProvider currentUserProvider;
 
     public NoteQueryService(
             NoteRepository noteRepository,
+            NoteCommandService commandService,
             NoteCollectionRepository collectionRepository,
             CurrentUserProvider currentUserProvider) {
         this.noteRepository = noteRepository;
+        this.commandService = commandService;
         this.collectionRepository = collectionRepository;
         this.currentUserProvider = currentUserProvider;
     }
@@ -32,6 +35,11 @@ public class NoteQueryService {
         return noteRepository
                 .findByIdAndUserIdAndDeletedAtIsNull(noteId, userId)
                 .orElseThrow(() -> new NoteNotFoundException(noteId));
+    }
+
+    @Transactional
+    public Note update(Long noteId, NotePatch patch) {
+        return commandService.update(noteId, patch);
     }
 
     public NotePage list(NoteCollection collection, NoteSort sort, int page, int size) {
