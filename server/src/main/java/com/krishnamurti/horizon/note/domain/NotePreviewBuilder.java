@@ -175,7 +175,7 @@ public class NotePreviewBuilder {
     }
 
     private static Map<String, Object> document(List<Map<String, Object>> blocks) {
-        return Map.of("type", "doc", "content", List.copyOf(blocks));
+        return Map.of("type", "doc", CONTENT, List.copyOf(blocks));
     }
 
     private static boolean isRegionalIndicator(int codePoint) {
