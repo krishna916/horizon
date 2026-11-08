@@ -27,4 +27,31 @@ describe('authenticated route session guard', () => {
       email: 'account-b@example.com',
     });
   });
+
+  it('retries the session check when verification removes its in-flight query', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let resolveFirstRequest!: (value: Awaited<ReturnType<typeof userApi.getCurrentUser>>) => void;
+    vi.mocked(userApi.getCurrentUser)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirstRequest = resolve;
+        })
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Unauthorized'), {
+          isAxiosError: true,
+          response: { status: 401 },
+        })
+      );
+
+    const routeCheck = Route.options.beforeLoad?.({ context: { queryClient } } as never);
+    await vi.waitFor(() => expect(userApi.getCurrentUser).toHaveBeenCalledTimes(1));
+    queryClient.removeQueries({ queryKey: ['me'], exact: true });
+    resolveFirstRequest({ data: { id: 1, email: 'account-a@example.com' } } as Awaited<
+      ReturnType<typeof userApi.getCurrentUser>
+    >);
+
+    await expect(routeCheck).rejects.toMatchObject({ options: { to: '/login' } });
+    expect(userApi.getCurrentUser).toHaveBeenCalledTimes(2);
+  });
 });
