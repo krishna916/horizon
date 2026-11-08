@@ -19,7 +19,7 @@ CREATE INDEX idx_note_user_lifecycle_updated
 CREATE TABLE note_creation_request (
     user_id BIGINT NOT NULL,
     request_key UUID NOT NULL,
-    fingerprint CHAR(64) NOT NULL,
+    fingerprint VARCHAR(64) NOT NULL,
     note_id BIGINT,
     created_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT pk_note_creation_request PRIMARY KEY (user_id, request_key),
