@@ -18,107 +18,118 @@ public class NotePreviewBuilder {
     public Map<String, Object> build(Map<String, Object> document) {
         if (document == null || !NoteContentPolicy.hasMeaningfulContent(document)) return null;
         List<?> sourceBlocks = (List<?>) document.get(CONTENT);
-        List<Map<String, Object>> previewBlocks = copyPrefix(sourceBlocks);
-        Map<String, Object> preview = document(previewBlocks);
-        return NoteContentPolicy.hasMeaningfulContent(preview) ? preview : null;
-    }
-
-    private List<Map<String, Object>> copyPrefix(List<?> sourceBlocks) {
         List<Map<String, Object>> previewBlocks = new ArrayList<>();
         TextBudget textBudget = new TextBudget(MAX_TEXT_CHARACTERS);
+        CopyState state = new CopyState();
+        long remainingBytes = MAX_SERIALIZED_BYTES - serializedSize(document(List.of()));
         for (Object sourceBlock : sourceBlocks) {
-            if (!hasCapacity(previewBlocks, textBudget)) return previewBlocks;
-            TextBudget candidateTextBudget = new TextBudget(textBudget.remaining());
-            Map<String, Object> block = copyNode(asMap(sourceBlock), candidateTextBudget);
-            if (block == null) return previewBlocks;
-            block = fitBlock(block, previewBlocks);
-            if (block == null) return previewBlocks;
-            previewBlocks.add(block);
-            textBudget.consume(textLength(block));
+            if (previewBlocks.size() >= MAX_TOP_LEVEL_BLOCKS
+                    || textBudget.remaining() == 0
+                    || state.stopped) break;
+            long separatorBytes = previewBlocks.isEmpty() ? 0 : 1;
+            CopyResult copied =
+                    copyNode(
+                            asMap(sourceBlock), textBudget, remainingBytes - separatorBytes, state);
+            if (copied == null) break;
+            previewBlocks.add(copied.node());
+            remainingBytes -= copied.serializedBytes() + separatorBytes;
         }
-        return previewBlocks;
-    }
-
-    private boolean hasCapacity(List<Map<String, Object>> blocks, TextBudget textBudget) {
-        return blocks.size() < MAX_TOP_LEVEL_BLOCKS && textBudget.remaining() > 0;
-    }
-
-    private Map<String, Object> fitBlock(
-            Map<String, Object> block, List<Map<String, Object>> existingBlocks) {
-        while (true) {
-            List<Map<String, Object>> candidateBlocks = new ArrayList<>(existingBlocks);
-            candidateBlocks.add(block);
-            if (isValidCandidate(document(candidateBlocks))) return block;
-            if (!removeLastDescendant(block)) return null;
-        }
-    }
-
-    private boolean isValidCandidate(Map<String, Object> candidate) {
-        if (NoteContentPolicy.serializedJsonSize(candidate) > MAX_SERIALIZED_BYTES) return false;
+        Map<String, Object> preview = document(previewBlocks);
         try {
-            NoteContentPolicy.validateAndCopy(candidate);
-            return true;
+            if (serializedSize(preview) > MAX_SERIALIZED_BYTES) return null;
+            NoteContentPolicy.validateAndCopy(preview);
+            return NoteContentPolicy.hasMeaningfulContent(preview) ? preview : null;
         } catch (RuntimeException invalidPreview) {
-            return false;
+            return null;
         }
     }
 
-    private Map<String, Object> copyNode(Map<String, Object> source, TextBudget budget) {
+    private CopyResult copyNode(
+            Map<String, Object> source, TextBudget budget, long maxBytes, CopyState state) {
+        int textCheckpoint = budget.remaining();
         Map<String, Object> result = new LinkedHashMap<>();
         source.forEach(
                 (key, value) -> {
                     if (!CONTENT.equals(key) && !TEXT.equals(key)) result.put(key, value);
                 });
         if (TEXT.equals(source.get(TYPE))) {
-            String text = (String) source.get(TEXT);
-            String prefix = takeGraphemes(text, budget.remaining());
+            String prefix =
+                    takeGraphemesWithinBudget(
+                            result, (String) source.get(TEXT), budget.remaining(), maxBytes);
             budget.consume(prefix.length());
-            if (prefix.isEmpty()) return null;
+            if (prefix.isEmpty()) {
+                state.stopped = true;
+                return null;
+            }
             result.put(TEXT, prefix);
-            return result;
+            if (prefix.length() < ((String) source.get(TEXT)).length()) state.stopped = true;
+            return new CopyResult(result, serializedSize(result));
         }
         Object children = source.get(CONTENT);
         if (children instanceof List<?> sourceChildren) {
-            List<Map<String, Object>> copiedChildren = copyChildren(sourceChildren, budget);
+            List<Map<String, Object>> copiedChildren = new ArrayList<>();
+            result.put(CONTENT, copiedChildren);
+            long nodeBytes = serializedSize(result);
+            if (nodeBytes > maxBytes) {
+                budget.restore(textCheckpoint);
+                state.stopped = true;
+                return null;
+            }
+            long availableChildBytes = maxBytes - nodeBytes;
+            for (Object sourceChild : sourceChildren) {
+                if (budget.remaining() == 0) {
+                    state.stopped = true;
+                    break;
+                }
+                long separatorBytes = copiedChildren.isEmpty() ? 0 : 1;
+                CopyResult copied =
+                        copyNode(
+                                asMap(sourceChild),
+                                budget,
+                                availableChildBytes - separatorBytes,
+                                state);
+                if (copied == null) {
+                    state.stopped = true;
+                    break;
+                }
+                copiedChildren.add(copied.node());
+                long childCost = copied.serializedBytes() + separatorBytes;
+                nodeBytes += childCost;
+                availableChildBytes -= childCost;
+                if (state.stopped) break;
+            }
             if (!copiedChildren.isEmpty() || allowsEmptyContent((String) source.get("type"))) {
-                result.put(CONTENT, copiedChildren);
+                return new CopyResult(result, nodeBytes);
             } else {
+                budget.restore(textCheckpoint);
                 return null;
             }
         }
-        return result;
-    }
-
-    private List<Map<String, Object>> copyChildren(List<?> sourceChildren, TextBudget budget) {
-        List<Map<String, Object>> copiedChildren = new ArrayList<>();
-        for (Object child : sourceChildren) {
-            if (budget.remaining() == 0) break;
-            Map<String, Object> copied = copyNode(asMap(child), budget);
-            if (copied != null) copiedChildren.add(copied);
+        long nodeBytes = serializedSize(result);
+        if (nodeBytes > maxBytes) {
+            budget.restore(textCheckpoint);
+            state.stopped = true;
+            return null;
         }
-        return copiedChildren;
+        return new CopyResult(result, nodeBytes);
     }
 
-    private static boolean removeLastDescendant(Map<String, Object> node) {
-        Object value = node.get(CONTENT);
-        if (!(value instanceof List<?> children) || children.isEmpty()) return false;
-        @SuppressWarnings("unchecked")
-        List<Object> mutableChildren = (List<Object>) children;
-        Object last = mutableChildren.getLast();
-        if (last instanceof Map<?, ?> lastMap
-                && removeLastDescendant((Map<String, Object>) lastMap)) return true;
-        mutableChildren.removeLast();
-        return true;
-    }
-
-    private static int textLength(Object node) {
-        if (!(node instanceof Map<?, ?> map)) return 0;
-        int length = map.get(TEXT) instanceof String text ? text.length() : 0;
-        Object children = map.get(CONTENT);
-        if (children instanceof List<?> list) {
-            for (Object child : list) length += textLength(child);
+    private static String takeGraphemesWithinBudget(
+            Map<String, Object> attributes, String value, int maxCharacters, long maxBytes) {
+        int offset = 0;
+        while (offset < value.length()) {
+            int next = nextGraphemeEnd(value, offset);
+            if (next > maxCharacters) break;
+            Map<String, Object> candidate = new LinkedHashMap<>(attributes);
+            candidate.put(TEXT, value.substring(0, next));
+            if (serializedSize(candidate) > maxBytes) break;
+            offset = next;
         }
-        return length;
+        return value.substring(0, offset);
+    }
+
+    private static long serializedSize(Object value) {
+        return NoteContentPolicy.serializedJsonSize(value);
     }
 
     private static boolean allowsEmptyContent(String type) {
@@ -207,5 +218,15 @@ public class NotePreviewBuilder {
         void consume(int characters) {
             remaining -= characters;
         }
+
+        void restore(int value) {
+            remaining = value;
+        }
     }
+
+    private static final class CopyState {
+        private boolean stopped;
+    }
+
+    private record CopyResult(Map<String, Object> node, long serializedBytes) {}
 }
