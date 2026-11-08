@@ -144,5 +144,17 @@ public class NoteRequestMapper {
         throw new NoteRequestValidationException(field, message);
     }
 
-    public record CreateFields(String title, Map<String, Object> content) {}
+    public record CreateFields(String title, Map<String, Object> content) {
+        public CreateFields {
+            content = NoteJsonCopy.immutableMap(content);
+        }
+
+        @Override
+        @edu.umd.cs.findbugs.annotations.SuppressFBWarnings(
+                value = "EI_EXPOSE_REP",
+                justification = "The returned JSON graph was copied deeply and wrapped immutable.")
+        public Map<String, Object> content() {
+            return content;
+        }
+    }
 }

@@ -1,5 +1,6 @@
 package com.krishnamurti.horizon.note.web;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.OffsetDateTime;
 import java.util.Map;
 
@@ -13,4 +14,17 @@ public record NoteDetailResponse(
         OffsetDateTime archivedAt,
         OffsetDateTime deletedAt,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt) {}
+        OffsetDateTime updatedAt) {
+
+    public NoteDetailResponse {
+        content = NoteJsonCopy.immutableMap(content);
+    }
+
+    @Override
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP",
+            justification = "The returned content graph was copied deeply and wrapped immutable.")
+    public Map<String, Object> content() {
+        return content;
+    }
+}

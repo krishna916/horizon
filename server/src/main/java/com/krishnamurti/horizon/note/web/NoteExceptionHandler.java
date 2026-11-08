@@ -39,20 +39,24 @@ public class NoteExceptionHandler {
         return detail;
     }
 
-    @ExceptionHandler({NoteRequestValidationException.class, InvalidNoteException.class})
+    @ExceptionHandler(NoteRequestValidationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ProblemDetail handleInvalid(RuntimeException exception) {
-        String field;
-        if (exception instanceof NoteRequestValidationException requestException) {
-            field = requestException.getField();
-        } else {
-            field = ((InvalidNoteException) exception).getField();
-        }
+    public ProblemDetail handleInvalidRequest(NoteRequestValidationException exception) {
+        return validationFailure(exception.getField(), exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidNoteException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ProblemDetail handleInvalidNote(InvalidNoteException exception) {
+        return validationFailure(exception.getField(), exception.getMessage());
+    }
+
+    private ProblemDetail validationFailure(String field, String message) {
         ProblemDetail detail = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         detail.setTitle("Validation Failed");
         detail.setDetail("The Note request contains invalid fields.");
         detail.setInstance(URI.create("/api/v1/notes"));
-        detail.setProperty("errors", Map.of(field, exception.getMessage()));
+        detail.setProperty("errors", Map.of(field, message));
         return detail;
     }
 }

@@ -42,6 +42,10 @@ public class NoteQueryService {
         return commandService.update(noteId, patch);
     }
 
+    /**
+     * Returns an offset-paginated slice. Edits between requests can shift rows; that drift is
+     * accepted for the V1 Notes browser contract.
+     */
     public NotePage list(NoteCollection collection, NoteSort sort, int page, int size) {
         if (collection == null || sort == null) {
             throw new IllegalArgumentException("collection and sort are required");

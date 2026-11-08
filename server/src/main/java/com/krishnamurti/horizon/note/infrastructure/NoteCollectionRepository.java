@@ -4,6 +4,7 @@ import com.krishnamurti.horizon.note.application.NoteCollection;
 import com.krishnamurti.horizon.note.application.NoteCounts;
 import com.krishnamurti.horizon.note.application.NoteSort;
 import com.krishnamurti.horizon.note.domain.Note;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jakarta.persistence.EntityManager;
 import java.util.List;
 import org.springframework.stereotype.Repository;
@@ -14,6 +15,9 @@ public class NoteCollectionRepository {
 
     private final EntityManager entityManager;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification = "The injected EntityManager is a private final managed dependency.")
     public NoteCollectionRepository(EntityManager entityManager) {
         this.entityManager = entityManager;
     }

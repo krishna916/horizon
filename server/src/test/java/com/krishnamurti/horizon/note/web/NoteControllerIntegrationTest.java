@@ -10,8 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.krishnamurti.horizon.TestcontainersConfiguration;
+import com.krishnamurti.horizon.note.domain.Note;
+import com.krishnamurti.horizon.note.domain.NoteContentPolicy;
+import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.user.application.UserCommandService;
 import jakarta.servlet.http.Cookie;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,12 +37,14 @@ class NoteControllerIntegrationTest {
     private static final String PASSWORD = "Password123!";
     @Autowired private MockMvc mockMvc;
     @Autowired private UserCommandService userCommandService;
+    @Autowired private NoteRepository noteRepository;
     private Cookie ownerCookie;
+    private Long ownerId;
 
     @BeforeEach
     void setUpUserAndSession() throws Exception {
         String email = UUID.randomUUID() + "@example.com";
-        userCommandService.register(email, PASSWORD);
+        ownerId = userCommandService.register(email, PASSWORD).id();
         MvcResult result =
                 mockMvc.perform(
                                 post("/api/v1/auth/login")
@@ -203,6 +211,57 @@ class NoteControllerIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void largeCollectionPageReturnsOnlyThirtyBoundedPreviewsAndFullDetailRemainsAvailable()
+            throws Exception {
+        String fullText = "large note body ".repeat(8_192);
+        Map<String, Object> document =
+                Map.of(
+                        "type",
+                        "doc",
+                        "content",
+                        List.of(
+                                Map.of(
+                                        "type",
+                                        "paragraph",
+                                        "content",
+                                        List.of(Map.of("type", "text", "text", fullText)))));
+        List<Note> notes = new ArrayList<>();
+        for (int index = 0; index < 105; index++) {
+            notes.add(Note.create(ownerId, "Large " + index, document));
+        }
+        noteRepository.saveAllAndFlush(notes);
+
+        MvcResult listed =
+                mockMvc.perform(get("/api/v1/notes").cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.items.length()").value(30))
+                        .andExpect(jsonPath("$.page").value(0))
+                        .andExpect(jsonPath("$.size").value(30))
+                        .andExpect(jsonPath("$.hasNext").value(true))
+                        .andExpect(jsonPath("$.counts.active").value(105))
+                        .andReturn();
+        String listJson = listed.getResponse().getContentAsString();
+        assertThat(listJson).doesNotContain(fullText);
+        assertThat(listJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
+                .isLessThan(30 * 16 * 1024);
+        List<Map<String, Object>> previews = JsonPath.read(listJson, "$.items[*].preview");
+        assertThat(previews).hasSize(30);
+        for (Map<String, Object> preview : previews) {
+            assertThat(NoteContentPolicy.validateAndCopy(preview)).isEqualTo(preview);
+            assertThat(previewText(preview).length()).isLessThanOrEqualTo(520);
+            assertThat(
+                            new com.fasterxml.jackson.databind.ObjectMapper()
+                                    .writeValueAsBytes(preview)
+                                    .length)
+                    .isLessThanOrEqualTo(16 * 1024);
+        }
+        Number noteId = JsonPath.read(listJson, "$.items[0].id");
+        mockMvc.perform(get("/api/v1/notes/{id}", noteId.longValue()).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.content[0].content[0].text").value(fullText));
+    }
+
     private long createNote(String body) throws Exception {
         MvcResult result =
                 mockMvc.perform(
@@ -225,5 +284,20 @@ class NoteControllerIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(body))
                 .andExpect(status().is(expectedStatus));
+    }
+
+    private static String previewText(Object node) {
+        StringBuilder text = new StringBuilder();
+        appendPreviewText(node, text);
+        return text.toString();
+    }
+
+    private static void appendPreviewText(Object node, StringBuilder text) {
+        if (node instanceof Map<?, ?> map) {
+            if ("text".equals(map.get("type"))) text.append(map.get("text"));
+            Object children = map.get("content");
+            if (children instanceof List<?> list)
+                list.forEach(child -> appendPreviewText(child, text));
+        }
     }
 }
