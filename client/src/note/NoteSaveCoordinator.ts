@@ -153,6 +153,65 @@ export class NoteSaveCoordinator {
     await this.flush();
   }
 
+  async resolveConflict(choice: 'keep-local' | 'load-server'): Promise<void> {
+    if (this.disposed || this.paused || this.phase !== 'conflict' || !this.persisted) return;
+    if (this.inFlight) await this.inFlight;
+    if (this.disposed || this.paused || this.phase !== 'conflict' || !this.persisted) return;
+
+    const generation = this.generation;
+    let latest: NoteDetail;
+    try {
+      latest = await this.transport.get(this.persisted.id);
+    } catch {
+      if (!this.disposed && !this.paused && generation === this.generation) this.publish();
+      return;
+    }
+    if (this.disposed || this.paused || generation !== this.generation) return;
+
+    if (choice === 'load-server') {
+      this.draft = noteDraft(latest);
+      this.baseline = { ...this.draft };
+      this.persisted = { id: latest.id, version: latest.version };
+      this.pendingUpdate = null;
+      this.pendingCreate = null;
+      this.localRevision += 1;
+      this.confirmedRevision = this.localRevision;
+      this.phase = 'saved';
+      this.publish();
+      return;
+    }
+
+    const local = { ...this.draft };
+    if (noteDraftsEqual(local, noteDraft(latest))) {
+      this.draft = noteDraft(latest);
+      this.baseline = { ...this.draft };
+      this.persisted = { id: latest.id, version: latest.version };
+      this.pendingUpdate = null;
+      this.localRevision += 1;
+      this.confirmedRevision = this.localRevision;
+      this.phase = 'saved';
+      this.publish();
+      return;
+    }
+
+    const normalized = normalizeNoteDraft(local);
+    this.persisted = { id: latest.id, version: latest.version };
+    this.pendingUpdate = {
+      id: latest.id,
+      body: {
+        expectedVersion: latest.version,
+        title: normalized.title,
+        content: normalized.content,
+      },
+      draft: local,
+      revision: this.localRevision,
+    };
+    this.phase = 'dirty';
+    this.debounceElapsed = true;
+    this.publish();
+    await this.flush();
+  }
+
   pause(): void {
     if (this.disposed || this.paused) return;
     this.paused = true;

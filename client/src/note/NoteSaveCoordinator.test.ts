@@ -28,6 +28,7 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+const conflictError = () => Object.assign(new Error('version conflict'), { response: { status: 409 } });
 
 afterEach(() => vi.useRealTimers());
 
@@ -293,6 +294,140 @@ describe('NoteSaveCoordinator', () => {
       persisted: { id: 7, version: 3 },
       phase: 'saved',
     });
+    coordinator.dispose();
+  });
+
+  it('pauses autosave after 409 and keeps edits made while conflicted local', async () => {
+    vi.useFakeTimers();
+    const initial = { title: 'Existing', content: null };
+    const first = { title: 'Existing', content: textDocument('First draft') };
+    const latest = { title: 'Existing', content: textDocument('Latest draft') };
+    const update = vi.fn().mockRejectedValue(conflictError());
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+      debounceMs: 10,
+    });
+
+    coordinator.edit(first);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(coordinator.snapshot().phase).toBe('conflict');
+    coordinator.edit(latest);
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(coordinator.snapshot()).toMatchObject({ draft: latest, phase: 'conflict' });
+    coordinator.dispose();
+  });
+
+  it('keeps the newest local version against a fresh server version after confirmation', async () => {
+    vi.useFakeTimers();
+    const initial = { title: 'Existing', content: null };
+    const first = { title: 'Existing', content: textDocument('First draft') };
+    const latest = { title: 'Existing', content: textDocument('Latest draft') };
+    const update = vi
+      .fn()
+      .mockRejectedValueOnce(conflictError())
+      .mockResolvedValueOnce(detail(9, 4, latest));
+    const get = vi.fn().mockResolvedValue(detail(9, 3, { title: 'Server edit', content: null }));
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get },
+      onChange: vi.fn(),
+      debounceMs: 10,
+    });
+
+    coordinator.edit(first);
+    await vi.advanceTimersByTimeAsync(10);
+    coordinator.edit(latest);
+    await coordinator.resolveConflict('keep-local');
+
+    expect(get).toHaveBeenCalledWith(9);
+    expect(update).toHaveBeenLastCalledWith(9, {
+      expectedVersion: 3,
+      title: 'Existing',
+      content: latest.content,
+    });
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: latest,
+      persisted: { id: 9, version: 4 },
+      phase: 'saved',
+    });
+    coordinator.dispose();
+  });
+
+  it('loads the server version only after a successful explicit resolution', async () => {
+    const local = { title: 'Local', content: textDocument('Unsaved') };
+    const server = { title: 'Server', content: textDocument('Current') };
+    const get = vi.fn().mockResolvedValue(detail(9, 6, server));
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: local,
+      initialNote: detail(9, 5, { title: 'Old', content: null }),
+      transport: { create: vi.fn(), update: vi.fn().mockRejectedValue(conflictError()), get },
+      onChange: vi.fn(),
+    });
+    coordinator.edit(local);
+    await coordinator.flush();
+    expect(coordinator.snapshot().phase).toBe('conflict');
+
+    await coordinator.resolveConflict('load-server');
+
+    expect(get).toHaveBeenCalledWith(9);
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: server,
+      persisted: { id: 9, version: 6 },
+      phase: 'saved',
+      hasUnsavedChanges: false,
+    });
+    coordinator.dispose();
+  });
+
+  it('preserves the local draft when the confirmed server reload fails', async () => {
+    const local = { title: 'Local', content: textDocument('Unsaved') };
+    const get = vi.fn().mockRejectedValue(new Error('unavailable'));
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: local,
+      initialNote: detail(9, 5, { title: 'Old', content: null }),
+      transport: { create: vi.fn(), update: vi.fn().mockRejectedValue(conflictError()), get },
+      onChange: vi.fn(),
+    });
+    coordinator.edit(local);
+    await coordinator.flush();
+
+    await coordinator.resolveConflict('load-server');
+
+    expect(coordinator.snapshot()).toMatchObject({ draft: local, phase: 'conflict' });
+    coordinator.dispose();
+  });
+
+  it('keeps the draft and returns to conflict after a repeated Keep my version conflict', async () => {
+    vi.useFakeTimers();
+    const initial = { title: 'Existing', content: null };
+    const local = { title: 'Existing', content: textDocument('Keep this draft') };
+    const update = vi.fn().mockRejectedValue(conflictError());
+    const get = vi.fn().mockResolvedValue(detail(9, 6, { title: 'Other version', content: null }));
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 5, initial),
+      transport: { create: vi.fn(), update, get },
+      onChange: vi.fn(),
+      debounceMs: 10,
+    });
+
+    coordinator.edit(local);
+    await vi.advanceTimersByTimeAsync(10);
+    await coordinator.resolveConflict('keep-local');
+
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenLastCalledWith(9, {
+      expectedVersion: 6,
+      title: 'Existing',
+      content: local.content,
+    });
+    expect(coordinator.snapshot()).toMatchObject({ draft: local, phase: 'conflict' });
     coordinator.dispose();
   });
 });
