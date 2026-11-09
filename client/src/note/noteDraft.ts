@@ -19,8 +19,8 @@ function normalizeTitle(title: string): string | null {
   let start = 0;
   let end = codePoints.length;
 
-  while (start < end && isJavaWhitespace(codePoints[start])) start += 1;
-  while (end > start && isJavaWhitespace(codePoints[end - 1])) end -= 1;
+  while (start < end && isJavaWhitespace(codePoints[start]!)) start += 1;
+  while (end > start && isJavaWhitespace(codePoints[end - 1]!)) end -= 1;
 
   return start === end ? null : codePoints.slice(start, end).join('');
 }
