@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import type { AuthSessionPhase } from '@/user/session/AuthSessionProvider';
 import { useNoteList } from './queries';
@@ -86,6 +86,39 @@ function SessionStatus({
       </h1>
       <output className="mt-8 block text-sm text-muted-foreground">Verifying your session…</output>
     </section>
+  );
+}
+
+function SessionStatusSpacer({
+  phase,
+  verifySession,
+}: {
+  readonly phase: AuthSessionPhase;
+  readonly verifySession: () => Promise<void>;
+}) {
+  const [minimumHeight, setMinimumHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    const main = document.querySelector('main');
+    if (!main) return;
+    const preserveScrollRange = () => {
+      const requiredHeight = main.scrollTop + main.clientHeight;
+      setMinimumHeight((current) => Math.max(current, requiredHeight));
+    };
+    preserveScrollRange();
+    main.addEventListener('scroll', preserveScrollRange, { passive: true });
+    window.addEventListener('resize', preserveScrollRange);
+    return () => {
+      main.removeEventListener('scroll', preserveScrollRange);
+      window.removeEventListener('resize', preserveScrollRange);
+    };
+  }, []);
+
+  if (phase === 'verified') return null;
+  return (
+    <div style={{ minHeight: `${minimumHeight}px` }}>
+      <SessionStatus phase={phase} verifySession={verifySession} />
+    </div>
   );
 }
 
@@ -327,44 +360,61 @@ export function NotesWorkspacePage() {
     }
   }, [state.collection, state.sort]);
 
-  if (phase !== 'verified' || userId === undefined) {
-    return <SessionStatus phase={phase} verifySession={verifySession} />;
-  }
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+
+    if (phase !== 'verified') {
+      if (main !== null) rememberScroll(main.scrollTop);
+      return;
+    }
+
+    if (main !== null) main.scrollTop = state.scrollTop;
+  }, [phase, rememberScroll, state.scrollTop]);
 
   return (
-    <section ref={rootRef} className="mx-auto w-full max-w-[1600px] p-6 sm:p-8 lg:p-10">
-      <header className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1
-            id="notes-heading"
-            className="text-4xl font-medium leading-tight tracking-tight text-foreground"
-          >
-            Notes
-          </h1>
-          <p className="mt-2 text-base text-muted-foreground">Keep what matters close.</p>
-        </div>
-        <Link
-          to="/notes/new"
-          state={{ horizonNoteNavigation: { kind: 'from-workspace' } }}
-          className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          New note
-        </Link>
-      </header>
+    <>
+      {phase === 'verified' && userId !== undefined && (
+        <section ref={rootRef} className="mx-auto w-full max-w-[1600px] p-6 sm:p-8 lg:p-10">
+          <header className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1
+                id="notes-heading"
+                className="text-4xl font-medium leading-tight tracking-tight text-foreground"
+              >
+                Notes
+              </h1>
+              <p className="mt-2 text-base text-muted-foreground">Keep what matters close.</p>
+            </div>
+            <Link
+              to="/notes/new"
+              state={{ horizonNoteNavigation: { kind: 'from-workspace' } }}
+              className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              New note
+            </Link>
+          </header>
 
-      <div className="mb-6 flex flex-col gap-4 border-b border-border pb-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <CollectionControls
+          <div className="mb-6 flex flex-col gap-4 border-b border-border pb-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <CollectionControls
+                collection={state.collection}
+                counts={counts}
+                setCollection={setCollection}
+              />
+              <SortControl sort={state.sort} setSort={setSort} />
+            </div>
+            <ViewControls view={state.view} setView={setView} />
+          </div>
+
+          <NoteResults
+            query={query}
+            notes={notes}
             collection={state.collection}
-            counts={counts}
-            setCollection={setCollection}
+            view={state.view}
           />
-          <SortControl sort={state.sort} setSort={setSort} />
-        </div>
-        <ViewControls view={state.view} setView={setView} />
-      </div>
-
-      <NoteResults query={query} notes={notes} collection={state.collection} view={state.view} />
-    </section>
+        </section>
+      )}
+      <SessionStatusSpacer phase={phase} verifySession={verifySession} />
+    </>
   );
 }

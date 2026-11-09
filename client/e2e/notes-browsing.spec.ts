@@ -22,17 +22,40 @@ function richText(text: string): Record<string, unknown> {
   return { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] };
 }
 
-function summary(id: number, collection: 'active' | 'archived', title?: string): NoteSummary {
+function summary(
+  id: number,
+  collection: 'active' | 'archived',
+  title?: string,
+  ownerId = 1,
+  ownerLabels = false
+): NoteSummary {
   return {
     id,
-    title: title ?? `Note ${String(id).padStart(3, '0')}`,
-    preview: richText(
-      id === 7
-        ? '<img src=x onerror=alert(1)>'
-        : id === 1
-          ? 'A long note preview. '.repeat(2_000)
-          : `Preview for ${id}`
-    ),
+    title:
+      title ??
+      (ownerLabels ? `Owner ${ownerId} note ${id}` : `Note ${String(id).padStart(3, '0')}`),
+    preview:
+      id === 1
+        ? {
+            type: 'doc',
+            content: [
+              {
+                type: 'heading',
+                attrs: { level: 1 },
+                content: [{ type: 'text', text: 'Preview heading' }],
+              },
+              {
+                type: 'paragraph',
+                content: [
+                  {
+                    type: 'text',
+                    text: `${'A long note preview. '.repeat(2_000)}${'X'.repeat(400)}`,
+                  },
+                ],
+              },
+            ],
+          }
+        : richText(id === 7 ? '<img src=x onerror=alert(1)>' : `Preview for ${id}`),
     version: 1,
     inbox: false,
     archivedAt: collection === 'archived' ? timestamps.updatedAt : null,
@@ -51,13 +74,27 @@ function detail(id: number, ownerId: number): NoteDetail {
   };
 }
 
-async function installNotesApi(page: Page, initialOwner = 1) {
+async function installNotesApi(page: Page, initialOwner = 1, archivedCount = 3) {
   let ownerId = initialOwner;
+  let ownerLabels = false;
+  let nextUserGate: Promise<void> | null = null;
+  let failNextUserRequest = false;
   const listRequests: Array<{ collection: string; sort: string; page: number; size: number }> = [];
+  const listOwners: number[] = [];
   const detailRequests: number[] = [];
   const writes: string[] = [];
 
   await page.route('**/api/v1/users/me', async (route) => {
+    if (nextUserGate !== null) {
+      const gate = nextUserGate;
+      nextUserGate = null;
+      await gate;
+    }
+    if (failNextUserRequest) {
+      failNextUserRequest = false;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -78,11 +115,16 @@ async function installNotesApi(page: Page, initialOwner = 1) {
     const pageNumber = Number(url.searchParams.get('page') ?? 0);
     const size = Number(url.searchParams.get('size') ?? 20);
     listRequests.push({ collection, sort, page: pageNumber, size });
+    listOwners.push(ownerId);
 
     const all =
       collection === 'archived'
-        ? Array.from({ length: 3 }, (_, index) => summary(201 + index, 'archived'))
-        : Array.from({ length: 40 }, (_, index) => summary(index + 1, 'active'));
+        ? Array.from({ length: archivedCount }, (_, index) =>
+            summary(201 + index, 'archived', undefined, ownerId, ownerLabels)
+          )
+        : Array.from({ length: 40 }, (_, index) =>
+            summary(index + 1, 'active', undefined, ownerId, ownerLabels)
+          );
     if (sort === 'title_asc') all.reverse();
     const items = all.slice(pageNumber * size, (pageNumber + 1) * size);
     await route.fulfill({
@@ -125,10 +167,24 @@ async function installNotesApi(page: Page, initialOwner = 1) {
 
   return {
     listRequests,
+    listOwners,
     detailRequests,
     writes,
     setOwner: (id: number) => {
       ownerId = id;
+    },
+    enableOwnerLabels: () => {
+      ownerLabels = true;
+    },
+    holdNextUserResponse: () => {
+      let release!: () => void;
+      nextUserGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
+    failNextUserResponse: () => {
+      failNextUserRequest = true;
     },
   };
 }
@@ -314,4 +370,178 @@ test('keeps the card grid responsive, compact, bounded, and keyboard navigable',
       .nth(1)
       .evaluate((element) => element.getBoundingClientRect().height)
   ).toBeLessThan(440);
+});
+
+test('restores the same-owner Notes workspace after focus verification', async ({ page }) => {
+  const api = await installNotesApi(page, 1, 40);
+  await page.setViewportSize({ width: 1440, height: 420 });
+  await page.goto('/notes');
+  await page.getByRole('button', { name: 'Archived' }).click();
+  await page.getByRole('button', { name: 'Load more notes' }).click();
+  await page.getByLabel('Sort notes').selectOption('title_asc');
+  await page.getByRole('button', { name: 'List' }).click();
+  await page.getByRole('button', { name: 'Load more notes' }).click();
+
+  const main = page.locator('main');
+  await main.evaluate((element) => {
+    element.scrollTop = 650;
+  });
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(600);
+  const scrollBeforeVerification = await main.evaluate((element) => element.scrollTop);
+  const requestCountBeforeVerification = api.listRequests.length;
+  const releaseVerification = api.holdNextUserResponse();
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+
+  const privateContent = page.getByTestId('private-content');
+  await expect(page.getByText('Verifying session…').first()).toBeVisible();
+  await expect(privateContent).toHaveAttribute('aria-hidden', 'true');
+  await expect(privateContent).toHaveCSS('visibility', 'hidden');
+  releaseVerification();
+
+  await expect(privateContent).toHaveAttribute('aria-hidden', 'false');
+  await expect(page.getByRole('list', { name: 'Notes list' }).getByRole('link')).toHaveCount(40);
+  await expect(page.getByRole('button', { name: 'Archived' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await expect(page.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Sort notes')).toHaveValue('title_asc');
+  await expect
+    .poll(() => main.evaluate((element) => element.scrollTop))
+    .toBeGreaterThanOrEqual(scrollBeforeVerification - 2);
+  expect(api.listRequests).toHaveLength(requestCountBeforeVerification);
+});
+
+test('restores browsing state and scroll after retryable session verification failure', async ({
+  page,
+}) => {
+  const api = await installNotesApi(page, 1, 40);
+  await page.setViewportSize({ width: 1440, height: 420 });
+  await page.goto('/notes');
+  await page.getByRole('button', { name: 'Archived' }).click();
+  await page.getByRole('button', { name: 'Load more notes' }).click();
+  await page.getByRole('button', { name: 'List' }).click();
+  const main = page.locator('main');
+  await main.evaluate((element) => {
+    element.scrollTop = 520;
+  });
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(480);
+
+  const releaseFailure = api.holdNextUserResponse();
+  api.failNextUserResponse();
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByText('Verifying session…').first()).toBeVisible();
+  const privateContent = page.getByTestId('private-content');
+  await expect(privateContent).toHaveAttribute('aria-hidden', 'true');
+  releaseFailure();
+
+  await expect(page.getByRole('alert')).toContainText("couldn't verify your session");
+  await expect(privateContent).toHaveAttribute('aria-hidden', 'true');
+  await expect(privateContent.getByText('Preview for 201')).toBeHidden();
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(480);
+  await page.getByRole('button', { name: 'Retry session verification' }).click();
+
+  await expect(privateContent).toHaveAttribute('aria-hidden', 'false');
+  await expect(page.getByRole('list', { name: 'Notes list' }).getByRole('link')).toHaveCount(40);
+  await expect(page.getByRole('button', { name: 'Archived' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await expect(page.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(480);
+});
+
+test('resets Notes browse state and content when verification changes owners', async ({ page }) => {
+  const api = await installNotesApi(page, 1, 40);
+  api.enableOwnerLabels();
+  await page.setViewportSize({ width: 1440, height: 420 });
+  await page.goto('/notes');
+  await page.getByRole('button', { name: 'Archived' }).click();
+  await page.getByRole('button', { name: 'List' }).click();
+  await page.getByLabel('Sort notes').selectOption('title_asc');
+  await page.getByRole('button', { name: 'Load more notes' }).click();
+  await expect(page.getByText('Owner 1 note 240')).toBeVisible();
+
+  api.setOwner(2);
+  const releaseVerification = api.holdNextUserResponse();
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  const privateContent = page.getByTestId('private-content');
+  await expect(privateContent).toHaveAttribute('aria-hidden', 'true');
+  await expect(privateContent).toHaveCSS('visibility', 'hidden');
+  releaseVerification();
+
+  await expect(privateContent).toHaveAttribute('aria-hidden', 'false');
+  await expect(page.getByRole('heading', { name: 'Owner 2 note 1', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Owner 1 note 240', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Active' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await expect(page.getByRole('button', { name: 'Cards' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('Sort notes')).toHaveValue('updated_desc');
+  expect(api.listRequests.at(-1)).toMatchObject({
+    collection: 'active',
+    sort: 'updated_desc',
+    page: 0,
+  });
+  expect(api.listOwners.at(-1)).toBe(2);
+});
+
+test('keeps the current scroll position when Load More appends a page', async ({ page }) => {
+  await installNotesApi(page);
+  await page.setViewportSize({ width: 1440, height: 420 });
+  await page.goto('/notes');
+  await expect(page.getByRole('heading', { name: 'Note 020' })).toBeVisible();
+  const main = page.locator('main');
+  await main.evaluate((element) => {
+    element.scrollTop = 360;
+  });
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(340);
+  const scrollBeforeLoadMore = await main.evaluate((element) => element.scrollTop);
+
+  await page.getByRole('button', { name: 'Load more notes' }).evaluate((element) => {
+    (element as HTMLButtonElement).click();
+  });
+  await expect(page.getByRole('heading', { name: 'Note 040' })).toBeVisible();
+  await expect
+    .poll(() => main.evaluate((element) => element.scrollTop))
+    .toBeGreaterThanOrEqual(scrollBeforeLoadMore - 2);
+});
+
+test('applies Notes preview typography and height in the browser cascade', async ({ page }) => {
+  await installNotesApi(page);
+  await page.setViewportSize({ width: 600, height: 900 });
+  await page.goto('/notes');
+  const firstCard = page.getByRole('list', { name: 'Notes cards' }).locator('li').first();
+  const title = firstCard.locator('h2');
+  const preview = firstCard.locator('.note-preview');
+  const previewHeading = preview.locator('h1');
+  const previewParagraph = preview.locator('p');
+  const previewFrame = preview.locator('xpath=..');
+
+  await expect(title).toHaveCSS('font-size', '18px');
+  await expect(previewParagraph).toHaveCSS('font-size', '16px');
+  await expect(previewHeading).not.toHaveCSS('font-size', '56px');
+  await expect(previewHeading).toHaveCSS('margin-block-start', '6px');
+  await expect(previewFrame).toHaveCSS('max-height', '240px');
+  expect(
+    await firstCard.evaluate((element) => element.getBoundingClientRect().height)
+  ).toBeLessThanOrEqual(440);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(600);
+
+  await page.setViewportSize({ width: 601, height: 900 });
+  await expect(previewFrame).toHaveCSS('max-height', '265px');
+  const lightColors = await Promise.all([
+    title.evaluate((element) => getComputedStyle(element).color),
+    previewParagraph.evaluate((element) => getComputedStyle(element).color),
+  ]);
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  const darkColors = await Promise.all([
+    title.evaluate((element) => getComputedStyle(element).color),
+    previewParagraph.evaluate((element) => getComputedStyle(element).color),
+  ]);
+  expect(darkColors[0]).not.toBe(darkColors[1]);
+  expect(darkColors[0]).not.toBe(lightColors[0]);
+  expect(darkColors[1]).not.toBe(lightColors[1]);
+  expect([...lightColors, ...darkColors].every((color) => color !== 'transparent')).toBe(true);
 });
