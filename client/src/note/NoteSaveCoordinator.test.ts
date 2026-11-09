@@ -28,7 +28,8 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-const conflictError = () => Object.assign(new Error('version conflict'), { response: { status: 409 } });
+const conflictError = () =>
+  Object.assign(new Error('version conflict'), { response: { status: 409 } });
 
 afterEach(() => vi.useRealTimers());
 
@@ -79,9 +80,11 @@ describe('NoteSaveCoordinator', () => {
     vi.useFakeTimers();
     const createRequest = deferred<NoteDetail>();
     const create = vi.fn(() => createRequest.promise);
-    const update = vi.fn().mockResolvedValue(
-      detail(4, 1, { title: 'First note', content: textDocument('Latest body') })
-    );
+    const update = vi
+      .fn()
+      .mockResolvedValue(
+        detail(4, 1, { title: 'First note', content: textDocument('Latest body') })
+      );
     const coordinator = new NoteSaveCoordinator({
       initialDraft: emptyDraft,
       initialNote: null,
@@ -167,7 +170,10 @@ describe('NoteSaveCoordinator', () => {
       title: null,
       content: null,
     });
-    expect(coordinator.snapshot()).toMatchObject({ persisted: { id: 7, version: 6 }, phase: 'saved' });
+    expect(coordinator.snapshot()).toMatchObject({
+      persisted: { id: 7, version: 6 },
+      phase: 'saved',
+    });
     coordinator.dispose();
   });
 
@@ -199,7 +205,10 @@ describe('NoteSaveCoordinator', () => {
 
     expect(update).toHaveBeenCalledTimes(2);
     expect(update.mock.calls[1]).toEqual(update.mock.calls[0]);
-    expect(coordinator.snapshot()).toMatchObject({ persisted: { id: 7, version: 2 }, phase: 'saved' });
+    expect(coordinator.snapshot()).toMatchObject({
+      persisted: { id: 7, version: 2 },
+      phase: 'saved',
+    });
     coordinator.dispose();
   });
 
@@ -263,9 +272,10 @@ describe('NoteSaveCoordinator', () => {
     const first = { title: 'Existing', content: textDocument('First change') };
     const latest = { title: 'Existing', content: textDocument('Latest change') };
     const firstRequest = deferred<NoteDetail>();
-    const update = vi.fn().mockReturnValueOnce(firstRequest.promise).mockResolvedValueOnce(
-      detail(7, 3, latest)
-    );
+    const update = vi
+      .fn()
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockResolvedValueOnce(detail(7, 3, latest));
     const coordinator = new NoteSaveCoordinator({
       initialDraft: initial,
       initialNote: detail(7, 1, initial),

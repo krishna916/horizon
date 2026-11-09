@@ -73,7 +73,9 @@ describe('noteApi', () => {
     const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue(response(detail) as never);
     const body = { title: null, content: null };
 
-    await expect(noteApi.create(body, 'f3d8e47a-7775-45eb-a226-4cc01eacb2f1')).resolves.toMatchObject({
+    await expect(
+      noteApi.create(body, 'f3d8e47a-7775-45eb-a226-4cc01eacb2f1')
+    ).resolves.toMatchObject({
       data: { id: 7, title: null, content: null },
     });
     expect(postSpy).toHaveBeenCalledWith('/notes', body, {

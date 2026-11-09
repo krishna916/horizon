@@ -30,9 +30,7 @@ function RecoveryProbe() {
     <div>
       <output data-testid="session">{`${session.phase}:${session.verifiedUserId ?? 'none'}`}</output>
       <output data-testid="recovery">{available?.draft.title ?? 'hidden'}</output>
-      <output data-testid="recovery-key">
-        {available?.frozenCreateRequest?.key ?? 'none'}
-      </output>
+      <output data-testid="recovery-key">{available?.frozenCreateRequest?.key ?? 'none'}</output>
       <button
         type="button"
         onClick={() =>
@@ -78,7 +76,9 @@ describe('NoteDraftRecoveryProvider', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stash' }));
     expect(screen.getByTestId('recovery')).toHaveTextContent('Memory only');
     act(() => notifySessionUnauthorized(getCurrentSessionEpoch()));
-    await waitFor(() => expect(screen.getByTestId('session')).toHaveTextContent('unauthenticated:none'));
+    await waitFor(() =>
+      expect(screen.getByTestId('session')).toHaveTextContent('unauthenticated:none')
+    );
     expect(screen.getByTestId('recovery')).toHaveTextContent('hidden');
 
     fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
@@ -136,6 +136,8 @@ describe('NoteDraftRecoveryProvider', () => {
     });
 
     await waitFor(() => expect(screen.getByTestId('recovery')).toHaveTextContent('hidden'));
-    await waitFor(() => expect(screen.getByTestId('session')).toHaveTextContent('unauthenticated:none'));
+    await waitFor(() =>
+      expect(screen.getByTestId('session')).toHaveTextContent('unauthenticated:none')
+    );
   });
 });

@@ -11,7 +11,11 @@ export interface NoteDraft {
 }
 
 function isJavaWhitespace(codePoint: string): boolean {
-  return /^[\p{White_Space}\u001c-\u001f]$/u.test(codePoint);
+  const value = codePoint.codePointAt(0);
+  return (
+    /^[\p{White_Space}]$/u.test(codePoint) ||
+    (value !== undefined && value >= 0x1c && value <= 0x1f)
+  );
 }
 
 function normalizeTitle(title: string): string | null {

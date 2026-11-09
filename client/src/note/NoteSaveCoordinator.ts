@@ -6,7 +6,8 @@ import {
 } from './noteDraft';
 import type { NoteDetail } from './types';
 
-export type NoteSavePhase = 'clean' | 'dirty' | 'saving' | 'saved' | 'failed' | 'conflict' | 'paused';
+export type NoteSavePhase =
+  'clean' | 'dirty' | 'saving' | 'saved' | 'failed' | 'conflict' | 'paused';
 
 export interface NoteSaveSnapshot {
   draft: NoteDraft;
@@ -15,13 +16,11 @@ export interface NoteSaveSnapshot {
   persisted: { id: number; version: number } | null;
   phase: NoteSavePhase;
   hasUnsavedChanges: boolean;
+  frozenCreateRequest?: { body: ReturnType<typeof normalizeNoteDraft>; key: string };
 }
 
 export interface NoteTransport {
-  create: (
-    body: ReturnType<typeof normalizeNoteDraft>,
-    key: string
-  ) => Promise<NoteDetail>;
+  create: (body: ReturnType<typeof normalizeNoteDraft>, key: string) => Promise<NoteDetail>;
   update: (
     id: number,
     body: {
@@ -33,13 +32,23 @@ export interface NoteTransport {
   get: (id: number) => Promise<NoteDetail>;
 }
 
+export interface NoteSaveRecoveryState {
+  persistedVersion: { id: number; version: number } | undefined;
+  frozenCreateRequest: { body: ReturnType<typeof normalizeNoteDraft>; key: string } | undefined;
+}
+
 interface NoteSaveCoordinatorOptions {
   initialDraft: NoteDraft;
   initialNote: NoteDetail | null;
   transport: NoteTransport;
   onChange: (snapshot: NoteSaveSnapshot) => void;
   onCreated?: (note: NoteDetail) => void;
+  onUpdated?: (note: NoteDetail) => void;
   debounceMs?: number;
+  recovery?: {
+    persistedVersion?: { id: number; version: number };
+    frozenCreateRequest?: { body: ReturnType<typeof normalizeNoteDraft>; key: string };
+  };
 }
 
 interface FrozenCreate {
@@ -80,6 +89,7 @@ export class NoteSaveCoordinator {
   private readonly transport: NoteTransport;
   private readonly onChange: (snapshot: NoteSaveSnapshot) => void;
   private readonly onCreated?: (note: NoteDetail) => void;
+  private readonly onUpdated?: (note: NoteDetail) => void;
   private readonly debounceMs: number;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private debounceElapsed = false;
@@ -92,7 +102,9 @@ export class NoteSaveCoordinator {
 
   constructor(options: NoteSaveCoordinatorOptions) {
     this.draft = { ...options.initialDraft };
-    this.baseline = options.initialNote ? noteDraft(options.initialNote) : { ...options.initialDraft };
+    this.baseline = options.initialNote
+      ? noteDraft(options.initialNote)
+      : { ...options.initialDraft };
     this.persisted = options.initialNote
       ? { id: options.initialNote.id, version: options.initialNote.version }
       : null;
@@ -100,7 +112,27 @@ export class NoteSaveCoordinator {
     this.transport = options.transport;
     this.onChange = options.onChange;
     this.onCreated = options.onCreated;
+    this.onUpdated = options.onUpdated;
     this.debounceMs = options.debounceMs ?? 900;
+    if (!options.initialNote && options.recovery?.frozenCreateRequest) {
+      this.pendingCreate = { ...options.recovery.frozenCreateRequest, revision: 0 };
+    }
+    if (options.initialNote && options.recovery?.persistedVersion) {
+      const recoveryVersion = options.recovery.persistedVersion;
+      if (
+        recoveryVersion.id === options.initialNote.id &&
+        recoveryVersion.version !== options.initialNote.version
+      ) {
+        this.phase = noteDraftsEqual(this.draft, noteDraft(options.initialNote))
+          ? 'saved'
+          : 'conflict';
+      }
+    }
+    if (this.phase !== 'conflict') {
+      if (!options.initialNote && hasMeaningfulNoteDraft(this.draft)) this.phase = 'dirty';
+      else if (options.initialNote && !noteDraftsEqual(this.draft, this.baseline))
+        this.phase = 'dirty';
+    }
   }
 
   edit(draft: NoteDraft): void {
@@ -123,7 +155,8 @@ export class NoteSaveCoordinator {
   }
 
   async flush(): Promise<void> {
-    if (this.disposed || this.paused || this.phase === 'conflict' || this.phase === 'failed') return;
+    if (this.disposed || this.paused || this.phase === 'conflict' || this.phase === 'failed')
+      return;
     this.clearTimer();
     this.debounceElapsed = true;
 
@@ -221,7 +254,11 @@ export class NoteSaveCoordinator {
   }
 
   async resume(): Promise<void> {
-    if (this.disposed || !this.paused) return;
+    if (this.disposed) return;
+    if (!this.paused) {
+      if (this.phase === 'dirty' && this.hasWork()) this.scheduleSave();
+      return;
+    }
     this.paused = false;
     if (this.persisted) {
       try {
@@ -229,7 +266,7 @@ export class NoteSaveCoordinator {
         const latest = await this.transport.get(this.persisted.id);
         if (this.disposed || generation !== this.generation) return;
         if (this.pendingUpdate && noteDraftsEqual(this.pendingUpdate.draft, noteDraft(latest))) {
-          this.acknowledgeUpdate(this.pendingUpdate, latest.version);
+          this.acknowledgeUpdate(this.pendingUpdate, latest);
         } else if (latest.version !== this.persisted.version) {
           if (!this.pendingUpdate) {
             this.phase = 'conflict';
@@ -268,10 +305,28 @@ export class NoteSaveCoordinator {
       persisted: this.persisted ? { ...this.persisted } : null,
       phase: this.phase,
       hasUnsavedChanges:
+        this.hasWork() ||
         this.localRevision > this.confirmedRevision ||
         this.phase === 'failed' ||
         this.phase === 'conflict' ||
         this.phase === 'paused',
+      ...(this.pendingCreate
+        ? {
+            frozenCreateRequest: {
+              body: { ...this.pendingCreate.body },
+              key: this.pendingCreate.key,
+            },
+          }
+        : {}),
+    };
+  }
+
+  recoverySnapshot(): NoteSaveRecoveryState {
+    return {
+      persistedVersion: this.persisted ? { ...this.persisted } : undefined,
+      frozenCreateRequest: this.pendingCreate
+        ? { body: { ...this.pendingCreate.body }, key: this.pendingCreate.key }
+        : undefined,
     };
   }
 
@@ -301,7 +356,7 @@ export class NoteSaveCoordinator {
         this.persisted = { id: created.id, version: created.version };
         this.baseline = { title: request.body.title ?? '', content: request.body.content };
         this.confirmedRevision = request.revision;
-        this.phase = this.localRevision > this.confirmedRevision ? 'dirty' : 'saved';
+        this.phase = this.hasWork() ? 'dirty' : 'saved';
         this.publish();
         this.onCreated?.(created);
         return;
@@ -337,7 +392,7 @@ export class NoteSaveCoordinator {
     try {
       const updated = await this.transport.update(request.id, request.body);
       if (this.disposed || this.paused || generation !== this.generation) return;
-      this.acknowledgeUpdate(request, updated.version);
+      this.acknowledgeUpdate(request, updated);
     } catch (error) {
       if (this.disposed || generation !== this.generation) return;
       if (errorStatus(error) === 409) {
@@ -360,7 +415,7 @@ export class NoteSaveCoordinator {
       const latest = await this.transport.get(request.id);
       if (this.disposed || this.paused || generation !== this.generation) return;
       if (noteDraftsEqual(request.draft, noteDraft(latest))) {
-        this.acknowledgeUpdate(request, latest.version);
+        this.acknowledgeUpdate(request, latest);
       } else if (latest.version === request.body.expectedVersion) {
         this.phase = 'failed';
         this.publish();
@@ -375,13 +430,14 @@ export class NoteSaveCoordinator {
     }
   }
 
-  private acknowledgeUpdate(request: FrozenUpdate, version: number): void {
+  private acknowledgeUpdate(request: FrozenUpdate, updated: NoteDetail): void {
     this.pendingUpdate = null;
-    this.persisted = { id: request.id, version };
+    this.persisted = { id: request.id, version: updated.version };
     this.baseline = { ...request.draft };
     this.confirmedRevision = request.revision;
-    this.phase = this.localRevision > this.confirmedRevision ? 'dirty' : 'saved';
+    this.phase = this.hasWork() ? 'dirty' : 'saved';
     this.publish();
+    this.onUpdated?.(updated);
   }
 
   private hasWork(): boolean {

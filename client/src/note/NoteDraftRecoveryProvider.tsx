@@ -35,7 +35,12 @@ function copyEntry(entry: NoteDraftRecoveryEntry): NoteDraftRecoveryEntry {
     draft: { ...entry.draft },
     ...(entry.persistedVersion ? { persistedVersion: { ...entry.persistedVersion } } : {}),
     ...(entry.frozenCreateRequest
-      ? { frozenCreateRequest: { ...entry.frozenCreateRequest, body: { ...entry.frozenCreateRequest.body } } }
+      ? {
+          frozenCreateRequest: {
+            ...entry.frozenCreateRequest,
+            body: { ...entry.frozenCreateRequest.body },
+          },
+        }
       : {}),
   };
 }
@@ -65,7 +70,12 @@ export function NoteDraftRecoveryProvider({ children }: { readonly children: Rea
         draft: { ...draft },
         ...(persistedVersion ? { persistedVersion: { ...persistedVersion } } : {}),
         ...(frozenCreateRequest
-          ? { frozenCreateRequest: { ...frozenCreateRequest, body: { ...frozenCreateRequest.body } } }
+          ? {
+              frozenCreateRequest: {
+                ...frozenCreateRequest,
+                body: { ...frozenCreateRequest.body },
+              },
+            }
           : {}),
       };
       entryRef.current = next;
@@ -113,7 +123,11 @@ export function NoteDraftRecoveryProvider({ children }: { readonly children: Rea
   }, [discard, explicitLogoutRevision]);
 
   useEffect(() => {
-    if (phase === 'verified' && verifiedUserId !== null && entryRef.current?.ownerId !== verifiedUserId) {
+    if (
+      phase === 'verified' &&
+      verifiedUserId !== null &&
+      entryRef.current?.ownerId !== verifiedUserId
+    ) {
       discard();
     }
   }, [discard, phase, verifiedUserId]);
@@ -125,11 +139,14 @@ export function NoteDraftRecoveryProvider({ children }: { readonly children: Rea
     hasRecoveryForVerifiedOwner,
     discard,
   };
-  return <NoteDraftRecoveryContext.Provider value={value}>{children}</NoteDraftRecoveryContext.Provider>;
+  return (
+    <NoteDraftRecoveryContext.Provider value={value}>{children}</NoteDraftRecoveryContext.Provider>
+  );
 }
 
 export function useNoteDraftRecovery(): NoteDraftRecoveryValue {
   const value = useContext(NoteDraftRecoveryContext);
-  if (!value) throw new Error('useNoteDraftRecovery must be used within NoteDraftRecoveryProvider.');
+  if (!value)
+    throw new Error('useNoteDraftRecovery must be used within NoteDraftRecoveryProvider.');
   return value;
 }
