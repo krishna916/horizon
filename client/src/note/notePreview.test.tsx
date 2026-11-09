@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { NotePreview, noteListExcerpt } from './notePreview';
 
-// Test-only future-media fixtures; the current #69 API intentionally has no media nodes.
+// Design-only fixture markup: the current #69 API has no media nodes and production does not render these.
 type MediaFixtureNode =
   | { type: 'image'; alt: string }
   | { type: 'text'; text: string }
@@ -10,7 +10,7 @@ type MediaFixtureNode =
 
 function MediaCardFixture({ nodes }: { nodes: MediaFixtureNode[] }) {
   return (
-    <article aria-label="fixture note card">
+    <article aria-label="Design-only future media fixture (not production)">
       <h2>Untitled note</h2>
       <div>
         {nodes.map((node, index) => {
@@ -194,7 +194,25 @@ describe('NotePreview', () => {
     expect(noteListExcerpt(null)).toBe('');
   });
 
-  it('keeps synthetic image and attachment fixtures in document order without promoting later media', () => {
+  it('separates block text while keeping inline and hard-break text together', () => {
+    expect(
+      noteListExcerpt({
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: 'First' },
+              { type: 'text', text: ' inline' },
+            ],
+          },
+          { type: 'paragraph', content: [{ type: 'text', text: 'Second block' }] },
+        ],
+      })
+    ).toBe('First inline Second block');
+  });
+
+  it('keeps design-only image layout fixtures in order without claiming production media support', () => {
     const boundedContent: MediaFixtureNode[] = [
       { type: 'text', text: 'Leading document text' },
       { type: 'text', text: 'Second bounded block' },

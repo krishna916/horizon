@@ -164,18 +164,25 @@ export function noteListExcerpt(document: RichTextDocument | null): string {
   const normalized = normalizeRichTextDocument(document);
   if (normalized === null) return '';
 
-  const text: string[] = [];
+  const blocks: string[] = [];
+  let inlineText = '';
   const visit = (node: RichTextNode) => {
     if (node.type === 'text' && typeof node.text === 'string') {
-      text.push(node.text);
+      inlineText += node.text;
       return;
     }
     if (node.type === 'hardBreak') {
-      text.push(' ');
+      inlineText += ' ';
       return;
     }
+    const block = ['paragraph', 'heading', 'codeBlock'].includes(String(node.type));
+    const start = inlineText.length;
     nodeChildren(node).forEach(visit);
+    if (block && inlineText.length > start) {
+      blocks.push(inlineText.slice(start).replace(/\s+/g, ' ').trim());
+    }
   };
   visit(normalized);
-  return text.join('').replace(/\s+/g, ' ').trim();
+  if (blocks.length === 0) return inlineText.replace(/\s+/g, ' ').trim();
+  return blocks.filter(Boolean).join(' ');
 }

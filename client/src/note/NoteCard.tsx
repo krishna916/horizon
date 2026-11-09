@@ -26,7 +26,7 @@ export function NoteCard({ note }: { readonly note: NoteSummary }) {
           <h2 className="break-words text-lg font-medium leading-6 text-foreground">
             {titleFor(note)}
           </h2>
-          <div className="mt-3 max-h-[265px] min-h-0 overflow-hidden [mask-image:linear-gradient(to_bottom,black_82%,transparent)]">
+          <div className="mt-3 max-h-[240px] min-h-0 overflow-hidden [mask-image:linear-gradient(to_bottom,black_82%,transparent)] min-[601px]:max-h-[265px]">
             <NotePreview document={note.preview} interactiveLinks={false} />
           </div>
           <time
