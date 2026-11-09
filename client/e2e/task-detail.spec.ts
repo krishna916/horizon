@@ -178,7 +178,8 @@ test('uses the modal drawer below 845px workspace width and closes by Escape, ba
 
   await page.goForward();
   await expect(dialog).toBeVisible();
-  await page.mouse.click(20, 400);
+  // The drawer fills the right edge; click the dimmed main-area backdrop beside it.
+  await page.getByTestId('task-overlay-backdrop').click({ position: { x: 80, y: 320 } });
   await expect(page).toHaveURL(/\/tasks$/);
 
   await page.getByRole('button', { name: 'Open TASK-7: First browser task' }).click();
