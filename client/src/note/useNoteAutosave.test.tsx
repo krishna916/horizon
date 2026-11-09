@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { StrictMode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
@@ -93,7 +94,8 @@ function AutosaveProbe() {
 }
 
 function renderAutosave(
-  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  strict = false
 ) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
@@ -102,11 +104,42 @@ function renderAutosave(
       </AuthSessionProvider>
     </QueryClientProvider>
   );
-  return { ...render(<AutosaveProbe />, { wrapper }), queryClient };
+  return {
+    ...render(
+      strict ? (
+        <StrictMode>
+          <AutosaveProbe />
+        </StrictMode>
+      ) : (
+        <AutosaveProbe />
+      ),
+      { wrapper }
+    ),
+    queryClient,
+  };
 }
 
 describe('useNoteAutosave', () => {
   afterEach(() => vi.clearAllMocks());
+
+  it('keeps its coordinator alive across React Strict Mode effect replay', async () => {
+    vi.mocked(userApi.getCurrentUser).mockResolvedValue({
+      data: { id: 1, email: 'one@example.com' },
+    } as never);
+    vi.mocked(noteApi.get).mockResolvedValue(response(initial));
+    vi.mocked(noteApi.update).mockResolvedValue(
+      response({ ...initial, version: 3, content: localDraft.content })
+    );
+    renderAutosave(undefined, true);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('verified:saved'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByTestId('draft')).toHaveTextContent('body');
+    fireEvent.click(screen.getByRole('button', { name: 'Flush' }));
+
+    await waitFor(() => expect(noteApi.update).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('verified:saved'));
+  });
 
   it('updates only the owner list cache and writes the current detail without per-card refetch', async () => {
     vi.mocked(userApi.getCurrentUser).mockResolvedValue({

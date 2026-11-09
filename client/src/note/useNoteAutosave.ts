@@ -41,6 +41,7 @@ export function useNoteAutosave({
   const ownerIdRef = useRef(ownerId);
   const editorRouteRef = useRef(editorRoute);
   const onCreatedRef = useRef(onCreated);
+  const lifecycleRef = useRef(0);
   const [snapshotState, setSnapshotState] = useState<NoteSaveSnapshot | null>(null);
 
   const publishSavedNote = useCallback(
@@ -142,8 +143,9 @@ export function useNoteAutosave({
     }
   }, [coordinator, session.epoch, ownerId, session.phase, session.verifiedUserId]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const lifecycle = ++lifecycleRef.current;
+    return () => {
       const current = coordinator.snapshot();
       if (current.hasUnsavedChanges) {
         const saveRecovery = coordinator.recoverySnapshot();
@@ -155,10 +157,13 @@ export function useNoteAutosave({
           saveRecovery.frozenCreateRequest
         );
       }
-      coordinator.dispose();
-    },
-    [coordinator]
-  );
+      // React Strict Mode replays effect cleanup/setup without unmounting the editor.
+      queueMicrotask(() => {
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        if (lifecycleRef.current === lifecycle) coordinator.dispose();
+      });
+    };
+  }, [coordinator]);
 
   const edit = useCallback((draft: NoteDraft) => coordinator.edit(draft), [coordinator]);
   const flush = useCallback(() => coordinator.flush(), [coordinator]);
@@ -167,6 +172,10 @@ export function useNoteAutosave({
     (choice: 'keep-local' | 'load-server') => coordinator.resolveConflict(choice),
     [coordinator]
   );
+  const discardDraft = useCallback(() => {
+    coordinator.dispose();
+    recoveryContext.discard();
+  }, [coordinator, recoveryContext]);
 
   return {
     snapshot,
@@ -174,6 +183,7 @@ export function useNoteAutosave({
     flush,
     retry,
     resolveConflict,
+    discardDraft,
     canLeave: !snapshot.hasUnsavedChanges && snapshot.phase !== 'saving',
   };
 }

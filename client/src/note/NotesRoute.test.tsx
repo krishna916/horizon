@@ -18,6 +18,13 @@ vi.mock('@/user/session/AuthSessionProvider', () => ({
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => ({}),
   Outlet: () => <BrowseProbe />,
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { pathname: string } }) => unknown;
+  }) => select({ location: { pathname: '/notes' } }),
+  useRouter: () => ({ state: { location: { state: {} } }, history: { back: vi.fn() } }),
+  useNavigate: () => vi.fn(),
 }));
 
 function BrowseProbe() {

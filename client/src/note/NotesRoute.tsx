@@ -1,7 +1,10 @@
-import { Outlet } from '@tanstack/react-router';
+import { Outlet, useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import { NotesBrowseProvider } from './NotesBrowseContext';
+import { NoteEditorPage } from './NoteEditorPage';
+import { isTrustedNoteOrigin, parseNoteId } from './noteNavigation';
+import type { NoteDetail } from './types';
 
 export function NotesRoute() {
   const { phase, verifiedUserId, ownerRevision } = useAuthSession();
@@ -9,6 +12,9 @@ export function NotesRoute() {
     userId: number;
     ownerRevision: number;
   } | null>(null);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const router = useRouter();
+  const navigate = useNavigate({ from: '/notes' });
 
   if (
     phase === 'verified' &&
@@ -34,7 +40,35 @@ export function NotesRoute() {
 
   return (
     <NotesBrowseProvider key={`${owner.ownerRevision}:${owner.userId}`} userId={owner.userId}>
-      <Outlet />
+      {pathname === '/notes/new' || pathname.startsWith('/notes/') ? (
+        <NoteEditorPage
+          routeNoteId={pathname === '/notes/new' ? null : pathname.slice('/notes/'.length)}
+          onBack={() => {
+            const routeNoteId = pathname === '/notes/new' ? null : pathname.slice('/notes/'.length);
+            const noteId = routeNoteId === null ? undefined : parseNoteId(routeNoteId);
+            const trustedOrigin =
+              routeNoteId === null
+                ? isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation)
+                : noteId !== null &&
+                  isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation, noteId);
+            if (trustedOrigin) {
+              router.history.back();
+            } else {
+              void navigate({ to: '/notes', replace: true });
+            }
+          }}
+          onCreated={(note: NoteDetail) => {
+            void navigate({
+              to: '/notes/$id',
+              params: { id: String(note.id) },
+              replace: true,
+              state: { horizonNoteNavigation: { kind: 'from-workspace', noteId: note.id } },
+            });
+          }}
+        />
+      ) : (
+        <Outlet />
+      )}
     </NotesBrowseProvider>
   );
 }

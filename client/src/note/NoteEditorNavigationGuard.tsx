@@ -1,5 +1,5 @@
 import { useBlocker } from '@tanstack/react-router';
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 
 export function NoteEditorNavigationGuard({
@@ -7,16 +7,20 @@ export function NoteEditorNavigationGuard({
   phase,
   flush,
   retry,
+  discardDraft,
   children,
 }: {
   readonly canLeave: boolean;
   readonly phase: string;
   readonly flush: () => Promise<void>;
   readonly retry: () => Promise<void>;
+  readonly discardDraft: () => void;
   readonly children: ReactNode;
 }) {
   const canLeaveRef = useRef(canLeave);
-  canLeaveRef.current = canLeave;
+  useLayoutEffect(() => {
+    canLeaveRef.current = canLeave;
+  }, [canLeave]);
   const blocker = useBlocker({
     withResolver: true,
     shouldBlockFn: ({ current, next }) => {
@@ -27,6 +31,7 @@ export function NoteEditorNavigationGuard({
     },
     enableBeforeUnload: () => !canLeave,
   });
+  const isExplicitLogout = blocker.status === 'blocked' && blocker.next.pathname === '/login';
 
   async function waitAndLeave() {
     if (phase === 'failed' || phase === 'conflict' || phase === 'paused') return;
@@ -51,10 +56,14 @@ export function NoteEditorNavigationGuard({
             className="w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-xl"
           >
             <h2 id="note-leave-title" className="text-lg font-medium">
-              Your note has unsaved changes
+              {isExplicitLogout
+                ? 'Sign out with an unsaved note?'
+                : 'Your note has unsaved changes'}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Wait for the note to save before leaving. Your draft will stay open if saving fails.
+              {isExplicitLogout
+                ? 'Signing out will discard this in-memory draft.'
+                : 'Wait for the note to save before leaving. Your draft will stay open if saving fails.'}
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -81,6 +90,18 @@ export function NoteEditorNavigationGuard({
                   Wait for save
                 </button>
               ) : null}
+              {isExplicitLogout && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    discardDraft();
+                    blocker.proceed();
+                  }}
+                  className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground"
+                >
+                  Discard draft and sign out
+                </button>
+              )}
             </div>
           </section>
         </div>

@@ -86,7 +86,7 @@ export function RichTextEditor({
 
   return (
     <div className="rich-text-editor" data-testid="rich-text-editor">
-      <RichTextToolbar editor={editor} disabled={disabled} />
+      <RichTextToolbar editor={editor} disabled={disabled} ariaLabel={ariaLabel} />
       <EditorContent editor={editor} />
     </div>
   );

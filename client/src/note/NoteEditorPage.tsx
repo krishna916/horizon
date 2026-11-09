@@ -142,14 +142,16 @@ function ActiveNoteEditor({
   readonly onCreated: (note: NoteDetail) => void;
 }) {
   const [conflictChoice, setConflictChoice] = useState<'keep-local' | 'load-server' | null>(null);
-  const { snapshot, edit, flush, retry, resolveConflict, canLeave } = useNoteAutosave({
-    ownerId,
-    initialNote,
-    initialDraft: initialNote ? undefined : blankDraft,
-    editorRoute: routeNoteId === null ? '/notes/new' : `/notes/${routeNoteId}`,
-    recovery,
-    onCreated,
-  });
+  const { snapshot, edit, flush, retry, resolveConflict, discardDraft, canLeave } = useNoteAutosave(
+    {
+      ownerId,
+      initialNote,
+      initialDraft: initialNote ? undefined : blankDraft,
+      editorRoute: routeNoteId === null ? '/notes/new' : `/notes/${routeNoteId}`,
+      recovery,
+      onCreated,
+    }
+  );
 
   function updateTitle(title: string) {
     edit({ ...snapshot.draft, title });
@@ -165,6 +167,7 @@ function ActiveNoteEditor({
       phase={snapshot.phase}
       flush={flush}
       retry={retry}
+      discardDraft={discardDraft}
     >
       <article className="mx-auto w-full max-w-[808px] px-5 pb-16 pt-4 sm:px-8 sm:pt-6">
         <div className="sticky top-0 z-10 -mx-5 mb-8 flex min-h-12 items-center justify-between gap-4 border-b border-border/70 bg-background/95 px-5 py-2 backdrop-blur sm:-mx-8 sm:px-8">

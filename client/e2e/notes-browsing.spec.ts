@@ -223,7 +223,7 @@ test('browses pages and restores collection, sort, view, and scroll on Back', as
   const noteLink = page.getByRole('link', { name: /Owner|Note 203/ }).first();
   await noteLink.click();
   await expect(page).toHaveURL(/\/notes\/20[1-3]$/);
-  await expect(page.getByRole('heading', { name: /Owner 1 note/ })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue(/Owner 1 note/);
   await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBe(0);
   expect(api.detailRequests).toHaveLength(1);
 
@@ -265,7 +265,7 @@ test('keeps paginated pages and browse scroll after a long detail visit', async 
     (element as HTMLAnchorElement).click();
   });
   await expect(page).toHaveURL(/\/notes\/40$/);
-  await expect(page.getByRole('heading', { name: 'Owner 1 note 40' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue('Owner 1 note 40');
   await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBe(0);
 
   await page.clock.fastForward(5 * 60 * 1000 + 1);
@@ -308,11 +308,15 @@ test('persists only the view for one owner and handles blocked storage', async (
   await expect(page.getByRole('link', { name: /Note 001/ })).toBeVisible();
 });
 
-test('supports direct read routes and keeps /notes/new inert', async ({ page }) => {
+test('supports direct editor routes and keeps an untouched /notes/new draft empty', async ({
+  page,
+}) => {
   const api = await installNotesApi(page);
   await page.goto('/notes/7');
-  await expect(page.getByRole('heading', { name: 'Owner 1 note 7' })).toBeVisible();
-  await expect(page.getByLabel('Note content')).toContainText('<img src=x onerror=alert(1)>');
+  await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue('Owner 1 note 7');
+  await expect(page.getByLabel('Note content editor')).toContainText(
+    '<img src=x onerror=alert(1)>'
+  );
   await expect(page.locator('img')).toHaveCount(0);
 
   await page.goto('/notes/404');
@@ -323,7 +327,9 @@ test('supports direct read routes and keeps /notes/new inert', async ({ page }) 
 
   await page.goto('/notes/new');
   await expect(page).toHaveURL(/\/notes\/new$/);
-  await expect(page.getByRole('heading', { name: 'Note editor coming next' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue('');
+  await expect(page.getByLabel('Note content editor')).toBeVisible();
+  await expect(page.getByText('Saved')).toBeVisible();
   await page.getByRole('button', { name: 'Back to Notes' }).click();
   await expect(page).toHaveURL(/\/notes\/?$/);
   expect(api.detailRequests).toEqual([7, 404]);

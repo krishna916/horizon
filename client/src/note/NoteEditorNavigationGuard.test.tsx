@@ -4,6 +4,7 @@ import { NoteEditorNavigationGuard } from './NoteEditorNavigationGuard';
 
 const blockerState = vi.hoisted(() => ({
   status: 'idle' as 'idle' | 'blocked',
+  nextPathname: '/notes',
   proceed: vi.fn(),
   reset: vi.fn(),
   options: null as null | {
@@ -17,6 +18,7 @@ vi.mock('@tanstack/react-router', () => ({
     blockerState.options = options;
     return {
       status: blockerState.status,
+      next: blockerState.status === 'blocked' ? { pathname: blockerState.nextPathname } : undefined,
       proceed: blockerState.status === 'blocked' ? blockerState.proceed : undefined,
       reset: blockerState.status === 'blocked' ? blockerState.reset : undefined,
     };
@@ -26,6 +28,7 @@ vi.mock('@tanstack/react-router', () => ({
 describe('NoteEditorNavigationGuard', () => {
   afterEach(() => {
     blockerState.status = 'idle';
+    blockerState.nextPathname = '/notes';
     blockerState.proceed.mockReset();
     blockerState.reset.mockReset();
     vi.clearAllMocks();
@@ -33,7 +36,13 @@ describe('NoteEditorNavigationGuard', () => {
 
   it('blocks dirty navigation and native unload, while allowing clean and create-to-ID replacement', () => {
     render(
-      <NoteEditorNavigationGuard canLeave={false} phase="dirty" flush={vi.fn()} retry={vi.fn()}>
+      <NoteEditorNavigationGuard
+        canLeave={false}
+        phase="dirty"
+        flush={vi.fn()}
+        retry={vi.fn()}
+        discardDraft={vi.fn()}
+      >
         <p>Editor</p>
       </NoteEditorNavigationGuard>
     );
@@ -56,7 +65,13 @@ describe('NoteEditorNavigationGuard', () => {
     blockerState.status = 'blocked';
     const retry = vi.fn().mockResolvedValue(undefined);
     render(
-      <NoteEditorNavigationGuard canLeave={false} phase="failed" flush={vi.fn()} retry={retry}>
+      <NoteEditorNavigationGuard
+        canLeave={false}
+        phase="failed"
+        flush={vi.fn()}
+        retry={retry}
+        discardDraft={vi.fn()}
+      >
         <p>Editor</p>
       </NoteEditorNavigationGuard>
     );
@@ -66,5 +81,27 @@ describe('NoteEditorNavigationGuard', () => {
     expect(blockerState.reset).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: 'Retry and leave' }));
     await waitFor(() => expect(retry).toHaveBeenCalledOnce());
+  });
+
+  it('requires explicit discard confirmation before a logout navigation proceeds', () => {
+    blockerState.status = 'blocked';
+    blockerState.nextPathname = '/login';
+    const discardDraft = vi.fn();
+    render(
+      <NoteEditorNavigationGuard
+        canLeave={false}
+        phase="dirty"
+        flush={vi.fn()}
+        retry={vi.fn()}
+        discardDraft={discardDraft}
+      >
+        <p>Editor</p>
+      </NoteEditorNavigationGuard>
+    );
+
+    expect(screen.getByRole('dialog')).toHaveTextContent('Sign out with an unsaved note');
+    fireEvent.click(screen.getByRole('button', { name: 'Discard draft and sign out' }));
+    expect(discardDraft).toHaveBeenCalledOnce();
+    expect(blockerState.proceed).toHaveBeenCalledOnce();
   });
 });
