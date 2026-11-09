@@ -19,9 +19,11 @@ function nodeChildren(node: RichTextNode): RichTextNode[] {
 function stableNodeKey(node: RichTextNode): string {
   const serialized = JSON.stringify(node);
   let hash = 2166136261;
-  for (let index = 0; index < serialized.length; index += 1) {
-    hash ^= serialized.charCodeAt(index);
+  for (let index = 0; index < serialized.length;) {
+    const codePoint = serialized.codePointAt(index) ?? 0;
+    hash ^= codePoint;
     hash = Math.imul(hash, 16777619);
+    index += codePoint > 0xffff ? 2 : 1;
   }
   return `${String(node.type)}-${(hash >>> 0).toString(36)}`;
 }
