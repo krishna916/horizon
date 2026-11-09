@@ -35,10 +35,10 @@ export function NotesBrowseProvider({
   }));
 
   const setCollection = useCallback((collection: NoteCollection) => {
-    setState((current) => ({ ...current, collection }));
+    setState((current) => ({ ...current, collection, scrollTop: 0 }));
   }, []);
   const setSort = useCallback((sort: NoteSort) => {
-    setState((current) => ({ ...current, sort }));
+    setState((current) => ({ ...current, sort, scrollTop: 0 }));
   }, []);
   const setView = useCallback(
     (view: NoteViewMode) => {
