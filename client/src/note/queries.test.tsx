@@ -66,7 +66,14 @@ describe('Notes list query', () => {
     });
 
     await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
-    expect(listSpy).toHaveBeenNthCalledWith(1, 'active', 'updated_desc', 0, 20);
+    expect(listSpy).toHaveBeenNthCalledWith(
+      1,
+      'active',
+      'updated_desc',
+      0,
+      20,
+      expect.any(AbortSignal)
+    );
     expect(result.current.hasNextPage).toBe(true);
 
     await act(async () => {
@@ -74,7 +81,14 @@ describe('Notes list query', () => {
     });
 
     await waitFor(() => expect(result.current.data?.pages).toHaveLength(2));
-    expect(listSpy).toHaveBeenNthCalledWith(2, 'active', 'updated_desc', 1, 20);
+    expect(listSpy).toHaveBeenNthCalledWith(
+      2,
+      'active',
+      'updated_desc',
+      1,
+      20,
+      expect.any(AbortSignal)
+    );
     expect(result.current.data?.pages.map(({ data }) => data.items[0]?.title)).toEqual([
       'First page',
       'Second page',
@@ -85,5 +99,25 @@ describe('Notes list query', () => {
     expect(
       queryClient.getQueryCache().find({ queryKey: ['notes', 2, 'list', 'active', 'updated_desc'] })
     ).toBeUndefined();
+  });
+
+  it('keeps inactive Notes pages for the same-owner session', async () => {
+    vi.spyOn(noteApi, 'list').mockResolvedValue(page(0, false, 'Cached'));
+    const { Wrapper, queryClient } = createWrapper();
+    const { unmount } = renderHook(() => useNoteList(1, 'active', 'updated_desc'), {
+      wrapper: Wrapper,
+    });
+    await waitFor(() =>
+      expect(queryClient.getQueryData(['notes', 1, 'list', 'active', 'updated_desc'])).toBeDefined()
+    );
+    unmount();
+    const cachedList = queryClient.getQueryCache().find({
+      queryKey: ['notes', 1, 'list', 'active', 'updated_desc'],
+    });
+    expect(cachedList?.options.gcTime).toBe(Infinity);
+    expect((cachedList?.options as { refetchOnMount?: boolean } | undefined)?.refetchOnMount).toBe(
+      false
+    );
+    expect(queryClient.getQueryData(['notes', 1, 'list', 'active', 'updated_desc'])).toBeDefined();
   });
 });

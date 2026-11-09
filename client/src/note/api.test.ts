@@ -48,4 +48,23 @@ describe('noteApi', () => {
     expect('tags' in summary).toBe(false);
     expect('files' in summary).toBe(false);
   });
+
+  it('passes query cancellation signals through to Axios', async () => {
+    const signal = new AbortController().signal;
+    const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(
+      response<NoteDetail>({
+        ...summary,
+        content: null,
+      }) as never
+    );
+
+    await noteApi.get(7, signal);
+    await noteApi.list('active', 'updated_desc', 2, 20, signal);
+
+    expect(getSpy).toHaveBeenNthCalledWith(1, '/notes/7', { signal });
+    expect(getSpy).toHaveBeenNthCalledWith(2, '/notes', {
+      params: { collection: 'active', sort: 'updated_desc', page: 2, size: 20 },
+      signal,
+    });
+  });
 });

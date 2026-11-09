@@ -168,6 +168,7 @@ test('browses pages and restores collection, sort, view, and scroll on Back', as
   await noteLink.click();
   await expect(page).toHaveURL(/\/notes\/20[1-3]$/);
   await expect(page.getByRole('heading', { name: /Owner 1 note/ })).toBeVisible();
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBe(0);
   expect(api.detailRequests).toHaveLength(1);
 
   await page.goBack();
@@ -189,6 +190,34 @@ test('browses pages and restores collection, sort, view, and scroll on Back', as
     sort: 'title_asc',
     page: 0,
   });
+});
+
+test('keeps paginated pages and browse scroll after a long detail visit', async ({ page }) => {
+  const api = await installNotesApi(page);
+  await page.clock.install();
+  await page.setViewportSize({ width: 1440, height: 420 });
+  await page.goto('/notes');
+  await expect(page.getByRole('heading', { name: 'Note 020' })).toBeVisible();
+  await page.getByRole('button', { name: 'Load more notes' }).click();
+  await expect(page.getByRole('heading', { name: 'Note 040' })).toBeVisible();
+
+  const main = page.locator('main');
+  await main.evaluate((element) => {
+    element.scrollTop = 320;
+  });
+  await page.getByRole('link', { name: /Note 040/ }).evaluate((element) => {
+    (element as HTMLAnchorElement).click();
+  });
+  await expect(page).toHaveURL(/\/notes\/40$/);
+  await expect(page.getByRole('heading', { name: 'Owner 1 note 40' })).toBeVisible();
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBe(0);
+
+  await page.clock.fastForward(5 * 60 * 1000 + 1);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/notes\/?$/);
+  await expect(page.getByRole('heading', { name: 'Note 040' })).toBeVisible();
+  await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBe(320);
+  expect(api.listRequests).toHaveLength(2);
 });
 
 test('persists only the view for one owner and handles blocked storage', async ({ page }) => {

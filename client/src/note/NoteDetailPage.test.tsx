@@ -60,7 +60,7 @@ describe('NoteDetailPage', () => {
     );
     expect(screen.getByLabelText('Note content')).toHaveTextContent('A read-only thought.');
     expect(getSpy).toHaveBeenCalledTimes(1);
-    expect(getSpy).toHaveBeenCalledWith(7);
+    expect(getSpy).toHaveBeenCalledWith(7, expect.any(AbortSignal));
     expect(document.querySelector('input, textarea')).toBeNull();
     expect(screen.getByRole('button', { name: 'Back to Notes' })).toBeInTheDocument();
   });

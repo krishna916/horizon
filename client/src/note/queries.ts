@@ -19,11 +19,14 @@ export function useNoteList(
       userId === undefined
         ? [...noteQueryKeys.all, undefined, 'list', collection, sort]
         : noteQueryKeys.list(userId, collection, sort),
-    queryFn: ({ pageParam }) => noteApi.list(collection, sort, pageParam, 20),
+    queryFn: ({ pageParam, signal }) => noteApi.list(collection, sort, pageParam, 20, signal),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => (lastPage.data.hasNext ? lastPage.data.page + 1 : undefined),
     enabled: userId !== undefined,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    // These private pages stay in memory for same-owner detail visits; logout and owner changes clear them.
+    gcTime: Infinity,
   });
 }
 
@@ -33,9 +36,9 @@ export function useNoteDetail(userId: number | undefined, id: number | null) {
       userId === undefined || id === null
         ? [...noteQueryKeys.all, userId, 'detail', id]
         : noteQueryKeys.detail(userId, id),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (id === null) throw new Error('A valid Note ID is required');
-      return noteApi.get(id);
+      return noteApi.get(id, signal);
     },
     enabled: userId !== undefined && id !== null,
     retry: false,
