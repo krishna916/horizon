@@ -4,6 +4,7 @@ import { routeTree } from './routeTree.gen';
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthSessionProvider } from '@/user/session/AuthSessionProvider';
 import { SessionOwnedTree } from '@/app/SessionOwnedTree';
+import { NoteDraftRecoveryProvider } from '@/note/NoteDraftRecoveryProvider';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,9 +33,11 @@ export function App() {
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <AuthSessionProvider>
-          <SessionOwnedTree>
-            <RouterProvider router={router} />
-          </SessionOwnedTree>
+          <NoteDraftRecoveryProvider>
+            <SessionOwnedTree>
+              <RouterProvider router={router} />
+            </SessionOwnedTree>
+          </NoteDraftRecoveryProvider>
         </AuthSessionProvider>
       </QueryClientProvider>
     </ThemeProvider>

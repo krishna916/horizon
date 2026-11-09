@@ -228,10 +228,13 @@ export class NoteSaveCoordinator {
         const generation = this.generation;
         const latest = await this.transport.get(this.persisted.id);
         if (this.disposed || generation !== this.generation) return;
-        if (latest.version !== this.persisted.version) {
-          if (this.pendingUpdate && noteDraftsEqual(this.pendingUpdate.draft, noteDraft(latest))) {
-            this.persisted.version = latest.version;
-            this.baseline = { ...this.pendingUpdate.draft };
+        if (this.pendingUpdate && noteDraftsEqual(this.pendingUpdate.draft, noteDraft(latest))) {
+          this.acknowledgeUpdate(this.pendingUpdate, latest.version);
+        } else if (latest.version !== this.persisted.version) {
+          if (!this.pendingUpdate) {
+            this.phase = 'conflict';
+            this.publish();
+            return;
           } else {
             this.phase = 'conflict';
             this.publish();
