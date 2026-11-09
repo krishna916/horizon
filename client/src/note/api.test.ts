@@ -15,7 +15,7 @@ const summary: NoteSummary = {
   updatedAt: '2026-11-09T10:00:00Z',
 };
 
-const response = <T,>(data: T) => ({ data }) as AxiosResponse<T>;
+const response = <T>(data: T) => ({ data }) as AxiosResponse<T>;
 
 describe('noteApi', () => {
   afterEach(() => vi.restoreAllMocks());

@@ -14,7 +14,7 @@ function getMain(element: HTMLElement | null): HTMLElement | null {
 function LoadingSkeleton({ view }: { readonly view: 'cards' | 'list' }) {
   const items = view === 'cards' ? 8 : 8;
   return (
-    <output className="block" role="status" aria-busy="true">
+    <output className="block" aria-busy="true">
       <span className="sr-only">Loading notes…</span>
       {view === 'cards' ? (
         <div
@@ -49,8 +49,6 @@ export function NotesWorkspacePage() {
   const query = useNoteList(userId, state.collection, state.sort);
   const rootRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLElement | null>(null);
-  const rememberScrollRef = useRef(rememberScroll);
-  rememberScrollRef.current = rememberScroll;
 
   const notes = useMemo(
     () => query.data?.pages.flatMap((page) => page.data.items) ?? [],
@@ -61,9 +59,9 @@ export function NotesWorkspacePage() {
   useLayoutEffect(() => {
     mainRef.current = getMain(rootRef.current);
     return () => {
-      if (mainRef.current) rememberScrollRef.current(mainRef.current.scrollTop);
+      if (mainRef.current) rememberScroll(mainRef.current.scrollTop);
     };
-  }, []);
+  }, [rememberScroll]);
 
   useLayoutEffect(() => {
     if (!query.isSuccess) return;
@@ -98,7 +96,7 @@ export function NotesWorkspacePage() {
         <h1 id="notes-heading" className="text-3xl font-medium text-foreground">
           Notes
         </h1>
-        <output className="mt-8 block text-sm text-muted-foreground" role="status">
+        <output className="mt-8 block text-sm text-muted-foreground">
           Verifying your session…
         </output>
       </section>

@@ -7,7 +7,11 @@ import { noteApi } from './api';
 import type { NoteListResponse } from './types';
 import { useNoteList } from './queries';
 
-const page = (pageNumber: number, hasNext: boolean, title: string): AxiosResponse<NoteListResponse> =>
+const page = (
+  pageNumber: number,
+  hasNext: boolean,
+  title: string
+): AxiosResponse<NoteListResponse> =>
   ({
     data: {
       items: [

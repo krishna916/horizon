@@ -44,9 +44,7 @@ export function NoteDetailPage({
             </button>
           </div>
         ) : (
-          <output role="status" className="mt-8 block">
-            Verifying your session…
-          </output>
+          <output className="mt-8 block">Verifying your session…</output>
         )}
       </section>
     );
@@ -95,7 +93,6 @@ export function NoteDetailPage({
           Loading note
         </h1>
         <output
-          role="status"
           aria-busy="true"
           className="block animate-pulse rounded-xl bg-muted/50 p-8 motion-reduce:animate-none"
         >
