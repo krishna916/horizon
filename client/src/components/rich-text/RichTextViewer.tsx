@@ -8,9 +8,10 @@ import { getRichTextExtensions } from './richTextExtensions';
 
 interface RichTextViewerProps {
   readonly value: RichTextDocument | null;
+  readonly ariaLabel?: string;
 }
 
-export function RichTextViewer({ value }: RichTextViewerProps) {
+export function RichTextViewer({ value, ariaLabel = 'Task description' }: RichTextViewerProps) {
   const supported = isSupportedRichTextDocument(value);
   const editor = useEditor(
     {
@@ -20,12 +21,12 @@ export function RichTextViewer({ value }: RichTextViewerProps) {
       immediatelyRender: false,
       editorProps: {
         attributes: {
-          'aria-label': 'Task description',
+          'aria-label': ariaLabel,
           class: 'rich-text-content',
         },
       },
     },
-    [value, supported]
+    [value, supported, ariaLabel]
   );
 
   if (!supported) {

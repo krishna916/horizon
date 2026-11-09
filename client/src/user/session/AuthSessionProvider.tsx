@@ -49,7 +49,7 @@ function isUnauthorized(error: unknown): boolean {
 }
 
 function isPrivateQuery(queryKey: readonly unknown[]): boolean {
-  return queryKey[0] === 'tasks' || queryKey[0] === 'tags';
+  return queryKey[0] === 'tasks' || queryKey[0] === 'tags' || queryKey[0] === 'notes';
 }
 
 export function AuthSessionProvider({ children }: { readonly children: ReactNode }) {

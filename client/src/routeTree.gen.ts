@@ -19,7 +19,10 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedNotesRouteImport } from './routes/_authenticated/notes'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks.index'
+import { Route as AuthenticatedNotesIndexRouteImport } from './routes/_authenticated/notes.index'
 import { Route as AuthenticatedTasksIdRouteImport } from './routes/_authenticated/tasks.$id'
+import { Route as AuthenticatedNotesNewRouteImport } from './routes/_authenticated/notes.new'
+import { Route as AuthenticatedNotesIdRouteImport } from './routes/_authenticated/notes.$id'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -70,10 +73,25 @@ const AuthenticatedTasksIndexRoute = AuthenticatedTasksIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedTasksRoute,
 } as any)
+const AuthenticatedNotesIndexRoute = AuthenticatedNotesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedNotesRoute,
+} as any)
 const AuthenticatedTasksIdRoute = AuthenticatedTasksIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => AuthenticatedTasksRoute,
+} as any)
+const AuthenticatedNotesNewRoute = AuthenticatedNotesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AuthenticatedNotesRoute,
+} as any)
+const AuthenticatedNotesIdRoute = AuthenticatedNotesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedNotesRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -81,22 +99,27 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/inbox': typeof AuthenticatedInboxRoute
-  '/notes': typeof AuthenticatedNotesRoute
+  '/notes': typeof AuthenticatedNotesRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRoute
   '/tasks': typeof AuthenticatedTasksRouteWithChildren
   '/today': typeof AuthenticatedTodayRoute
+  '/notes/$id': typeof AuthenticatedNotesIdRoute
+  '/notes/new': typeof AuthenticatedNotesNewRoute
   '/tasks/$id': typeof AuthenticatedTasksIdRoute
+  '/notes/': typeof AuthenticatedNotesIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/inbox': typeof AuthenticatedInboxRoute
-  '/notes': typeof AuthenticatedNotesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/today': typeof AuthenticatedTodayRoute
   '/': typeof AuthenticatedIndexRoute
+  '/notes/$id': typeof AuthenticatedNotesIdRoute
+  '/notes/new': typeof AuthenticatedNotesNewRoute
   '/tasks/$id': typeof AuthenticatedTasksIdRoute
+  '/notes': typeof AuthenticatedNotesIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
 }
 export interface FileRoutesById {
@@ -105,12 +128,15 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
-  '/_authenticated/notes': typeof AuthenticatedNotesRoute
+  '/_authenticated/notes': typeof AuthenticatedNotesRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/tasks': typeof AuthenticatedTasksRouteWithChildren
   '/_authenticated/today': typeof AuthenticatedTodayRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/notes/$id': typeof AuthenticatedNotesIdRoute
+  '/_authenticated/notes/new': typeof AuthenticatedNotesNewRoute
   '/_authenticated/tasks/$id': typeof AuthenticatedTasksIdRoute
+  '/_authenticated/notes/': typeof AuthenticatedNotesIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
 }
 export interface FileRouteTypes {
@@ -124,18 +150,23 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tasks'
     | '/today'
+    | '/notes/$id'
+    | '/notes/new'
     | '/tasks/$id'
+    | '/notes/'
     | '/tasks/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/register'
     | '/inbox'
-    | '/notes'
     | '/settings'
     | '/today'
     | '/'
+    | '/notes/$id'
+    | '/notes/new'
     | '/tasks/$id'
+    | '/notes'
     | '/tasks'
   id:
     | '__root__'
@@ -148,7 +179,10 @@ export interface FileRouteTypes {
     | '/_authenticated/tasks'
     | '/_authenticated/today'
     | '/_authenticated/'
+    | '/_authenticated/notes/$id'
+    | '/_authenticated/notes/new'
     | '/_authenticated/tasks/$id'
+    | '/_authenticated/notes/'
     | '/_authenticated/tasks/'
   fileRoutesById: FileRoutesById
 }
@@ -230,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTasksIndexRouteImport
       parentRoute: typeof AuthenticatedTasksRoute
     }
+    '/_authenticated/notes/': {
+      id: '/_authenticated/notes/'
+      path: '/'
+      fullPath: '/notes/'
+      preLoaderRoute: typeof AuthenticatedNotesIndexRouteImport
+      parentRoute: typeof AuthenticatedNotesRoute
+    }
     '/_authenticated/tasks/$id': {
       id: '/_authenticated/tasks/$id'
       path: '/$id'
@@ -237,8 +278,37 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTasksIdRouteImport
       parentRoute: typeof AuthenticatedTasksRoute
     }
+    '/_authenticated/notes/new': {
+      id: '/_authenticated/notes/new'
+      path: '/new'
+      fullPath: '/notes/new'
+      preLoaderRoute: typeof AuthenticatedNotesNewRouteImport
+      parentRoute: typeof AuthenticatedNotesRoute
+    }
+    '/_authenticated/notes/$id': {
+      id: '/_authenticated/notes/$id'
+      path: '/$id'
+      fullPath: '/notes/$id'
+      preLoaderRoute: typeof AuthenticatedNotesIdRouteImport
+      parentRoute: typeof AuthenticatedNotesRoute
+    }
   }
 }
+
+interface AuthenticatedNotesRouteChildren {
+  AuthenticatedNotesIdRoute: typeof AuthenticatedNotesIdRoute
+  AuthenticatedNotesNewRoute: typeof AuthenticatedNotesNewRoute
+  AuthenticatedNotesIndexRoute: typeof AuthenticatedNotesIndexRoute
+}
+
+const AuthenticatedNotesRouteChildren: AuthenticatedNotesRouteChildren = {
+  AuthenticatedNotesIdRoute: AuthenticatedNotesIdRoute,
+  AuthenticatedNotesNewRoute: AuthenticatedNotesNewRoute,
+  AuthenticatedNotesIndexRoute: AuthenticatedNotesIndexRoute,
+}
+
+const AuthenticatedNotesRouteWithChildren =
+  AuthenticatedNotesRoute._addFileChildren(AuthenticatedNotesRouteChildren)
 
 interface AuthenticatedTasksRouteChildren {
   AuthenticatedTasksIdRoute: typeof AuthenticatedTasksIdRoute
@@ -255,7 +325,7 @@ const AuthenticatedTasksRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
-  AuthenticatedNotesRoute: typeof AuthenticatedNotesRoute
+  AuthenticatedNotesRoute: typeof AuthenticatedNotesRouteWithChildren
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRouteWithChildren
   AuthenticatedTodayRoute: typeof AuthenticatedTodayRoute
@@ -264,7 +334,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
-  AuthenticatedNotesRoute: AuthenticatedNotesRoute,
+  AuthenticatedNotesRoute: AuthenticatedNotesRouteWithChildren,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTasksRoute: AuthenticatedTasksRouteWithChildren,
   AuthenticatedTodayRoute: AuthenticatedTodayRoute,

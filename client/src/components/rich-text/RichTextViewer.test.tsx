@@ -3,6 +3,21 @@ import { describe, expect, it } from 'vitest';
 import { RichTextViewer } from './RichTextViewer';
 
 describe('RichTextViewer', () => {
+  it('uses an optional accessible label without changing the Task default', () => {
+    const { rerender } = render(<RichTextViewer value={null} ariaLabel="Note content" />);
+
+    expect(document.querySelector('[contenteditable="false"]')).toHaveAttribute(
+      'aria-label',
+      'Note content'
+    );
+
+    rerender(<RichTextViewer value={null} />);
+    expect(document.querySelector('[contenteditable="false"]')).toHaveAttribute(
+      'aria-label',
+      'Task description'
+    );
+  });
+
   it('renders supported formatting as semantic, noneditable HTML', () => {
     render(
       <RichTextViewer
