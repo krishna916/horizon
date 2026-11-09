@@ -16,37 +16,51 @@ function nodeChildren(node: RichTextNode): RichTextNode[] {
   return Array.isArray(node.content) ? node.content.filter(isNode) : [];
 }
 
+function stableNodeKey(node: RichTextNode): string {
+  const serialized = JSON.stringify(node);
+  let hash = 2166136261;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${String(node.type)}-${(hash >>> 0).toString(36)}`;
+}
+
+function renderChildren(node: RichTextNode, interactiveLinks: boolean): ReactNode[] {
+  const occurrences = new Map<string, number>();
+  return nodeChildren(node).map((child) => {
+    const baseKey = stableNodeKey(child);
+    const occurrence = occurrences.get(baseKey) ?? 0;
+    occurrences.set(baseKey, occurrence + 1);
+    return renderNode(child, `${baseKey}-${occurrence}`, interactiveLinks);
+  });
+}
+
 function renderText(node: RichTextNode, interactiveLinks: boolean): ReactNode {
   let content: ReactNode = typeof node.text === 'string' ? node.text : '';
   const marks = Array.isArray(node.marks) ? node.marks.filter(isNode) : [];
 
-  marks.forEach((mark, index) => {
+  marks.forEach((mark) => {
     switch (mark.type) {
       case 'bold':
-        content = <strong key={`bold-${index}`}>{content}</strong>;
+        content = <strong>{content}</strong>;
         break;
       case 'italic':
-        content = <em key={`italic-${index}`}>{content}</em>;
+        content = <em>{content}</em>;
         break;
       case 'code':
-        content = <code key={`code-${index}`}>{content}</code>;
+        content = <code>{content}</code>;
         break;
       case 'link': {
         const attrs = isNode(mark.attrs) ? mark.attrs : {};
         if (isSafeRichTextHref(attrs.href)) {
           const title = typeof attrs.title === 'string' ? attrs.title : undefined;
           content = interactiveLinks ? (
-            <a
-              key={`link-${index}`}
-              href={attrs.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={title}
-            >
+            <a href={attrs.href} target="_blank" rel="noopener noreferrer" title={title}>
               {content}
             </a>
           ) : (
-            <span key={`link-${index}`} className="underline decoration-dotted" title={title}>
+            <span className="underline decoration-dotted" title={title}>
               {content}
             </span>
           );
@@ -59,10 +73,8 @@ function renderText(node: RichTextNode, interactiveLinks: boolean): ReactNode {
   return content;
 }
 
-function renderNode(node: RichTextNode, key: number, interactiveLinks: boolean): ReactNode {
-  const children = nodeChildren(node).map((child, index) =>
-    renderNode(child, index, interactiveLinks)
-  );
+function renderNode(node: RichTextNode, key: string, interactiveLinks: boolean): ReactNode {
+  const children = renderChildren(node, interactiveLinks);
   const attrs = isNode(node.attrs) ? node.attrs : {};
 
   switch (node.type) {
@@ -138,7 +150,11 @@ export function NotePreview({
   const normalized = normalizeRichTextDocument(document);
   if (normalized === null) return null;
 
-  return <div className="note-preview">{renderNode(normalized, 0, interactiveLinks)}</div>;
+  return (
+    <div className="note-preview">
+      {renderNode(normalized, stableNodeKey(normalized), interactiveLinks)}
+    </div>
+  );
 }
 
 export function noteListExcerpt(document: RichTextDocument | null): string {

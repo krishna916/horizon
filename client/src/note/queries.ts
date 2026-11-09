@@ -19,7 +19,7 @@ export function useNoteList(
       userId === undefined
         ? [...noteQueryKeys.all, undefined, 'list', collection, sort]
         : noteQueryKeys.list(userId, collection, sort),
-    queryFn: async ({ pageParam }) => noteApi.list(collection, sort, pageParam, 20),
+    queryFn: ({ pageParam }) => noteApi.list(collection, sort, pageParam, 20),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => (lastPage.data.hasNext ? lastPage.data.page + 1 : undefined),
     enabled: userId !== undefined,
@@ -33,7 +33,7 @@ export function useNoteDetail(userId: number | undefined, id: number | null) {
       userId === undefined || id === null
         ? [...noteQueryKeys.all, userId, 'detail', id]
         : noteQueryKeys.detail(userId, id),
-    queryFn: async () => {
+    queryFn: () => {
       if (id === null) throw new Error('A valid Note ID is required');
       return noteApi.get(id);
     },
