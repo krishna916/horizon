@@ -113,4 +113,27 @@ describe('Notes private session queries', () => {
       queryClient.getQueryData(['notes', 1, 'list', 'active', 'updated_desc'])
     ).toBeUndefined();
   });
+
+  it('cancels a pending Notes request and discards owner data on account switch', async () => {
+    const queryClient = renderSession();
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('1'));
+    let requestSignal: AbortSignal | undefined;
+    void queryClient
+      .fetchQuery({
+        queryKey: ['notes', 1, 'detail', 7],
+        queryFn: ({ signal }) => {
+          requestSignal = signal;
+          return new Promise<never>(() => undefined);
+        },
+      })
+      .catch(() => undefined);
+
+    await waitFor(() => expect(requestSignal).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Switch account' }));
+
+    await waitFor(() => expect(requestSignal?.aborted).toBe(true));
+    expect(queryClient.getQueryData(['notes', 1, 'detail', 7])).toBeUndefined();
+    expect(queryClient.getQueryData(['notes', 2, 'detail', 7])).toBeUndefined();
+    expect(screen.getByTestId('user')).toHaveTextContent('2');
+  });
 });

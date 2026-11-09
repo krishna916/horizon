@@ -15,12 +15,13 @@ export function useNoteList(
   sort: NoteSort
 ) {
   return useInfiniteQuery({
-    queryKey: userId === undefined ? [...noteQueryKeys.all, undefined, 'list', collection, sort] : noteQueryKeys.list(userId, collection, sort),
-    queryFn: async ({ pageParam }) =>
-      noteApi.list(collection, sort, pageParam, 20),
+    queryKey:
+      userId === undefined
+        ? [...noteQueryKeys.all, undefined, 'list', collection, sort]
+        : noteQueryKeys.list(userId, collection, sort),
+    queryFn: async ({ pageParam }) => noteApi.list(collection, sort, pageParam, 20),
     initialPageParam: 0,
-    getNextPageParam: (lastPage) =>
-      lastPage.data.hasNext ? lastPage.data.page + 1 : undefined,
+    getNextPageParam: (lastPage) => (lastPage.data.hasNext ? lastPage.data.page + 1 : undefined),
     enabled: userId !== undefined,
     refetchOnWindowFocus: false,
   });
@@ -37,6 +38,7 @@ export function useNoteDetail(userId: number | undefined, id: number | null) {
       return noteApi.get(id);
     },
     enabled: userId !== undefined && id !== null,
+    retry: false,
     refetchOnWindowFocus: false,
   });
 }
