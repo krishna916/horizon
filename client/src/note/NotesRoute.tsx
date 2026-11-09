@@ -21,14 +21,15 @@ export function NotesRoute() {
     setLastVerifiedOwner(null);
   }
 
-  const owner =
-    phase === 'verified' && verifiedUserId !== null
-      ? { userId: verifiedUserId, ownerRevision }
-      : phase === 'unauthenticated'
-        ? null
-        : lastVerifiedOwner;
+  let owner = lastVerifiedOwner;
+  if (phase === 'verified' && verifiedUserId !== null) {
+    owner = { userId: verifiedUserId, ownerRevision };
+  } else if (phase === 'unauthenticated') {
+    owner = null;
+  }
   if (owner === null) {
-    return phase === 'unauthenticated' ? null : <output>Verifying your session…</output>;
+    if (phase === 'unauthenticated') return null;
+    return <output>Verifying your session…</output>;
   }
 
   return (
