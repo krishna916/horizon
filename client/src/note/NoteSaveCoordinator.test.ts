@@ -391,6 +391,7 @@ describe('NoteSaveCoordinator', () => {
       persisted: { id: 9, version: 6 },
       phase: 'saved',
       hasUnsavedChanges: false,
+      replacementRevision: 1,
     });
     coordinator.dispose();
   });

@@ -16,6 +16,7 @@ export interface NoteSaveSnapshot {
   persisted: { id: number; version: number } | null;
   phase: NoteSavePhase;
   hasUnsavedChanges: boolean;
+  replacementRevision: number;
   frozenCreateRequest?: { body: ReturnType<typeof normalizeNoteDraft>; key: string };
 }
 
@@ -83,6 +84,7 @@ export class NoteSaveCoordinator {
   private draft: NoteDraft;
   private localRevision = 0;
   private confirmedRevision = 0;
+  private replacementRevision = 0;
   private persisted: { id: number; version: number } | null;
   private baseline: NoteDraft;
   private phase: NoteSavePhase = 'clean';
@@ -209,6 +211,7 @@ export class NoteSaveCoordinator {
       this.pendingCreate = null;
       this.localRevision += 1;
       this.confirmedRevision = this.localRevision;
+      this.replacementRevision += 1;
       this.phase = 'saved';
       this.publish();
       return;
@@ -304,6 +307,7 @@ export class NoteSaveCoordinator {
       confirmedRevision: this.confirmedRevision,
       persisted: this.persisted ? { ...this.persisted } : null,
       phase: this.phase,
+      replacementRevision: this.replacementRevision,
       hasUnsavedChanges:
         this.hasWork() ||
         this.localRevision > this.confirmedRevision ||

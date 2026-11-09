@@ -93,6 +93,47 @@ describe('RichTextEditor', () => {
     );
   });
 
+  it('replaces content only when the explicit replacement key changes', async () => {
+    const onChange = vi.fn();
+    const local = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Local edits' }] }],
+    } satisfies RichTextDocument;
+    const server = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Server version' }] }],
+    } satisfies RichTextDocument;
+    const { rerender } = render(
+      <RichTextEditor
+        value={initialDocument}
+        onChange={onChange}
+        ariaLabel="Note content"
+        externalReplacementKey={0}
+      />
+    );
+    const editor = await screen.findByLabelText('Note content editor');
+
+    rerender(
+      <RichTextEditor
+        value={local}
+        onChange={onChange}
+        ariaLabel="Note content"
+        externalReplacementKey={0}
+      />
+    );
+    expect(editor).toHaveTextContent('Task notes');
+
+    rerender(
+      <RichTextEditor
+        value={server}
+        onChange={onChange}
+        ariaLabel="Note content"
+        externalReplacementKey={1}
+      />
+    );
+    await waitFor(() => expect(editor).toHaveTextContent('Server version'));
+  });
+
   it('toggles marks and block formatting and emits JSON documents', async () => {
     const onChange = vi.fn();
     render(
