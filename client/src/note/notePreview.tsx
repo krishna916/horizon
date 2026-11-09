@@ -16,7 +16,7 @@ function nodeChildren(node: RichTextNode): RichTextNode[] {
   return Array.isArray(node.content) ? node.content.filter(isNode) : [];
 }
 
-function renderText(node: RichTextNode): ReactNode {
+function renderText(node: RichTextNode, interactiveLinks: boolean): ReactNode {
   let content: ReactNode = typeof node.text === 'string' ? node.text : '';
   const marks = Array.isArray(node.marks) ? node.marks.filter(isNode) : [];
 
@@ -34,16 +34,21 @@ function renderText(node: RichTextNode): ReactNode {
       case 'link': {
         const attrs = isNode(mark.attrs) ? mark.attrs : {};
         if (isSafeRichTextHref(attrs.href)) {
-          content = (
+          const title = typeof attrs.title === 'string' ? attrs.title : undefined;
+          content = interactiveLinks ? (
             <a
               key={`link-${index}`}
               href={attrs.href}
               target="_blank"
               rel="noopener noreferrer"
-              title={typeof attrs.title === 'string' ? attrs.title : undefined}
+              title={title}
             >
               {content}
             </a>
+          ) : (
+            <span key={`link-${index}`} className="underline decoration-dotted" title={title}>
+              {content}
+            </span>
           );
         }
         break;
@@ -54,15 +59,17 @@ function renderText(node: RichTextNode): ReactNode {
   return content;
 }
 
-function renderNode(node: RichTextNode, key: number): ReactNode {
-  const children = nodeChildren(node).map((child, index) => renderNode(child, index));
+function renderNode(node: RichTextNode, key: number, interactiveLinks: boolean): ReactNode {
+  const children = nodeChildren(node).map((child, index) =>
+    renderNode(child, index, interactiveLinks)
+  );
   const attrs = isNode(node.attrs) ? node.attrs : {};
 
   switch (node.type) {
     case 'doc':
       return <div key={key}>{children}</div>;
     case 'text':
-      return <span key={key}>{renderText(node)}</span>;
+      return <span key={key}>{renderText(node, interactiveLinks)}</span>;
     case 'hardBreak':
       return <br key={key} />;
     case 'horizontalRule':
@@ -116,7 +123,13 @@ function renderNode(node: RichTextNode, key: number): ReactNode {
   }
 }
 
-export function NotePreview({ document }: { readonly document: RichTextDocument | null }) {
+export function NotePreview({
+  document,
+  interactiveLinks = true,
+}: {
+  readonly document: RichTextDocument | null;
+  readonly interactiveLinks?: boolean;
+}) {
   if (document === null) return null;
   if (!isSupportedRichTextDocument(document)) {
     return <output aria-live="polite">This preview can’t be displayed.</output>;
@@ -125,7 +138,7 @@ export function NotePreview({ document }: { readonly document: RichTextDocument 
   const normalized = normalizeRichTextDocument(document);
   if (normalized === null) return null;
 
-  return <div className="note-preview">{renderNode(normalized, 0)}</div>;
+  return <div className="note-preview">{renderNode(normalized, 0, interactiveLinks)}</div>;
 }
 
 export function noteListExcerpt(document: RichTextDocument | null): string {
