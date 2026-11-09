@@ -19,6 +19,17 @@ export interface NoteDetail extends Omit<NoteSummary, 'preview'> {
   content: RichTextDocument | null;
 }
 
+export interface CreateNoteRequest {
+  title: string | null;
+  content: RichTextDocument | null;
+}
+
+export interface UpdateNoteRequest {
+  expectedVersion: number;
+  title?: string | null;
+  content?: RichTextDocument | null;
+}
+
 export interface NoteListResponse {
   items: NoteSummary[];
   page: number;
