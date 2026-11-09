@@ -290,6 +290,8 @@ export function NotesWorkspacePage() {
   const query = useNoteList(userId, state.collection, state.sort);
   const rootRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLElement | null>(null);
+  const restoredRef = useRef(false);
+  const browseKeyRef = useRef<string | null>(null);
   const notes = useMemo(
     () => query.data?.pages.flatMap((page) => page.data.items) ?? [],
     [query.data]
@@ -297,17 +299,33 @@ export function NotesWorkspacePage() {
   const counts = query.data?.pages[0]?.data.counts;
 
   useLayoutEffect(() => {
-    mainRef.current = getMain(rootRef.current);
+    const main = getMain(rootRef.current);
+    if (main !== null) mainRef.current = main;
     return () => {
       if (mainRef.current) rememberScroll(mainRef.current.scrollTop);
     };
   }, [rememberScroll]);
 
   useLayoutEffect(() => {
-    if (!query.isSuccess) return;
+    if (!query.isSuccess || restoredRef.current) return;
     const main = getMain(rootRef.current);
-    if (main && main.scrollTop !== state.scrollTop) main.scrollTop = state.scrollTop;
-  }, [query.data, query.isSuccess, state.scrollTop]);
+    if (!main) return;
+    mainRef.current = main;
+    if (main.scrollTop !== state.scrollTop) main.scrollTop = state.scrollTop;
+    restoredRef.current = true;
+  }, [query.isSuccess, state.scrollTop]);
+
+  useLayoutEffect(() => {
+    const browseKey = `${state.collection}:${state.sort}`;
+    if (browseKeyRef.current === null) {
+      browseKeyRef.current = browseKey;
+      return;
+    }
+    if (browseKeyRef.current !== browseKey) {
+      browseKeyRef.current = browseKey;
+      if (mainRef.current) mainRef.current.scrollTop = 0;
+    }
+  }, [state.collection, state.sort]);
 
   if (phase !== 'verified' || userId === undefined) {
     return <SessionStatus phase={phase} verifySession={verifySession} />;

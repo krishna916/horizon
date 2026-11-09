@@ -106,7 +106,7 @@ describe('NotesWorkspacePage', () => {
     );
     expect(screen.getByRole('button', { name: /Active/ })).toHaveTextContent('21');
     expect(screen.getByRole('button', { name: /Archived/ })).toHaveTextContent('3');
-    expect(listSpy).toHaveBeenCalledWith('active', 'updated_desc', 0, 20);
+    expect(listSpy).toHaveBeenCalledWith('active', 'updated_desc', 0, 20, expect.any(AbortSignal));
 
     fireEvent.click(screen.getByRole('button', { name: 'List' }));
     expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
@@ -115,14 +115,31 @@ describe('NotesWorkspacePage', () => {
     expect(listSpy).toHaveBeenCalledTimes(1);
 
     listSpy.mockResolvedValue(page([summary(9)], 0, false));
+    const main = document.querySelector('main')!;
+    main.scrollTop = 250;
     fireEvent.click(screen.getByRole('button', { name: /Archived/ }));
+    expect(main.scrollTop).toBe(0);
     await waitFor(() =>
-      expect(listSpy).toHaveBeenLastCalledWith('archived', 'updated_desc', 0, 20)
+      expect(listSpy).toHaveBeenLastCalledWith(
+        'archived',
+        'updated_desc',
+        0,
+        20,
+        expect.any(AbortSignal)
+      )
     );
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort notes' }), {
       target: { value: 'title_asc' },
     });
-    await waitFor(() => expect(listSpy).toHaveBeenLastCalledWith('archived', 'title_asc', 0, 20));
+    await waitFor(() =>
+      expect(listSpy).toHaveBeenLastCalledWith(
+        'archived',
+        'title_asc',
+        0,
+        20,
+        expect.any(AbortSignal)
+      )
+    );
     expect(detailSpy).not.toHaveBeenCalled();
   });
 
@@ -142,7 +159,14 @@ describe('NotesWorkspacePage', () => {
     fireEvent.click(loadMore);
 
     await waitFor(() => expect(screen.getByRole('link', { name: /Note 40/ })).toBeInTheDocument());
-    expect(listSpy).toHaveBeenNthCalledWith(2, 'active', 'updated_desc', 1, 20);
+    expect(listSpy).toHaveBeenNthCalledWith(
+      2,
+      'active',
+      'updated_desc',
+      1,
+      20,
+      expect.any(AbortSignal)
+    );
     expect(screen.queryByRole('button', { name: 'Load more notes' })).toBeNull();
     const grid = screen.getByRole('list', { name: 'Notes cards' });
     const titles = within(grid)
@@ -151,6 +175,32 @@ describe('NotesWorkspacePage', () => {
     expect(titles[0]).toBe('Note 1');
     expect(titles[19]).toBe('Note 20');
     expect(titles[20]).toBe('Note 21');
+  });
+
+  it('does not restore the old scroll position again when another page is appended', async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => summary(index + 1));
+    let resolveNext!: (value: AxiosResponse<NoteListResponse>) => void;
+    vi.spyOn(noteApi, 'list')
+      .mockResolvedValueOnce(page(firstPage, 0, true))
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveNext = resolve)) as never);
+    renderWorkspace();
+
+    await waitFor(() => expect(screen.getByRole('link', { name: /Note 20/ })).toBeInTheDocument());
+    const main = document.querySelector('main')!;
+    main.scrollTop = 410;
+    fireEvent.click(screen.getByRole('button', { name: 'Load more notes' }));
+    await waitFor(() => expect(resolveNext).toBeTypeOf('function'));
+    await act(async () =>
+      resolveNext(
+        page(
+          Array.from({ length: 20 }, (_, index) => summary(index + 21)),
+          1,
+          false
+        )
+      )
+    );
+    await waitFor(() => expect(screen.getByRole('link', { name: /Note 40/ })).toBeInTheDocument());
+    expect(main.scrollTop).toBe(410);
   });
 
   it('keeps loaded notes after a next-page error and lets the user retry', async () => {
