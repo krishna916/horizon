@@ -20,6 +20,7 @@ export function NoteListRow({ note }: { readonly note: NoteSummary }) {
       <Link
         to="/notes/$id"
         params={{ id: String(note.id) }}
+        state={{ horizonNoteNavigation: { kind: 'from-workspace', noteId: note.id } }}
         className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4"
       >
         <span className="min-w-0">

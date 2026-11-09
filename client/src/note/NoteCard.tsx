@@ -19,6 +19,7 @@ export function NoteCard({ note }: { readonly note: NoteSummary }) {
       <Link
         to="/notes/$id"
         params={{ id: String(note.id) }}
+        state={{ horizonNoteNavigation: { kind: 'from-workspace', noteId: note.id } }}
         className="flex max-h-[440px] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <div className="flex min-h-0 flex-1 flex-col p-[21px]">

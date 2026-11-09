@@ -1,14 +1,17 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Outlet } from '@tanstack/react-router';
+import { useAuthSession } from '@/user/session/AuthSessionProvider';
+import { NotesBrowseProvider } from '@/note/NotesBrowseContext';
 
 export const Route = createFileRoute('/_authenticated/notes')({
-  component: NotesPlaceholder,
+  component: NotesRoute,
 });
 
-function NotesPlaceholder() {
+function NotesRoute() {
+  const { phase, verifiedUserId } = useAuthSession();
+  if (phase !== 'verified' || verifiedUserId == null) return <Outlet />;
   return (
-    <div className="p-8">
-      <h2 className="text-2xl font-semibold mb-4 text-foreground">Notes</h2>
-      <p className="text-muted-foreground">Notes (Placeholder)</p>
-    </div>
+    <NotesBrowseProvider key={verifiedUserId} userId={verifiedUserId}>
+      <Outlet />
+    </NotesBrowseProvider>
   );
 }
