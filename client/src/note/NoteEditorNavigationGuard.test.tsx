@@ -42,11 +42,48 @@ describe('NoteEditorNavigationGuard', () => {
     vi.clearAllMocks();
   });
 
-  it('blocks dirty navigation and native unload, while allowing clean and create-to-ID replacement', () => {
+  it('uses current coordinator state when a saved Note navigation races the next render', () => {
+    const hold = vi.fn();
     render(
       <NoteEditorNavigationGuard
-        canLeave={false}
-        canLeaveNow={() => true}
+        canLeaveNow={() => false}
+        holdQueuedWritesForNavigation={hold}
+        releaseQueuedWritesForNavigation={noHold}
+        getNavigationSaveStateNow={() => ({
+          writeInFlight: false,
+          outcomeUncertain: false,
+          hasUnsavedChanges: true,
+          persistedNoteId: 7,
+        })}
+        persistedNoteIdNow={() => 7}
+        // The render can still say "saved" while the synchronous coordinator
+        // snapshot has already observed the edit.
+        phase="saved"
+        writeInFlight={false}
+        outcomeUncertain={false}
+        flush={vi.fn()}
+        retry={vi.fn()}
+        discardDraft={vi.fn()}
+      >
+        <p>Editor</p>
+      </NoteEditorNavigationGuard>
+    );
+
+    expect(
+      blockerState.options?.shouldBlockFn({
+        current: { pathname: '/notes/7' },
+        next: { pathname: '/login' },
+      })
+    ).toBe(true);
+    expect(blockerState.options?.enableBeforeUnload()).toBe(true);
+    expect(hold).toHaveBeenCalledOnce();
+  });
+
+  it('blocks dirty navigation and native unload, while allowing clean and create-to-ID replacement', () => {
+    let isDirty = true;
+    render(
+      <NoteEditorNavigationGuard
+        canLeaveNow={() => !isDirty}
         holdQueuedWritesForNavigation={noHold}
         releaseQueuedWritesForNavigation={noHold}
         getNavigationSaveStateNow={cleanNavigationState}
@@ -80,6 +117,15 @@ describe('NoteEditorNavigationGuard', () => {
         next: { pathname: '/notes/99' },
       })
     ).toBe(true);
+
+    isDirty = false;
+    expect(blockerState.options?.enableBeforeUnload()).toBe(false);
+    expect(
+      blockerState.options?.shouldBlockFn({
+        current: { pathname: '/notes/1' },
+        next: { pathname: '/tasks' },
+      })
+    ).toBe(false);
   });
 
   it('offers Stay or Discard Tags and Leave for a tag-only draft, including beforeunload', () => {
@@ -87,7 +133,6 @@ describe('NoteEditorNavigationGuard', () => {
     const discardDraft = vi.fn();
     render(
       <NoteEditorNavigationGuard
-        canLeave={true}
         hasTagOnlyDraft={true}
         canLeaveNow={() => true}
         holdQueuedWritesForNavigation={noHold}
@@ -127,7 +172,6 @@ describe('NoteEditorNavigationGuard', () => {
     const retry = vi.fn().mockResolvedValue(undefined);
     render(
       <NoteEditorNavigationGuard
-        canLeave={false}
         canLeaveNow={() => true}
         holdQueuedWritesForNavigation={noHold}
         releaseQueuedWritesForNavigation={noHold}
@@ -158,7 +202,6 @@ describe('NoteEditorNavigationGuard', () => {
     const discardDraft = vi.fn();
     render(
       <NoteEditorNavigationGuard
-        canLeave={false}
         canLeaveNow={() => true}
         holdQueuedWritesForNavigation={noHold}
         releaseQueuedWritesForNavigation={noHold}
@@ -186,7 +229,6 @@ describe('NoteEditorNavigationGuard', () => {
     const flush = vi.fn().mockResolvedValue(undefined);
     render(
       <NoteEditorNavigationGuard
-        canLeave={false}
         canLeaveNow={() => true}
         holdQueuedWritesForNavigation={noHold}
         releaseQueuedWritesForNavigation={noHold}
@@ -213,7 +255,6 @@ describe('NoteEditorNavigationGuard', () => {
     blockerState.nextPathname = '/login';
     render(
       <NoteEditorNavigationGuard
-        canLeave={false}
         canLeaveNow={() => false}
         holdQueuedWritesForNavigation={noHold}
         releaseQueuedWritesForNavigation={noHold}
@@ -244,7 +285,6 @@ describe('NoteEditorNavigationGuard', () => {
     const flush = vi.fn().mockResolvedValue(undefined);
     render(
       <NoteEditorNavigationGuard
-        canLeave={false}
         canLeaveNow={() => false}
         holdQueuedWritesForNavigation={noHold}
         releaseQueuedWritesForNavigation={noHold}
@@ -271,7 +311,6 @@ describe('NoteEditorNavigationGuard', () => {
     blockerState.nextPathname = '/login';
     render(
       <NoteEditorNavigationGuard
-        canLeave={false}
         canLeaveNow={() => false}
         holdQueuedWritesForNavigation={noHold}
         releaseQueuedWritesForNavigation={noHold}
@@ -306,8 +345,7 @@ describe('NoteEditorNavigationGuard', () => {
       order.push('flush');
     });
     const props = {
-      canLeave: false,
-      canLeaveNow: () => true,
+      canLeaveNow: () => false,
       holdQueuedWritesForNavigation: hold,
       releaseQueuedWritesForNavigation: release,
       getNavigationSaveStateNow: () => ({
@@ -360,8 +398,7 @@ describe('NoteEditorNavigationGuard', () => {
     blockerState.status = 'idle';
     blockerState.nextPathname = '/login';
     const props = {
-      canLeave: false,
-      canLeaveNow: () => true,
+      canLeaveNow: () => false,
       holdQueuedWritesForNavigation: vi.fn(),
       releaseQueuedWritesForNavigation: vi.fn(),
       getNavigationSaveStateNow: () => ({
@@ -394,7 +431,7 @@ describe('NoteEditorNavigationGuard', () => {
     view.rerender(
       <NoteEditorNavigationGuard
         {...props}
-        canLeave
+        canLeaveNow={() => true}
         getNavigationSaveStateNow={() => ({
           writeInFlight: false,
           outcomeUncertain: false,
@@ -418,7 +455,6 @@ describe('NoteEditorNavigationGuard', () => {
     blockerState.nextPathname = '/login';
     const discardDraft = vi.fn();
     const props = {
-      canLeave: false,
       canLeaveNow: () => false,
       holdQueuedWritesForNavigation: noHold,
       releaseQueuedWritesForNavigation: noHold,

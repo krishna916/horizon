@@ -203,7 +203,6 @@ function ActiveNoteEditor({
     retry,
     resolveConflict,
     discardDraft,
-    canLeave,
     canLeaveNow,
     holdQueuedWritesForNavigation,
     releaseQueuedWritesForNavigation,
@@ -230,7 +229,6 @@ function ActiveNoteEditor({
 
   return (
     <NoteEditorNavigationGuard
-      canLeave={canLeave}
       canLeaveNow={canLeaveNow}
       holdQueuedWritesForNavigation={holdQueuedWritesForNavigation}
       releaseQueuedWritesForNavigation={releaseQueuedWritesForNavigation}

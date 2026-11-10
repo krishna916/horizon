@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import { useNoteModal } from './useNoteModal';
 
 export function NoteEditorNavigationGuard({
-  canLeave,
   canLeaveNow,
   holdQueuedWritesForNavigation,
   releaseQueuedWritesForNavigation,
@@ -19,7 +18,6 @@ export function NoteEditorNavigationGuard({
   discardDraft,
   children,
 }: {
-  readonly canLeave: boolean;
   readonly canLeaveNow: () => boolean;
   readonly holdQueuedWritesForNavigation: () => void;
   readonly releaseQueuedWritesForNavigation: () => void;
@@ -67,7 +65,7 @@ export function NoteEditorNavigationGuard({
   const blocker = useBlocker({
     withResolver: true,
     shouldBlockFn: ({ current, next }) => {
-      if (canLeave && !hasTagOnlyDraft) return false;
+      if (canLeaveNow() && !hasTagOnlyDraft) return false;
       // The first confirmed POST replaces /notes/new with its canonical ID in place.
       if (
         current.pathname === '/notes/new' &&
@@ -78,7 +76,7 @@ export function NoteEditorNavigationGuard({
       holdForDecision();
       return true;
     },
-    enableBeforeUnload: () => !canLeave || hasTagOnlyDraft,
+    enableBeforeUnload: () => !canLeaveNow() || hasTagOnlyDraft,
   });
 
   useEffect(() => {
