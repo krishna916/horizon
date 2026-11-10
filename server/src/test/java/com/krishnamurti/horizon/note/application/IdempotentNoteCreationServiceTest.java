@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.note.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -30,6 +31,7 @@ class IdempotentNoteCreationServiceTest {
     @Mock private NoteCreationRequestRepository requestRepository;
     @Mock private NoteRepository noteRepository;
     @Mock private NoteCommandService commandService;
+    @Mock private NoteTagQueryService noteTagQueryService;
 
     private IdempotentNoteCreationService service;
 
@@ -37,7 +39,11 @@ class IdempotentNoteCreationServiceTest {
     void setUp() {
         service =
                 new IdempotentNoteCreationService(
-                        currentUserProvider, requestRepository, noteRepository, commandService);
+                        currentUserProvider,
+                        requestRepository,
+                        noteRepository,
+                        commandService,
+                        noteTagQueryService);
         when(currentUserProvider.getCurrentUserId()).thenReturn(Optional.of(12L));
     }
 
@@ -47,7 +53,7 @@ class IdempotentNoteCreationServiceTest {
         Map<String, Object> content = body("new note");
         Note created = Note.create(12L, "Title", content);
         when(requestRepository.claim(eq(12L), eq(key), any())).thenReturn(true);
-        when(commandService.create(" Title ", content)).thenReturn(created);
+        when(commandService.create(" Title ", content, List.of())).thenReturn(created);
 
         Note result = service.create(key, " Title ", content);
 
@@ -68,7 +74,7 @@ class IdempotentNoteCreationServiceTest {
                 .thenReturn(Optional.of(existing));
 
         assertThat(service.create(key, " Title ", content)).isSameAs(existing);
-        verify(commandService, never()).create(any(), any());
+        verify(commandService, never()).create(any(), any(), anyList());
     }
 
     @Test

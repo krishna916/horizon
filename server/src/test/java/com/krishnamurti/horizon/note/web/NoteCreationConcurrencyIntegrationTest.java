@@ -47,7 +47,7 @@ class NoteCreationConcurrencyIntegrationTest {
                         .andReturn();
         Cookie session = login.getResponse().getCookie("SESSION");
         String key = UUID.randomUUID().toString();
-        String body = "{\"title\":\"Concurrent HTTP Note\"}";
+        String body = "{\"title\":\"Concurrent HTTP Note\",\"tags\":[{\"name\":\"Concurrent\"}]}";
 
         try (var executor = Executors.newFixedThreadPool(8)) {
             List<Callable<MvcResult>> requests = new ArrayList<>();
@@ -75,6 +75,20 @@ class NoteCreationConcurrencyIntegrationTest {
         assertThat(
                         jdbcTemplate.queryForObject(
                                 "SELECT COUNT(*) FROM note WHERE user_id = ?", Long.class, ownerId))
+                .isEqualTo(1L);
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM tag WHERE user_id = ? AND name ="
+                                        + " 'Concurrent'",
+                                Long.class,
+                                ownerId))
+                .isEqualTo(1L);
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM note_tag JOIN note ON note.id ="
+                                        + " note_tag.note_id WHERE note.user_id = ?",
+                                Long.class,
+                                ownerId))
                 .isEqualTo(1L);
     }
 }

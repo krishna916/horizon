@@ -26,6 +26,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -38,6 +39,7 @@ class NoteControllerIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private UserCommandService userCommandService;
     @Autowired private NoteRepository noteRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
     private Cookie ownerCookie;
     private Long ownerId;
 
@@ -130,6 +132,88 @@ class NoteControllerIntegrationTest {
                 .andExpect(jsonPath("$.createdAt").exists())
                 .andExpect(jsonPath("$.updatedAt").exists())
                 .andExpect(jsonPath("$.content.content[0].content[0].text").value("A note body"));
+    }
+
+    @Test
+    void tagOnlyAndNullTagCreatesAreRejectedWithoutWrites() throws Exception {
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"tags\":[{\"name\":\"Staged\"}]}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Note\",\"tags\":null}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.tags").exists());
+
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM note WHERE user_id = ?", Long.class, ownerId))
+                .isZero();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM tag WHERE user_id = ?", Long.class, ownerId))
+                .isZero();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM note_creation_request WHERE user_id = ?",
+                                Long.class,
+                                ownerId))
+                .isZero();
+    }
+
+    @Test
+    void createTagsAreCanonicalAndRetryFingerprintIgnoresOrderCaseAndDuplicates() throws Exception {
+        String key = UUID.randomUUID().toString();
+        MvcResult created =
+                mockMvc.perform(
+                                post("/api/v1/notes")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", key)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(
+                                                "{\"title\":\"Tagged\",\"tags\":[{\"name\":\" Work "
+                                                        + "\"},{\"name\":\"work\"}]}"))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.tags.length()").value(1))
+                        .andExpect(jsonPath("$.tags[0].name").value("Work"))
+                        .andReturn();
+        Number id = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+        Number tagId = JsonPath.read(created.getResponse().getContentAsString(), "$.tags[0].id");
+
+        MvcResult replay =
+                mockMvc.perform(
+                                post("/api/v1/notes")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", key)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(
+                                                "{\"title\":\"Tagged\",\"tags\":[{\"name\":\"WORK\"},{\"name\":\""
+                                                    + " work \"}]}"))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.tags[0].id").value(tagId.longValue()))
+                        .andReturn();
+        assertThat(
+                        JsonPath.<Number>read(replay.getResponse().getContentAsString(), "$.id")
+                                .longValue())
+                .isEqualTo(id.longValue());
+
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Tagged\",\"tags\":[{\"id\":"
+                                                + tagId.longValue()
+                                                + "}]}"))
+                .andExpect(status().isConflict());
     }
 
     @Test

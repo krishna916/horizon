@@ -16,15 +16,25 @@ public class NoteCommandService {
 
     private final NoteRepository noteRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final NoteTagAssignmentService noteTagAssignmentService;
 
     public NoteCommandService(
-            NoteRepository noteRepository, CurrentUserProvider currentUserProvider) {
+            NoteRepository noteRepository,
+            CurrentUserProvider currentUserProvider,
+            NoteTagAssignmentService noteTagAssignmentService) {
         this.noteRepository = noteRepository;
         this.currentUserProvider = currentUserProvider;
+        this.noteTagAssignmentService = noteTagAssignmentService;
     }
 
     @Transactional
     public Note create(String title, Map<String, Object> content) {
+        return create(title, content, java.util.List.of());
+    }
+
+    @Transactional
+    public Note create(
+            String title, Map<String, Object> content, java.util.List<NoteTagSelection> tags) {
         Long userId =
                 currentUserProvider
                         .getCurrentUserId()
@@ -32,7 +42,11 @@ public class NoteCommandService {
                                 () ->
                                         new InsufficientAuthenticationException(
                                                 "User is not authenticated"));
-        return noteRepository.saveAndFlush(Note.create(userId, title, content));
+        Note note = noteRepository.saveAndFlush(Note.create(userId, title, content));
+        if (!tags.isEmpty()) {
+            noteTagAssignmentService.replace(userId, note.getId(), tags);
+        }
+        return note;
     }
 
     @Transactional

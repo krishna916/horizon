@@ -45,9 +45,11 @@ public class NoteController {
             @RequestBody CreateNoteRequest request) {
         var key = requestMapper.parseIdempotencyKey(idempotencyKey);
         var fields = requestMapper.toCreate(request);
-        var note = creationService.create(key, fields.title(), fields.content());
-        return ResponseEntity.created(URI.create("/api/v1/notes/" + note.getId()))
-                .body(responseMapper.toDetail(note));
+        var result =
+                creationService.createWithTags(
+                        key, fields.title(), fields.content(), fields.tags());
+        return ResponseEntity.created(URI.create("/api/v1/notes/" + result.note().getId()))
+                .body(responseMapper.toDetail(result.note(), result.tags()));
     }
 
     @GetMapping("/{id}")

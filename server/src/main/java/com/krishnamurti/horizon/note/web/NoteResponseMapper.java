@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.note.web;
 import com.krishnamurti.horizon.note.application.NotePage;
 import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.note.domain.NotePreviewBuilder;
+import com.krishnamurti.horizon.tag.api.TagReference;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -13,6 +14,10 @@ public class NoteResponseMapper {
     private final NotePreviewBuilder previewBuilder = new NotePreviewBuilder();
 
     public NoteDetailResponse toDetail(Note note) {
+        return toDetail(note, List.of());
+    }
+
+    public NoteDetailResponse toDetail(Note note, List<TagReference> tags) {
         return new NoteDetailResponse(
                 note.getId(),
                 note.getTitle(),
@@ -21,7 +26,8 @@ public class NoteResponseMapper {
                 note.isInbox(),
                 note.getArchivedAt(),
                 note.getCreatedAt(),
-                note.getUpdatedAt());
+                note.getUpdatedAt(),
+                tags.stream().map(NoteTagResponse::from).toList());
     }
 
     public NoteListResponse toList(NotePage page) {

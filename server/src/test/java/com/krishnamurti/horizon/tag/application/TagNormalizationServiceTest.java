@@ -3,7 +3,7 @@ package com.krishnamurti.horizon.tag.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.krishnamurti.horizon.tag.domain.InvalidTagException;
+import com.krishnamurti.horizon.tag.api.InvalidTagNameException;
 import org.junit.jupiter.api.Test;
 
 class TagNormalizationServiceTest {
@@ -14,8 +14,8 @@ class TagNormalizationServiceTest {
     void normalizationMatchesSharedTagNamePolicy() {
         assertThat(normalizationService.normalizeName("\u2003Work\u00a0")).isEqualTo("Work");
         assertThatThrownBy(() -> normalizationService.normalizeName("bad\nname"))
-                .isInstanceOf(InvalidTagException.class);
+                .isInstanceOf(InvalidTagNameException.class);
         assertThatThrownBy(() -> normalizationService.normalizeName("x".repeat(101)))
-                .isInstanceOf(InvalidTagException.class);
+                .isInstanceOf(InvalidTagNameException.class);
     }
 }

@@ -35,4 +35,39 @@ class NoteCreationFingerprintTest {
         assertThat(NoteCreationFingerprint.compute("title", first))
                 .isNotEqualTo(NoteCreationFingerprint.compute("other", first));
     }
+
+    @Test
+    void tagOrderDuplicatesAndNameCaseDoNotChangeFingerprint() {
+        Map<String, Object> content = Map.of("type", "doc", "content", List.of());
+
+        assertThat(
+                        NoteCreationFingerprint.compute(
+                                "title",
+                                content,
+                                List.of(
+                                        new NoteTagSelection(null, "Work"),
+                                        new NoteTagSelection(7L, null),
+                                        new NoteTagSelection(null, "work"))))
+                .isEqualTo(
+                        NoteCreationFingerprint.compute(
+                                "title",
+                                content,
+                                List.of(
+                                        new NoteTagSelection(null, "WORK"),
+                                        new NoteTagSelection(7L, null))));
+        assertThat(NoteCreationFingerprint.compute("title", content, List.of()))
+                .isEqualTo(NoteCreationFingerprint.compute("title", content, List.of()));
+    }
+
+    @Test
+    void tagIdAndNameRepresentationsHaveDifferentFingerprints() {
+        Map<String, Object> content = Map.of("type", "doc", "content", List.of());
+
+        assertThat(
+                        NoteCreationFingerprint.compute(
+                                "title", content, List.of(new NoteTagSelection(7L, null))))
+                .isNotEqualTo(
+                        NoteCreationFingerprint.compute(
+                                "title", content, List.of(new NoteTagSelection(null, "Work"))));
+    }
 }
