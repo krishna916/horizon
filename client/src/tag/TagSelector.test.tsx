@@ -46,7 +46,9 @@ describe('TagSelector', () => {
     renderSelector({ createLabel: 'add', onChange });
     const input = screen.getByRole('combobox', { name: 'Add tags' });
     fireEvent.change(input, { target: { value: 'Ideas' } });
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Add tag “Ideas”' })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: 'Add tag “Ideas”' })).toBeInTheDocument()
+    );
     fireEvent.click(screen.getByRole('option', { name: 'Add tag “Ideas”' }));
     expect(onChange).toHaveBeenCalledWith([{ name: 'Ideas' }]);
     expect(tagApi.suggest).toHaveBeenCalledTimes(1);

@@ -292,11 +292,7 @@ export function TagSelector({
   );
 }
 
-function isDuplicate(
-  candidate: TagSelection,
-  current: TagSelection[],
-  tagsById: Map<number, Tag>
-) {
+function isDuplicate(candidate: TagSelection, current: TagSelection[], tagsById: Map<number, Tag>) {
   const candidateName = 'name' in candidate ? candidate.name : tagsById.get(candidate.id)?.name;
   return current.some((selection) => {
     if ('id' in candidate && 'id' in selection && selection.id === candidate.id) return true;

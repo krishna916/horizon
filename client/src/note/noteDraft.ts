@@ -84,7 +84,11 @@ export function noteDraftsEqual(first: NoteDraft, second: NoteDraft): boolean {
 }
 
 function tagSelectionSet(tags: TagSelection[]): string {
-  return [...new Set(tags.map((tag) =>
-    'id' in tag ? `id:${tag.id}` : `name:${tag.name.trim().toLowerCase()}`
-  ))].sort().join('\u0000');
+  return [
+    ...new Set(
+      tags.map((tag) => ('id' in tag ? `id:${tag.id}` : `name:${tag.name.trim().toLowerCase()}`))
+    ),
+  ]
+    .sort()
+    .join('\u0000');
 }

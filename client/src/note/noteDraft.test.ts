@@ -6,7 +6,9 @@ const paragraph = (text: string) => ({ type: 'paragraph', content: [{ type: 'tex
 
 describe('Note draft semantics', () => {
   it('treats blank and Java-whitespace-only title and body as empty', () => {
-    expect(hasMeaningfulNoteDraft({ title: ' \t\u00a0\u2007', content: null, tags: [] })).toBe(false);
+    expect(hasMeaningfulNoteDraft({ title: ' \t\u00a0\u2007', content: null, tags: [] })).toBe(
+      false
+    );
     expect(
       hasMeaningfulNoteDraft({
         title: '',
@@ -29,7 +31,11 @@ describe('Note draft semantics', () => {
 
   it('treats tables and horizontal rules as meaningful body content', () => {
     expect(
-      hasMeaningfulNoteDraft({ title: '', content: { type: 'doc', content: [{ type: 'table' }] }, tags: [] })
+      hasMeaningfulNoteDraft({
+        title: '',
+        content: { type: 'doc', content: [{ type: 'table' }] },
+        tags: [],
+      })
     ).toBe(true);
     expect(
       hasMeaningfulNoteDraft({
@@ -61,29 +67,45 @@ describe('Note draft semantics', () => {
       content: { type: 'doc', content: [paragraph('Body')] },
       tags: [],
     };
-    expect(normalizeNoteDraft(bodyOnly)).toEqual({ title: null, content: bodyOnly.content, tags: [] });
-    expect(noteDraftsEqual(bodyOnly, { title: ' \t', content: bodyOnly.content, tags: [] })).toBe(true);
+    expect(normalizeNoteDraft(bodyOnly)).toEqual({
+      title: null,
+      content: bodyOnly.content,
+      tags: [],
+    });
+    expect(noteDraftsEqual(bodyOnly, { title: ' \t', content: bodyOnly.content, tags: [] })).toBe(
+      true
+    );
   });
 
   it('compares tags as an unordered, case-insensitive set while keeping IDs distinct from names', () => {
     const ids = [{ id: 2 }, { id: 1 }];
-    expect(noteDraftsEqual(
-      { title: '', content: null, tags: ids },
-      { title: '', content: null, tags: [{ id: 1 }, { id: 2 }, { id: 2 }] }
-    )).toBe(true);
-    expect(noteDraftsEqual(
-      { title: '', content: null, tags: [{ name: ' Urgent ' }] },
-      { title: '', content: null, tags: [{ name: 'urgent' }] }
-    )).toBe(true);
-    expect(noteDraftsEqual(
-      { title: '', content: null, tags: [{ id: 1 }] },
-      { title: '', content: null, tags: [{ name: 'urgent' }] }
-    )).toBe(false);
+    expect(
+      noteDraftsEqual(
+        { title: '', content: null, tags: ids },
+        { title: '', content: null, tags: [{ id: 1 }, { id: 2 }, { id: 2 }] }
+      )
+    ).toBe(true);
+    expect(
+      noteDraftsEqual(
+        { title: '', content: null, tags: [{ name: ' Urgent ' }] },
+        { title: '', content: null, tags: [{ name: 'urgent' }] }
+      )
+    ).toBe(true);
+    expect(
+      noteDraftsEqual(
+        { title: '', content: null, tags: [{ id: 1 }] },
+        { title: '', content: null, tags: [{ name: 'urgent' }] }
+      )
+    ).toBe(false);
   });
 
   it('does not create a note for tag-only drafts and includes tags in normalized requests', () => {
     const tagOnly: NoteDraft = { title: '', content: null, tags: [{ name: 'Planning' }] };
     expect(hasMeaningfulNoteDraft(tagOnly)).toBe(false);
-    expect(normalizeNoteDraft(tagOnly)).toEqual({ title: null, content: null, tags: [{ name: 'Planning' }] });
+    expect(normalizeNoteDraft(tagOnly)).toEqual({
+      title: null,
+      content: null,
+      tags: [{ name: 'Planning' }],
+    });
   });
 });
