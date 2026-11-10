@@ -213,6 +213,203 @@ test('discards an unsent draft before signing out without dispatching a write', 
   expect(writeCount).toBe(0);
 });
 
+test('blocks immediate sign out from a saved Note and discards only the unsent edit', async ({
+  page,
+}) => {
+  await page.clock.install();
+  let logoutCount = 0;
+  let patchCount = 0;
+  const original = {
+    id: 607,
+    title: 'Original saved title',
+    content: null,
+    version: 3,
+    inbox: false,
+    archivedAt: null,
+    ...timestamps,
+  };
+  let serverNote = { ...original };
+
+  await page.route('**/api/v1/users/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 67, email: 'owner-sixty-seven@example.test' }),
+    })
+  );
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    logoutCount += 1;
+    await route.fulfill({ status: 204, body: '' });
+  });
+  await page.route('**/api/v1/notes/607', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(serverNote),
+      });
+      return;
+    }
+    patchCount += 1;
+    serverNote = { ...serverNote, ...route.request().postDataJSON(), version: 4 };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(serverNote),
+    });
+  });
+
+  await page.goto('/notes/607');
+  const title = page.getByRole('textbox', { name: 'Note title' });
+  await expect(title).toHaveValue(original.title);
+  await title.fill('Unsaved replacement title');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+
+  await expect(page.getByRole('dialog')).toContainText('Sign out with an unsaved note');
+  await expect(page).not.toHaveURL(/\/login$/);
+  expect(logoutCount).toBe(0);
+  expect(patchCount).toBe(0);
+  await page.clock.fastForward(1_100);
+  expect(logoutCount).toBe(0);
+  expect(patchCount).toBe(0);
+
+  await page.getByRole('button', { name: 'Discard unsent changes and sign out' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => logoutCount).toBe(1);
+  await page.clock.fastForward(1_000);
+  expect(patchCount).toBe(0);
+
+  await page.goto('/notes/607');
+  await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue(
+    'Original saved title'
+  );
+  expect(serverNote.title).toBe(original.title);
+});
+
+test('blocks sign out after a saved Note rich-text edit and discards the unsent body', async ({
+  page,
+}) => {
+  await page.clock.install();
+  let logoutCount = 0;
+  let patchCount = 0;
+  const original = {
+    id: 608,
+    title: 'Saved body note',
+    content: document('Original body'),
+    version: 2,
+    inbox: false,
+    archivedAt: null,
+    ...timestamps,
+  };
+  let serverNote = { ...original };
+
+  await page.route('**/api/v1/users/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 68, email: 'owner-sixty-eight@example.test' }),
+    })
+  );
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    logoutCount += 1;
+    await route.fulfill({ status: 204, body: '' });
+  });
+  await page.route('**/api/v1/notes/608', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(serverNote),
+      });
+      return;
+    }
+    patchCount += 1;
+    serverNote = { ...serverNote, ...route.request().postDataJSON(), version: 3 };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(serverNote),
+    });
+  });
+
+  await page.goto('/notes/608');
+  const editor = page.getByLabel('Note content editor');
+  await expect(editor).toContainText('Original body');
+  await editor.click();
+  await page.keyboard.type('Unsaved body change');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+
+  await expect(page.getByRole('dialog')).toContainText('Sign out with an unsaved note');
+  expect(logoutCount).toBe(0);
+  expect(patchCount).toBe(0);
+  await page.clock.fastForward(1_100);
+  expect(logoutCount).toBe(0);
+  expect(patchCount).toBe(0);
+
+  await page.getByRole('button', { name: 'Discard unsent changes and sign out' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => logoutCount).toBe(1);
+  await page.goto('/notes/608');
+  await expect(page.getByLabel('Note content editor')).toContainText('Original body');
+  expect(serverNote.content).toEqual(original.content);
+  expect(patchCount).toBe(0);
+});
+
+test('keeps an explicitly discarded saved Note discarded when logout fails', async ({ page }) => {
+  await page.clock.install();
+  let logoutCount = 0;
+  let patchCount = 0;
+  const original = {
+    id: 609,
+    title: 'Original after failed logout',
+    content: null,
+    version: 5,
+    inbox: false,
+    archivedAt: null,
+    ...timestamps,
+  };
+  const serverNote = { ...original };
+
+  await page.route('**/api/v1/users/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 69, email: 'owner-sixty-nine@example.test' }),
+    })
+  );
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    logoutCount += 1;
+    await route.fulfill({ status: 500, contentType: 'application/problem+json', body: '{}' });
+  });
+  await page.route('**/api/v1/notes/609', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(serverNote),
+      });
+      return;
+    }
+    patchCount += 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+
+  await page.goto('/notes/609');
+  const title = page.getByRole('textbox', { name: 'Note title' });
+  await title.fill('Discard this before logout fails');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Sign out with an unsaved note');
+  await page.getByRole('button', { name: 'Discard unsent changes and sign out' }).click();
+
+  await expect.poll(() => logoutCount).toBe(1);
+  await expect(page).toHaveURL(/\/notes\/609$/);
+  await expect(title).toHaveValue(original.title);
+  await expect(page.getByRole('alert')).toHaveText('Sign out failed. Please try again.');
+  await page.clock.fastForward(1_100);
+  expect(patchCount).toBe(0);
+  expect(serverNote.title).toBe(original.title);
+});
+
 test('holds a debounced create while the sign-out decision is open and resumes after Stay', async ({
   page,
 }) => {
