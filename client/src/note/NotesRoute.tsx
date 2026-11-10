@@ -91,7 +91,7 @@ export function NotesRoute() {
   useLayoutEffect(() => {
     const isEditorRoute = isNoteEditorPath(pathname);
     const previous = priorEditorRoute.current;
-    if (isEditorRoute && (!previous || previous.identity !== editorIdentity)) {
+    if (isEditorRoute && previous?.identity !== editorIdentity) {
       const main = document.querySelector<HTMLElement>('main');
       if (main) main.scrollTop = 0;
     }

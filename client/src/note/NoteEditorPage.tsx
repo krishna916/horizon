@@ -28,6 +28,20 @@ function isUnavailableNote(
   );
 }
 
+function isLoadingExistingNote(
+  routeNoteId: string | null,
+  query: ReturnType<typeof useNoteDetail>
+) {
+  return routeNoteId !== null && query.isPending;
+}
+
+function hasExistingNoteLoadError(
+  routeNoteId: string | null,
+  query: ReturnType<typeof useNoteDetail>
+) {
+  return routeNoteId !== null && (query.isError || !query.data);
+}
+
 function statusText(snapshot: {
   phase: string;
   persisted: { id: number; version: number } | null;
@@ -119,7 +133,7 @@ export function NoteEditorPage({
     );
   }
 
-  if (routeNoteId !== null && query.isPending) {
+  if (isLoadingExistingNote(routeNoteId, query)) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8">
         <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
@@ -135,7 +149,7 @@ export function NoteEditorPage({
     );
   }
 
-  if (routeNoteId !== null && (query.isError || !query.data)) {
+  if (hasExistingNoteLoadError(routeNoteId, query)) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8">
         <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
