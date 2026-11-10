@@ -75,6 +75,81 @@ describe('NoteSaveCoordinator', () => {
     coordinator.dispose();
   });
 
+  it('holds queued changes while a navigation decision is open and resumes them on release', async () => {
+    vi.useFakeTimers();
+    const update = vi.fn().mockResolvedValue(detail(7, 3, { title: 'Changed', content: null }));
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: { title: 'Existing', content: null },
+      initialNote: detail(7, 2, { title: 'Existing', content: null }),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+      debounceMs: 900,
+    });
+
+    coordinator.edit({ title: 'Changed', content: null });
+    coordinator.holdQueuedWritesForNavigation();
+    await vi.advanceTimersByTimeAsync(1800);
+    expect(update).not.toHaveBeenCalled();
+
+    coordinator.releaseQueuedWritesForNavigation();
+    await vi.advanceTimersByTimeAsync(899);
+    expect(update).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(update).toHaveBeenCalledOnce();
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'saved',
+      persisted: { id: 7, version: 3 },
+    });
+    coordinator.dispose();
+  });
+
+  it('processes an issued acknowledgement while holding and does not dispatch edits queued during the hold', async () => {
+    vi.useFakeTimers();
+    const firstDraft = { title: 'First change', content: null };
+    const secondDraft = { title: 'Second change', content: null };
+    const issued = deferred<NoteDetail>();
+    const update = vi
+      .fn()
+      .mockReturnValueOnce(issued.promise)
+      .mockResolvedValueOnce(detail(7, 4, secondDraft));
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: { title: 'Existing', content: null },
+      initialNote: detail(7, 2, { title: 'Existing', content: null }),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+      debounceMs: 900,
+    });
+
+    coordinator.edit(firstDraft);
+    const saving = coordinator.flush();
+    await Promise.resolve();
+    expect(update).toHaveBeenCalledOnce();
+
+    coordinator.holdQueuedWritesForNavigation();
+    coordinator.edit(secondDraft);
+    await vi.advanceTimersByTimeAsync(1800);
+    issued.resolve(detail(7, 3, firstDraft));
+    await saving;
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: secondDraft,
+      persisted: { id: 7, version: 3 },
+      phase: 'dirty',
+      writeInFlight: false,
+    });
+
+    coordinator.releaseQueuedWritesForNavigation();
+    await vi.advanceTimersByTimeAsync(900);
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenLastCalledWith(7, {
+      expectedVersion: 3,
+      title: 'Second change',
+      content: null,
+    });
+    coordinator.dispose();
+  });
+
   it('reconciles a previously issued PATCH after same-owner recovery', async () => {
     const original = { title: 'Existing', content: null };
     const local = { title: 'Existing', content: textDocument('In flight') };

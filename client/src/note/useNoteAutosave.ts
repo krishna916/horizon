@@ -200,6 +200,23 @@ export function useNoteAutosave({
     const latest = coordinator.snapshot();
     return !latest.hasUnsavedChanges && latest.phase !== 'saving';
   }, [coordinator]);
+  const holdQueuedWritesForNavigation = useCallback(
+    () => coordinator.holdQueuedWritesForNavigation(),
+    [coordinator]
+  );
+  const releaseQueuedWritesForNavigation = useCallback(
+    () => coordinator.releaseQueuedWritesForNavigation(),
+    [coordinator]
+  );
+  const getNavigationSaveStateNow = useCallback(() => {
+    const latest = coordinator.snapshot();
+    return {
+      writeInFlight: latest.writeInFlight,
+      outcomeUncertain: latest.outcomeUncertain,
+      hasUnsavedChanges: latest.hasUnsavedChanges,
+      persistedNoteId: latest.persisted?.id ?? null,
+    };
+  }, [coordinator]);
   const persistedNoteIdNow = useCallback(
     () => coordinator.snapshot().persisted?.id ?? null,
     [coordinator]
@@ -214,6 +231,9 @@ export function useNoteAutosave({
     discardDraft,
     canLeave: !snapshot.hasUnsavedChanges && snapshot.phase !== 'saving',
     canLeaveNow,
+    holdQueuedWritesForNavigation,
+    releaseQueuedWritesForNavigation,
+    getNavigationSaveStateNow,
     persistedNoteIdNow,
   };
 }

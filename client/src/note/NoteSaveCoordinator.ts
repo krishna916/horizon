@@ -119,6 +119,7 @@ export class NoteSaveCoordinator {
   private pendingCreate: FrozenCreate | null = null;
   private pendingUpdate: FrozenNoteUpdate | null = null;
   private paused = false;
+  private navigationHeld = false;
   private disposed = false;
   private generation = 0;
 
@@ -153,13 +154,19 @@ export class NoteSaveCoordinator {
       this.clearTimer();
     } else {
       this.phase = this.paused ? 'paused' : 'dirty';
-      if (!this.paused) this.scheduleSave();
+      if (!this.paused && !this.navigationHeld) this.scheduleSave();
     }
     this.publish();
   }
 
   async flush(): Promise<void> {
-    if (this.disposed || this.paused || this.phase === 'conflict' || this.phase === 'failed')
+    if (
+      this.disposed ||
+      this.paused ||
+      this.navigationHeld ||
+      this.phase === 'conflict' ||
+      this.phase === 'failed'
+    )
       return;
     this.clearTimer();
     this.debounceElapsed = true;
@@ -279,6 +286,18 @@ export class NoteSaveCoordinator {
     this.publish();
   }
 
+  holdQueuedWritesForNavigation(): void {
+    if (this.disposed || this.navigationHeld) return;
+    this.navigationHeld = true;
+    this.clearTimer();
+  }
+
+  releaseQueuedWritesForNavigation(): void {
+    if (this.disposed || !this.navigationHeld) return;
+    this.navigationHeld = false;
+    if (!this.paused && this.phase === 'dirty' && this.hasWork()) this.scheduleSave();
+  }
+
   async resume(): Promise<void> {
     if (this.disposed) return;
     if (!this.paused) {
@@ -353,6 +372,11 @@ export class NoteSaveCoordinator {
 
   private async saveOnce(generation: number): Promise<void> {
     if (this.disposed || this.paused || generation !== this.generation) return;
+    if (this.navigationHeld) {
+      this.phase = this.hasWork() ? 'dirty' : 'saved';
+      this.publish();
+      return;
+    }
     if (this.canDispatch && !this.canDispatch()) {
       this.paused = true;
       this.phase = 'paused';
@@ -567,12 +591,14 @@ export class NoteSaveCoordinator {
       this.debounceElapsed &&
       this.hasWork() &&
       !this.paused &&
+      !this.navigationHeld &&
       this.phase !== 'failed' &&
       this.phase !== 'conflict'
     );
   }
 
   private scheduleSave(): void {
+    if (this.disposed || this.navigationHeld || this.paused) return;
     this.clearTimer();
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NoteEditorNavigationGuard } from './NoteEditorNavigationGuard';
 
@@ -25,6 +25,14 @@ vi.mock('@tanstack/react-router', () => ({
   },
 }));
 
+const noHold = () => {};
+const cleanNavigationState = () => ({
+  writeInFlight: false,
+  outcomeUncertain: false,
+  hasUnsavedChanges: false,
+  persistedNoteId: null,
+});
+
 describe('NoteEditorNavigationGuard', () => {
   afterEach(() => {
     blockerState.status = 'idle';
@@ -39,6 +47,9 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
+        holdQueuedWritesForNavigation={noHold}
+        releaseQueuedWritesForNavigation={noHold}
+        getNavigationSaveStateNow={cleanNavigationState}
         persistedNoteIdNow={() => 14}
         phase="dirty"
         writeInFlight={false}
@@ -78,6 +89,9 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
+        holdQueuedWritesForNavigation={noHold}
+        releaseQueuedWritesForNavigation={noHold}
+        getNavigationSaveStateNow={cleanNavigationState}
         persistedNoteIdNow={() => null}
         phase="failed"
         writeInFlight={false}
@@ -106,6 +120,9 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
+        holdQueuedWritesForNavigation={noHold}
+        releaseQueuedWritesForNavigation={noHold}
+        getNavigationSaveStateNow={cleanNavigationState}
         persistedNoteIdNow={() => null}
         phase="dirty"
         writeInFlight={false}
@@ -131,6 +148,9 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
+        holdQueuedWritesForNavigation={noHold}
+        releaseQueuedWritesForNavigation={noHold}
+        getNavigationSaveStateNow={cleanNavigationState}
         persistedNoteIdNow={() => null}
         phase="saving"
         writeInFlight={true}
@@ -155,6 +175,9 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => false}
+        holdQueuedWritesForNavigation={noHold}
+        releaseQueuedWritesForNavigation={noHold}
+        getNavigationSaveStateNow={cleanNavigationState}
         persistedNoteIdNow={() => null}
         phase="saving"
         writeInFlight
@@ -183,6 +206,9 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => false}
+        holdQueuedWritesForNavigation={noHold}
+        releaseQueuedWritesForNavigation={noHold}
+        getNavigationSaveStateNow={cleanNavigationState}
         persistedNoteIdNow={() => null}
         phase="saving"
         writeInFlight={true}
@@ -207,6 +233,9 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => false}
+        holdQueuedWritesForNavigation={noHold}
+        releaseQueuedWritesForNavigation={noHold}
+        getNavigationSaveStateNow={cleanNavigationState}
         persistedNoteIdNow={() => null}
         phase="dirty"
         writeInFlight={false}
@@ -227,5 +256,120 @@ describe('NoteEditorNavigationGuard', () => {
     expect(document.activeElement).toBe(discard);
     fireEvent.keyDown(dialog, { key: 'Escape' });
     expect(blockerState.reset).toHaveBeenCalledOnce();
+  });
+
+  it('holds queued work before blocking and releases before Stay and Wait actions', async () => {
+    const order: string[] = [];
+    const hold = vi.fn(() => order.push('hold'));
+    const release = vi.fn(() => order.push('release'));
+    const flush = vi.fn(async () => {
+      order.push('flush');
+    });
+    const props = {
+      canLeave: false,
+      canLeaveNow: () => true,
+      holdQueuedWritesForNavigation: hold,
+      releaseQueuedWritesForNavigation: release,
+      getNavigationSaveStateNow: () => ({
+        writeInFlight: false,
+        outcomeUncertain: false,
+        hasUnsavedChanges: true,
+        persistedNoteId: null,
+      }),
+      persistedNoteIdNow: () => null,
+      phase: 'dirty',
+      writeInFlight: false,
+      outcomeUncertain: false,
+      flush,
+      retry: vi.fn(),
+      discardDraft: vi.fn(),
+      children: <p>Editor</p>,
+    };
+    const view = render(<NoteEditorNavigationGuard {...props} />);
+
+    expect(
+      blockerState.options?.shouldBlockFn({
+        current: { pathname: '/notes/7' },
+        next: { pathname: '/tasks' },
+      })
+    ).toBe(true);
+    expect(hold).toHaveBeenCalledOnce();
+
+    blockerState.status = 'blocked';
+    view.rerender(<NoteEditorNavigationGuard {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stay' }));
+    expect(release).toHaveBeenCalledOnce();
+    expect(blockerState.reset).toHaveBeenCalledOnce();
+
+    blockerState.status = 'idle';
+    view.rerender(<NoteEditorNavigationGuard {...props} />);
+    act(() => {
+      blockerState.options?.shouldBlockFn({
+        current: { pathname: '/notes/7' },
+        next: { pathname: '/login' },
+      });
+    });
+    blockerState.status = 'blocked';
+    view.rerender(<NoteEditorNavigationGuard {...props} phase="saving" writeInFlight />);
+    order.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: 'Wait for save' }));
+    await waitFor(() => expect(order).toEqual(['release', 'flush']));
+  });
+
+  it('keeps the issued-write warning after the request is acknowledged during the decision', () => {
+    blockerState.status = 'idle';
+    blockerState.nextPathname = '/login';
+    const props = {
+      canLeave: false,
+      canLeaveNow: () => true,
+      holdQueuedWritesForNavigation: vi.fn(),
+      releaseQueuedWritesForNavigation: vi.fn(),
+      getNavigationSaveStateNow: () => ({
+        writeInFlight: true,
+        outcomeUncertain: false,
+        hasUnsavedChanges: true,
+        persistedNoteId: 7,
+      }),
+      persistedNoteIdNow: () => 7,
+      phase: 'saving',
+      writeInFlight: true,
+      outcomeUncertain: false,
+      flush: vi.fn(),
+      retry: vi.fn(),
+      discardDraft: vi.fn(),
+      children: <p>Editor</p>,
+    };
+    const view = render(<NoteEditorNavigationGuard {...props} />);
+    act(() => {
+      expect(
+        blockerState.options?.shouldBlockFn({
+          current: { pathname: '/notes/7' },
+          next: { pathname: '/login' },
+        })
+      ).toBe(true);
+    });
+    blockerState.status = 'blocked';
+    view.rerender(<NoteEditorNavigationGuard {...props} />);
+
+    view.rerender(
+      <NoteEditorNavigationGuard
+        {...props}
+        canLeave
+        getNavigationSaveStateNow={() => ({
+          writeInFlight: false,
+          outcomeUncertain: false,
+          hasUnsavedChanges: false,
+          persistedNoteId: 7,
+        })}
+        phase="saved"
+        writeInFlight={false}
+      />
+    );
+
+    expect(screen.getByRole('dialog')).toHaveTextContent('may still be applied');
+    expect(screen.getByRole('button', { name: 'Sign out without waiting' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Discard unsent changes and sign out' })
+    ).toBeNull();
   });
 });

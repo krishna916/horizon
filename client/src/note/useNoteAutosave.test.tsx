@@ -70,6 +70,12 @@ function AutosaveProbe() {
       <button type="button" onClick={() => void autosave.flush()}>
         Flush
       </button>
+      <button type="button" onClick={() => autosave.holdQueuedWritesForNavigation()}>
+        Hold queued writes
+      </button>
+      <button type="button" onClick={() => autosave.releaseQueuedWritesForNavigation()}>
+        Release queued writes
+      </button>
       <button type="button" onClick={() => void session.verifySession()}>
         Reverify
       </button>
@@ -122,6 +128,33 @@ function renderAutosave(
 
 describe('useNoteAutosave', () => {
   afterEach(() => vi.clearAllMocks());
+
+  it('holds its queued debounce during a navigation decision and resumes after release', async () => {
+    vi.mocked(userApi.getCurrentUser).mockResolvedValue({
+      data: { id: 1, email: 'one@example.com' },
+    } as never);
+    vi.mocked(noteApi.get).mockResolvedValue(response(initial));
+    vi.mocked(noteApi.update).mockResolvedValue(
+      response({ ...initial, version: 3, content: localDraft.content })
+    );
+    renderAutosave();
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('verified:saved'));
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hold queued writes' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1800);
+    });
+    expect(noteApi.update).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Release queued writes' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    expect(noteApi.update).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
 
   it('keeps its coordinator alive across React Strict Mode effect replay', async () => {
     vi.mocked(userApi.getCurrentUser).mockResolvedValue({

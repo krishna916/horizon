@@ -182,6 +182,9 @@ function ActiveNoteEditor({
     discardDraft,
     canLeave,
     canLeaveNow,
+    holdQueuedWritesForNavigation,
+    releaseQueuedWritesForNavigation,
+    getNavigationSaveStateNow,
     persistedNoteIdNow,
   } = useNoteAutosave({
     ownerId,
@@ -206,6 +209,9 @@ function ActiveNoteEditor({
     <NoteEditorNavigationGuard
       canLeave={canLeave}
       canLeaveNow={canLeaveNow}
+      holdQueuedWritesForNavigation={holdQueuedWritesForNavigation}
+      releaseQueuedWritesForNavigation={releaseQueuedWritesForNavigation}
+      getNavigationSaveStateNow={getNavigationSaveStateNow}
       persistedNoteIdNow={persistedNoteIdNow}
       phase={snapshot.phase}
       writeInFlight={snapshot.writeInFlight}
