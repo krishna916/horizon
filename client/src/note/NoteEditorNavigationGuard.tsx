@@ -1,26 +1,29 @@
 import { useBlocker } from '@tanstack/react-router';
-import { useLayoutEffect, useRef } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 export function NoteEditorNavigationGuard({
   canLeave,
+  canLeaveNow,
   phase,
+  writeInFlight,
+  outcomeUncertain,
   flush,
   retry,
   discardDraft,
   children,
 }: {
   readonly canLeave: boolean;
+  readonly canLeaveNow: () => boolean;
   readonly phase: string;
+  readonly writeInFlight: boolean;
+  readonly outcomeUncertain: boolean;
   readonly flush: () => Promise<void>;
   readonly retry: () => Promise<void>;
   readonly discardDraft: () => void;
   readonly children: ReactNode;
 }) {
-  const canLeaveRef = useRef(canLeave);
-  useLayoutEffect(() => {
-    canLeaveRef.current = canLeave;
-  }, [canLeave]);
+  const [confirmUncertainLogout, setConfirmUncertainLogout] = useState(false);
   const blocker = useBlocker({
     withResolver: true,
     shouldBlockFn: ({ current, next }) => {
@@ -36,12 +39,12 @@ export function NoteEditorNavigationGuard({
   async function waitAndLeave() {
     if (phase === 'failed' || phase === 'conflict' || phase === 'paused') return;
     await flush();
-    if (canLeaveRef.current && blocker.status === 'blocked') blocker.proceed();
+    if (canLeaveNow() && blocker.status === 'blocked') blocker.proceed();
   }
 
   async function retryAndLeave() {
     await retry();
-    if (canLeaveRef.current && blocker.status === 'blocked') blocker.proceed();
+    if (canLeaveNow() && blocker.status === 'blocked') blocker.proceed();
   }
 
   return (
@@ -62,7 +65,9 @@ export function NoteEditorNavigationGuard({
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
               {isExplicitLogout
-                ? 'Signing out will discard this in-memory draft.'
+                ? writeInFlight || outcomeUncertain
+                  ? 'A save request has already been sent. It may still be applied even if you sign out.'
+                  : 'This note has unsent changes. You can discard them and sign out.'
                 : 'Wait for the note to save before leaving. Your draft will stay open if saving fails.'}
             </p>
             <div className="mt-5 flex justify-end gap-2">
@@ -79,7 +84,7 @@ export function NoteEditorNavigationGuard({
                   onClick={() => void retryAndLeave()}
                   className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
                 >
-                  Retry and leave
+                  {isExplicitLogout ? 'Retry save and sign out' : 'Retry and leave'}
                 </button>
               )}
               {phase !== 'failed' && phase !== 'conflict' && phase !== 'paused' && (
@@ -88,20 +93,43 @@ export function NoteEditorNavigationGuard({
                   onClick={() => void waitAndLeave()}
                   className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
                 >
-                  Wait for save
+                  {isExplicitLogout ? 'Wait for save and sign out' : 'Wait for save'}
                 </button>
               )}
               {isExplicitLogout && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    discardDraft();
-                    blocker.proceed();
-                  }}
-                  className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground"
-                >
-                  Discard draft and sign out
-                </button>
+                writeInFlight || outcomeUncertain ? (
+                  confirmUncertainLogout ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        discardDraft();
+                        blocker.proceed();
+                      }}
+                      className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground"
+                    >
+                      Sign out anyway — changes may already have saved
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmUncertainLogout(true)}
+                      className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground"
+                    >
+                      Sign out without waiting
+                    </button>
+                  )
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      discardDraft();
+                      blocker.proceed();
+                    }}
+                    className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground"
+                  >
+                    Discard unsent changes and sign out
+                  </button>
+                )
               )}
             </div>
           </dialog>

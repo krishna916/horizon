@@ -42,6 +42,7 @@ export function useNoteAutosave({
   const editorRouteRef = useRef(editorRoute);
   const onCreatedRef = useRef(onCreated);
   const lifecycleRef = useRef(0);
+  const discardedRef = useRef(false);
   const [snapshotState, setSnapshotState] = useState<NoteSaveSnapshot | null>(null);
 
   const publishSavedNote = useCallback(
@@ -91,6 +92,7 @@ export function useNoteAutosave({
         get: async (id) => (await noteApi.get(id)).data,
       },
       onChange: (next) => {
+        if (discardedRef.current) return;
         if (
           sessionRef.current.epoch !== getCurrentSessionEpoch() ||
           sessionRef.current.ownerRevision !== getCurrentOwnerRevision()
@@ -147,7 +149,7 @@ export function useNoteAutosave({
     const lifecycle = ++lifecycleRef.current;
     return () => {
       const current = coordinator.snapshot();
-      if (current.hasUnsavedChanges) {
+      if (current.hasUnsavedChanges && !discardedRef.current) {
         const saveRecovery = coordinator.recoverySnapshot();
         recoveryRef.current.stash(
           ownerIdRef.current,
@@ -173,9 +175,14 @@ export function useNoteAutosave({
     [coordinator]
   );
   const discardDraft = useCallback(() => {
+    discardedRef.current = true;
     coordinator.dispose();
     recoveryContext.discard();
   }, [coordinator, recoveryContext]);
+  const canLeaveNow = useCallback(() => {
+    const latest = coordinator.snapshot();
+    return !latest.hasUnsavedChanges && latest.phase !== 'saving';
+  }, [coordinator]);
 
   return {
     snapshot,
@@ -185,5 +192,6 @@ export function useNoteAutosave({
     resolveConflict,
     discardDraft,
     canLeave: !snapshot.hasUnsavedChanges && snapshot.phase !== 'saving',
+    canLeaveNow,
   };
 }

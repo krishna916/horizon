@@ -142,7 +142,16 @@ function ActiveNoteEditor({
   readonly onCreated: (note: NoteDetail) => void;
 }) {
   const [conflictChoice, setConflictChoice] = useState<'keep-local' | 'load-server' | null>(null);
-  const { snapshot, edit, flush, retry, resolveConflict, discardDraft, canLeave } = useNoteAutosave(
+  const {
+    snapshot,
+    edit,
+    flush,
+    retry,
+    resolveConflict,
+    discardDraft,
+    canLeave,
+    canLeaveNow,
+  } = useNoteAutosave(
     {
       ownerId,
       initialNote,
@@ -164,7 +173,10 @@ function ActiveNoteEditor({
   return (
     <NoteEditorNavigationGuard
       canLeave={canLeave}
+      canLeaveNow={canLeaveNow}
       phase={snapshot.phase}
+      writeInFlight={snapshot.writeInFlight}
+      outcomeUncertain={snapshot.outcomeUncertain}
       flush={flush}
       retry={retry}
       discardDraft={discardDraft}

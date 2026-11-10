@@ -51,6 +51,30 @@ describe('NoteSaveCoordinator', () => {
     coordinator.dispose();
   });
 
+  it('reports an issued write separately from unsent debounce work', async () => {
+    const initial = { title: 'Existing', content: null };
+    const edited = { title: 'Changed', content: null };
+    const pending = deferred<NoteDetail>();
+    const update = vi.fn().mockReturnValue(pending.promise);
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(7, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+    });
+
+    coordinator.edit(edited);
+    expect(coordinator.snapshot()).toMatchObject({ writeInFlight: false, outcomeUncertain: false });
+    const saving = coordinator.flush();
+    await Promise.resolve();
+    expect(coordinator.snapshot()).toMatchObject({ writeInFlight: true, outcomeUncertain: false });
+
+    pending.resolve(detail(7, 3, edited));
+    await saving;
+    expect(coordinator.snapshot()).toMatchObject({ writeInFlight: false, outcomeUncertain: false });
+    coordinator.dispose();
+  });
+
   it('creates meaningful content after the idle debounce', async () => {
     vi.useFakeTimers();
     const create = vi.fn().mockResolvedValue(detail(4, 0, { title: 'First note', content: null }));

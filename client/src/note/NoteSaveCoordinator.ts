@@ -16,6 +16,8 @@ export interface NoteSaveSnapshot {
   persisted: { id: number; version: number } | null;
   phase: NoteSavePhase;
   hasUnsavedChanges: boolean;
+  writeInFlight: boolean;
+  outcomeUncertain: boolean;
   replacementRevision: number;
   frozenCreateRequest?: { body: ReturnType<typeof normalizeNoteDraft>; key: string };
 }
@@ -106,6 +108,7 @@ export class NoteSaveCoordinator {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private debounceElapsed = false;
   private inFlight: Promise<void> | null = null;
+  private outcomeUncertain = false;
   private pendingCreate: FrozenCreate | null = null;
   private pendingUpdate: FrozenUpdate | null = null;
   private paused = false;
@@ -166,7 +169,10 @@ export class NoteSaveCoordinator {
     const operation = Promise.resolve().then(() => this.saveOnce(generation));
     this.inFlight = operation;
     await operation;
-    if (this.inFlight === operation) this.inFlight = null;
+    if (this.inFlight === operation) {
+      this.inFlight = null;
+      this.publish();
+    }
     if (this.shouldContinue()) await this.flush();
   }
 
@@ -280,6 +286,8 @@ export class NoteSaveCoordinator {
         this.phase === 'failed' ||
         this.phase === 'conflict' ||
         this.phase === 'paused',
+      writeInFlight: this.inFlight !== null,
+      outcomeUncertain: this.outcomeUncertain,
       ...(this.pendingCreate
         ? {
             frozenCreateRequest: {
@@ -376,6 +384,7 @@ export class NoteSaveCoordinator {
     try {
       const created = await this.transport.create(request.body, request.key);
       if (this.disposed || this.paused || generation !== this.generation) return;
+      this.outcomeUncertain = false;
       this.pendingCreate = null;
       this.persisted = { id: created.id, version: created.version };
       this.baseline = { title: request.body.title ?? '', content: request.body.content };
@@ -385,6 +394,7 @@ export class NoteSaveCoordinator {
       this.onCreated?.(created);
     } catch {
       if (this.disposed || generation !== this.generation) return;
+      this.outcomeUncertain = true;
       this.phase = 'failed';
       this.publish();
     }
@@ -420,6 +430,7 @@ export class NoteSaveCoordinator {
       this.acknowledgeUpdate(request, updated);
     } catch (error) {
       if (this.disposed || generation !== this.generation) return;
+      this.outcomeUncertain = true;
       await this.handleUpdateFailure(error, request, generation);
     }
   }
@@ -431,6 +442,7 @@ export class NoteSaveCoordinator {
   ): Promise<void> {
     const status = errorStatus(error);
     if (status === 409) {
+      this.outcomeUncertain = false;
       this.phase = 'conflict';
       this.publish();
       return;
@@ -451,9 +463,11 @@ export class NoteSaveCoordinator {
       if (noteDraftsEqual(request.draft, noteDraft(latest))) {
         this.acknowledgeUpdate(request, latest);
       } else if (latest.version === request.body.expectedVersion) {
+        this.outcomeUncertain = false;
         this.phase = 'failed';
         this.publish();
       } else {
+        this.outcomeUncertain = false;
         this.phase = 'conflict';
         this.publish();
       }
@@ -466,6 +480,7 @@ export class NoteSaveCoordinator {
 
   private acknowledgeUpdate(request: FrozenUpdate, updated: NoteDetail): void {
     this.pendingUpdate = null;
+    this.outcomeUncertain = false;
     this.persisted = { id: request.id, version: updated.version };
     this.baseline = { ...request.draft };
     this.confirmedRevision = request.revision;

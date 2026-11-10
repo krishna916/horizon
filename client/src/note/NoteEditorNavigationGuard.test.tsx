@@ -38,7 +38,10 @@ describe('NoteEditorNavigationGuard', () => {
     render(
       <NoteEditorNavigationGuard
         canLeave={false}
+        canLeaveNow={() => true}
         phase="dirty"
+        writeInFlight={false}
+        outcomeUncertain={false}
         flush={vi.fn()}
         retry={vi.fn()}
         discardDraft={vi.fn()}
@@ -67,7 +70,10 @@ describe('NoteEditorNavigationGuard', () => {
     render(
       <NoteEditorNavigationGuard
         canLeave={false}
+        canLeaveNow={() => true}
         phase="failed"
+        writeInFlight={false}
+        outcomeUncertain={true}
         flush={vi.fn()}
         retry={retry}
         discardDraft={vi.fn()}
@@ -81,6 +87,7 @@ describe('NoteEditorNavigationGuard', () => {
     expect(blockerState.reset).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: 'Retry and leave' }));
     await waitFor(() => expect(retry).toHaveBeenCalledOnce());
+    expect(blockerState.proceed).toHaveBeenCalledOnce();
   });
 
   it('requires explicit discard confirmation before a logout navigation proceeds', () => {
@@ -90,7 +97,10 @@ describe('NoteEditorNavigationGuard', () => {
     render(
       <NoteEditorNavigationGuard
         canLeave={false}
+        canLeaveNow={() => true}
         phase="dirty"
+        writeInFlight={false}
+        outcomeUncertain={false}
         flush={vi.fn()}
         retry={vi.fn()}
         discardDraft={discardDraft}
@@ -100,8 +110,81 @@ describe('NoteEditorNavigationGuard', () => {
     );
 
     expect(screen.getByRole('dialog')).toHaveTextContent('Sign out with an unsaved note');
-    fireEvent.click(screen.getByRole('button', { name: 'Discard draft and sign out' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard unsent changes and sign out' }));
     expect(discardDraft).toHaveBeenCalledOnce();
     expect(blockerState.proceed).toHaveBeenCalledOnce();
+  });
+
+  it('checks synchronous coordinator state after Wait resolves before React rerenders', async () => {
+    blockerState.status = 'blocked';
+    const flush = vi.fn().mockResolvedValue(undefined);
+    render(
+      <NoteEditorNavigationGuard
+        canLeave={false}
+        canLeaveNow={() => true}
+        phase="saving"
+        writeInFlight={true}
+        outcomeUncertain={false}
+        flush={flush}
+        retry={vi.fn()}
+        discardDraft={vi.fn()}
+      >
+        <p>Editor</p>
+      </NoteEditorNavigationGuard>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wait for save' }));
+    await waitFor(() => expect(flush).toHaveBeenCalledOnce());
+    expect(blockerState.proceed).toHaveBeenCalledOnce();
+  });
+
+  it('does not describe an issued write as discardable and requires acknowledgement to leave', () => {
+    blockerState.status = 'blocked';
+    blockerState.nextPathname = '/login';
+    render(
+      <NoteEditorNavigationGuard
+        canLeave={false}
+        canLeaveNow={() => false}
+        phase="saving"
+        writeInFlight
+        outcomeUncertain={false}
+        flush={vi.fn()}
+        retry={vi.fn()}
+        discardDraft={vi.fn()}
+      >
+        <p>Editor</p>
+      </NoteEditorNavigationGuard>
+    );
+
+    expect(screen.getByRole('dialog')).toHaveTextContent('It may still be applied');
+    expect(screen.getByRole('button', { name: 'Wait for save and sign out' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Discard/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out without waiting' }));
+    expect(blockerState.proceed).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /changes may already have saved/ }));
+    expect(blockerState.proceed).toHaveBeenCalledOnce();
+  });
+
+  it('stays blocked if flush resolves while the coordinator still has unsaved work', async () => {
+    blockerState.status = 'blocked';
+    const flush = vi.fn().mockResolvedValue(undefined);
+    render(
+      <NoteEditorNavigationGuard
+        canLeave={false}
+        canLeaveNow={() => false}
+        phase="saving"
+        writeInFlight={true}
+        outcomeUncertain={false}
+        flush={flush}
+        retry={vi.fn()}
+        discardDraft={vi.fn()}
+      >
+        <p>Editor</p>
+      </NoteEditorNavigationGuard>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wait for save' }));
+    await waitFor(() => expect(flush).toHaveBeenCalledOnce());
+    expect(blockerState.proceed).not.toHaveBeenCalled();
   });
 });
