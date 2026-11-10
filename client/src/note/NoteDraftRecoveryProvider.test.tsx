@@ -22,6 +22,7 @@ const draft: NoteDraft = {
   content: { type: 'doc', content: [{ type: 'paragraph' }] },
   tags: [],
 };
+const tagOnlyDraft: NoteDraft = { title: '', content: null, tags: [{ name: 'Planning' }] };
 
 function RecoveryProbe() {
   const session = useAuthSession();
@@ -32,6 +33,10 @@ function RecoveryProbe() {
       <output data-testid="session">{`${session.phase}:${session.verifiedUserId ?? 'none'}`}</output>
       <output data-testid="recovery">{available?.draft.title ?? 'hidden'}</output>
       <output data-testid="recovery-key">{available?.frozenCreateRequest?.key ?? 'none'}</output>
+      <output data-testid="recovery-tags">
+        {available?.draft.tags?.map((tag) => ('name' in tag ? tag.name : tag.id)).join(',') ??
+          'hidden'}
+      </output>
       <button
         type="button"
         onClick={() =>
@@ -42,6 +47,9 @@ function RecoveryProbe() {
         }
       >
         Stash
+      </button>
+      <button type="button" onClick={() => recovery.stash(1, '/notes/new', tagOnlyDraft)}>
+        Stash tags only
       </button>
       <button type="button" onClick={() => void session.verifySession()}>
         Verify
@@ -90,17 +98,35 @@ describe('NoteDraftRecoveryProvider', () => {
     );
   });
 
+  it('retains tag-only selections in memory through auth expiry and hides them until the same owner verifies', async () => {
+    vi.mocked(userApi.getCurrentUser).mockResolvedValue({
+      data: { id: 1, email: 'one@example.com' },
+    } as Awaited<ReturnType<typeof userApi.getCurrentUser>>);
+    renderRecovery();
+    await waitFor(() => expect(screen.getByTestId('session')).toHaveTextContent('verified:1'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stash tags only' }));
+    expect(screen.getByTestId('recovery-tags')).toHaveTextContent('Planning');
+    act(() => notifySessionUnauthorized(getCurrentSessionEpoch()));
+    await waitFor(() => expect(screen.getByTestId('recovery-tags')).toHaveTextContent('hidden'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    await waitFor(() => expect(screen.getByTestId('session')).toHaveTextContent('verified:1'));
+    expect(screen.getByTestId('recovery-tags')).toHaveTextContent('Planning');
+  });
+
   it('discards memory after explicit logout', async () => {
     vi.mocked(userApi.getCurrentUser).mockResolvedValue({
       data: { id: 1, email: 'one@example.com' },
     } as Awaited<ReturnType<typeof userApi.getCurrentUser>>);
     renderRecovery();
     await waitFor(() => expect(screen.getByTestId('session')).toHaveTextContent('verified:1'));
-    fireEvent.click(screen.getByRole('button', { name: 'Stash' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stash tags only' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Logout' }));
 
     await waitFor(() => expect(screen.getByTestId('recovery')).toHaveTextContent('hidden'));
+    expect(screen.getByTestId('recovery-tags')).toHaveTextContent('hidden');
   });
 
   it('discards memory when a different owner is verified', async () => {
@@ -112,12 +138,13 @@ describe('NoteDraftRecoveryProvider', () => {
     } as Awaited<ReturnType<typeof userApi.getCurrentUser>>);
     renderRecovery();
     await waitFor(() => expect(screen.getByTestId('session')).toHaveTextContent('verified:1'));
-    fireEvent.click(screen.getByRole('button', { name: 'Stash' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stash tags only' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
 
     await waitFor(() => expect(screen.getByTestId('session')).toHaveTextContent('verified:2'));
     expect(screen.getByTestId('recovery')).toHaveTextContent('hidden');
+    expect(screen.getByTestId('recovery-tags')).toHaveTextContent('hidden');
   });
 
   it('discards memory on an explicit cross-tab logout marker', async () => {

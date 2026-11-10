@@ -82,6 +82,46 @@ describe('NoteEditorNavigationGuard', () => {
     ).toBe(true);
   });
 
+  it('offers Stay or Discard Tags and Leave for a tag-only draft, including beforeunload', () => {
+    blockerState.status = 'blocked';
+    const discardDraft = vi.fn();
+    render(
+      <NoteEditorNavigationGuard
+        canLeave={true}
+        hasTagOnlyDraft={true}
+        canLeaveNow={() => true}
+        holdQueuedWritesForNavigation={noHold}
+        releaseQueuedWritesForNavigation={noHold}
+        getNavigationSaveStateNow={() => ({ ...cleanNavigationState(), hasTagOnlyDraft: true })}
+        persistedNoteIdNow={() => null}
+        phase="clean"
+        writeInFlight={false}
+        outcomeUncertain={false}
+        flush={vi.fn()}
+        retry={vi.fn()}
+        discardDraft={discardDraft}
+      >
+        <p>Editor</p>
+      </NoteEditorNavigationGuard>
+    );
+
+    expect(blockerState.options?.enableBeforeUnload()).toBe(true);
+    expect(
+      blockerState.options?.shouldBlockFn({
+        current: { pathname: '/notes/new' },
+        next: { pathname: '/notes' },
+      })
+    ).toBe(true);
+    expect(screen.getByRole('dialog')).toHaveTextContent('Tags');
+    fireEvent.click(screen.getByRole('button', { name: 'Stay' }));
+    expect(discardDraft).not.toHaveBeenCalled();
+    expect(blockerState.reset).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Tags and Leave' }));
+    expect(discardDraft).toHaveBeenCalledOnce();
+    expect(blockerState.proceed).toHaveBeenCalledOnce();
+  });
+
   it('offers Stay or Retry and leave when a save failed', async () => {
     blockerState.status = 'blocked';
     const retry = vi.fn().mockResolvedValue(undefined);

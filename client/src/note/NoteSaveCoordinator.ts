@@ -16,6 +16,7 @@ export interface NoteSaveSnapshot {
   persisted: { id: number; version: number } | null;
   phase: NoteSavePhase;
   hasUnsavedChanges: boolean;
+  hasTagOnlyDraft: boolean;
   writeInFlight: boolean;
   outcomeUncertain: boolean;
   resolvingConflict: boolean;
@@ -79,7 +80,11 @@ export interface FrozenNoteUpdate {
 }
 
 function noteDraft(note: NoteDetail): NoteDraft {
-  return { title: note.title ?? '', content: note.content, tags: note.tags.map(({ id }) => ({ id })) };
+  return {
+    title: note.title ?? '',
+    content: note.content,
+    tags: note.tags.map(({ id }) => ({ id })),
+  };
 }
 
 function errorStatus(error: unknown): number | null {
@@ -328,6 +333,10 @@ export class NoteSaveCoordinator {
       confirmedRevision: this.confirmedRevision,
       persisted: this.persisted ? { ...this.persisted } : null,
       phase: this.phase,
+      hasTagOnlyDraft:
+        !this.persisted &&
+        !hasMeaningfulNoteDraft(this.draft) &&
+        normalizeNoteDraft(this.draft).tags.length > 0,
       replacementRevision: this.replacementRevision,
       hasUnsavedChanges:
         this.hasWork() ||

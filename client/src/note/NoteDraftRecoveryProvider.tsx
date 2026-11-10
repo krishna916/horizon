@@ -43,13 +43,16 @@ const NoteDraftRecoveryContext = createContext<NoteDraftRecoveryValue | null>(nu
 function copyEntry(entry: NoteDraftRecoveryEntry): NoteDraftRecoveryEntry {
   return {
     ...entry,
-    draft: { ...entry.draft },
+    draft: { ...entry.draft, tags: entry.draft.tags?.map((tag) => ({ ...tag })) },
     ...(entry.persistedVersion ? { persistedVersion: { ...entry.persistedVersion } } : {}),
     ...(entry.frozenCreateRequest
       ? {
           frozenCreateRequest: {
             ...entry.frozenCreateRequest,
-            body: { ...entry.frozenCreateRequest.body },
+            body: {
+              ...entry.frozenCreateRequest.body,
+              tags: entry.frozenCreateRequest.body.tags.map((tag) => ({ ...tag })),
+            },
           },
         }
       : {}),
@@ -57,8 +60,14 @@ function copyEntry(entry: NoteDraftRecoveryEntry): NoteDraftRecoveryEntry {
       ? {
           frozenUpdateRequest: {
             ...entry.frozenUpdateRequest,
-            body: { ...entry.frozenUpdateRequest.body },
-            draft: { ...entry.frozenUpdateRequest.draft },
+            body: {
+              ...entry.frozenUpdateRequest.body,
+              tags: entry.frozenUpdateRequest.body.tags.map((tag) => ({ ...tag })),
+            },
+            draft: {
+              ...entry.frozenUpdateRequest.draft,
+              tags: entry.frozenUpdateRequest.draft.tags?.map((tag) => ({ ...tag })),
+            },
           },
         }
       : {}),
@@ -88,13 +97,16 @@ export function NoteDraftRecoveryProvider({ children }: { readonly children: Rea
       const next: NoteDraftRecoveryEntry = {
         ownerId,
         editorRoute,
-        draft: { ...draft },
+        draft: { ...draft, tags: draft.tags?.map((tag) => ({ ...tag })) },
         ...(persistedVersion ? { persistedVersion: { ...persistedVersion } } : {}),
         ...(frozenCreateRequest
           ? {
               frozenCreateRequest: {
                 ...frozenCreateRequest,
-                body: { ...frozenCreateRequest.body },
+                body: {
+                  ...frozenCreateRequest.body,
+                  tags: frozenCreateRequest.body.tags.map((tag) => ({ ...tag })),
+                },
               },
             }
           : {}),
@@ -102,8 +114,14 @@ export function NoteDraftRecoveryProvider({ children }: { readonly children: Rea
           ? {
               frozenUpdateRequest: {
                 ...frozenUpdateRequest,
-                body: { ...frozenUpdateRequest.body },
-                draft: { ...frozenUpdateRequest.draft },
+                body: {
+                  ...frozenUpdateRequest.body,
+                  tags: frozenUpdateRequest.body.tags.map((tag) => ({ ...tag })),
+                },
+                draft: {
+                  ...frozenUpdateRequest.draft,
+                  tags: frozenUpdateRequest.draft.tags?.map((tag) => ({ ...tag })),
+                },
               },
             }
           : {}),

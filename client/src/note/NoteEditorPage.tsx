@@ -236,6 +236,7 @@ function ActiveNoteEditor({
       getNavigationSaveStateNow={getNavigationSaveStateNow}
       persistedNoteIdNow={persistedNoteIdNow}
       phase={snapshot.phase}
+      hasTagOnlyDraft={snapshot.hasTagOnlyDraft}
       writeInFlight={snapshot.writeInFlight}
       outcomeUncertain={snapshot.outcomeUncertain}
       flush={flush}

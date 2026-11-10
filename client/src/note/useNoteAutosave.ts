@@ -117,7 +117,7 @@ export function useNoteAutosave({
           return;
         }
         setSnapshotState(next);
-        if (next.hasUnsavedChanges) {
+        if (next.hasUnsavedChanges || next.hasTagOnlyDraft) {
           recoveryRef.current.stash(
             ownerIdRef.current,
             editorRouteRef.current,
@@ -126,7 +126,7 @@ export function useNoteAutosave({
             next.frozenCreateRequest,
             next.frozenUpdateRequest
           );
-        } else if (next.phase === 'saved') {
+        } else if (next.phase === 'saved' || next.phase === 'clean') {
           recoveryRef.current.discard();
         }
       },
@@ -136,10 +136,12 @@ export function useNoteAutosave({
   });
 
   const currentSnapshot = snapshotState ?? coordinator.snapshot();
-  const snapshot =
-    (session.phase === 'verified' && session.verifiedUserId === ownerId) ||
-    (session.ownerRevision === ownerRevisionAtMount &&
-      (session.phase === 'verifying' || session.phase === 'retryable-error'))
+  const isVerifiedOwner = session.phase === 'verified' && session.verifiedUserId === ownerId;
+  const retainedOwnerSession =
+    session.ownerRevision === ownerRevisionAtMount &&
+    (session.phase === 'verifying' || session.phase === 'retryable-error');
+  const availableSnapshot =
+    isVerifiedOwner || retainedOwnerSession
       ? currentSnapshot
       : {
           ...currentSnapshot,
@@ -147,7 +149,15 @@ export function useNoteAutosave({
           persisted: null,
           phase: 'paused' as const,
           hasUnsavedChanges: false,
+          hasTagOnlyDraft: false,
         };
+  const snapshot =
+    !isVerifiedOwner && availableSnapshot.hasTagOnlyDraft
+      ? {
+          ...availableSnapshot,
+          draft: { ...availableSnapshot.draft, tags: [] },
+        }
+      : availableSnapshot;
 
   useLayoutEffect(() => {
     sessionRef.current = session;
@@ -169,7 +179,7 @@ export function useNoteAutosave({
     const lifecycle = ++lifecycleRef.current;
     return () => {
       const current = coordinator.snapshot();
-      if (current.hasUnsavedChanges && !discardedRef.current) {
+      if ((current.hasUnsavedChanges || current.hasTagOnlyDraft) && !discardedRef.current) {
         const saveRecovery = coordinator.recoverySnapshot();
         recoveryRef.current.stash(
           ownerIdRef.current,
@@ -218,6 +228,7 @@ export function useNoteAutosave({
       writeInFlight: latest.writeInFlight,
       outcomeUncertain: latest.outcomeUncertain,
       hasUnsavedChanges: latest.hasUnsavedChanges,
+      hasTagOnlyDraft: latest.hasTagOnlyDraft,
       persistedNoteId: latest.persisted?.id ?? null,
     };
   }, [coordinator]);
