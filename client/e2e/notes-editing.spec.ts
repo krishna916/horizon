@@ -203,12 +203,168 @@ test('discards an unsent draft before signing out without dispatching a write', 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('dialog')).toContainText('unsent changes');
   expect(logoutCount).toBe(0);
+  await page.clock.fastForward(1_200);
+  expect(writeCount).toBe(0);
 
   await page.getByRole('button', { name: 'Discard unsent changes and sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect.poll(() => logoutCount).toBe(1);
   await page.clock.fastForward(1_000);
   expect(writeCount).toBe(0);
+});
+
+test('holds a debounced create while the sign-out decision is open and resumes after Stay', async ({
+  page,
+}) => {
+  await page.clock.install();
+  let writeCount = 0;
+  await page.route('**/api/v1/users/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 7, email: 'owner-seven@example.test' }),
+    })
+  );
+  await page.route('**/api/v1/auth/logout', (route) => route.fulfill({ status: 204, body: '' }));
+  await page.route('**/api/v1/notes', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+    writeCount += 1;
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 701,
+        ...route.request().postDataJSON(),
+        version: 1,
+        inbox: false,
+        archivedAt: null,
+        ...timestamps,
+      }),
+    });
+  });
+
+  await page.goto('/notes/new');
+  await page.getByRole('textbox', { name: 'Note title' }).fill('Save after staying');
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('dialog')).toContainText('unsent changes');
+  await page.clock.fastForward(1_200);
+  expect(writeCount).toBe(0);
+
+  await page.getByRole('button', { name: 'Stay' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.clock.fastForward(1_000);
+  await expect.poll(() => writeCount).toBe(1);
+  await expect(page).toHaveURL(/\/notes\/701$/);
+});
+
+test('opens a fresh draft after creating a Note and never patches the prior Note', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const writes: Array<{
+    method: string;
+    url: string;
+    idempotencyKey: string | undefined;
+    body: Record<string, unknown>;
+  }> = [];
+  await page.route('**/api/v1/users/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 8, email: 'owner-eight@example.test' }),
+    })
+  );
+  await page.route(/\/api\/v1\/notes(?:\?.*)?$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [],
+        page: 0,
+        size: 20,
+        hasNext: false,
+        counts: { active: 0, archived: 0 },
+      }),
+    })
+  );
+  await page.route('**/api/v1/notes', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    writes.push({
+      method: 'POST',
+      url: route.request().url(),
+      idempotencyKey: route.request().headers()['idempotency-key'],
+      body,
+    });
+    const id = 801 + writes.length;
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id,
+        ...body,
+        version: 1,
+        inbox: false,
+        archivedAt: null,
+        ...timestamps,
+      }),
+    });
+  });
+  await page.route('**/api/v1/notes/*', async (route) => {
+    const id = Number(new URL(route.request().url()).pathname.split('/').at(-1));
+    if (route.request().method() === 'GET') {
+      const post = writes[id - 802];
+      await route.fulfill({
+        status: post ? 200 : 404,
+        contentType: 'application/json',
+        body: post
+          ? JSON.stringify({
+              id,
+              ...post.body,
+              version: 1,
+              inbox: false,
+              archivedAt: null,
+              ...timestamps,
+            })
+          : '{}',
+      });
+      return;
+    }
+    writes.push({
+      method: route.request().method(),
+      url: route.request().url(),
+      idempotencyKey: route.request().headers()['idempotency-key'],
+      body: (route.request().postDataJSON() ?? {}) as Record<string, unknown>,
+    });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+
+  await page.goto('/notes');
+  await page.getByRole('link', { name: 'New note' }).click();
+  await page.getByRole('textbox', { name: 'Note title' }).fill('First Note');
+  await expect(page).toHaveURL(/\/notes\/802$/);
+
+  await page.goto('/notes/new');
+  const secondTitle = page.getByRole('textbox', { name: 'Note title' });
+  await expect(secondTitle).toHaveValue('');
+  await secondTitle.fill('Second Note');
+  await expect(page).toHaveURL(/\/notes\/803$/);
+  await page.clock.fastForward(1_000);
+
+  expect(writes.map(({ method, url }) => [method, url])).toEqual([
+    ['POST', expect.stringMatching(/\/api\/v1\/notes$/)],
+    ['POST', expect.stringMatching(/\/api\/v1\/notes$/)],
+  ]);
+  expect(writes.map(({ body }) => body.title)).toEqual(['First Note', 'Second Note']);
+  expect(writes[0]?.idempotencyKey).toBeTruthy();
+  expect(writes[1]?.idempotencyKey).toBeTruthy();
+  expect(writes[0]?.idempotencyKey).not.toBe(writes[1]?.idempotencyKey);
 });
 
 test('warns that an issued PATCH may save and waits before signing out', async ({ page }) => {

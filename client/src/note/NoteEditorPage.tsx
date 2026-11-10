@@ -14,6 +14,20 @@ import type { NoteDraftRecoveryEntry } from './NoteDraftRecoveryProvider';
 
 const blankDraft: NoteDraft = { title: '', content: null };
 
+function isUnavailableNote(
+  routeNoteId: string | null,
+  id: number | null,
+  query: ReturnType<typeof useNoteDetail>
+) {
+  if (routeNoteId === null) return false;
+  if (id === null) return true;
+  return (
+    query.isError &&
+    isAxiosError(query.error) &&
+    [403, 404].includes(query.error.response?.status ?? 0)
+  );
+}
+
 function statusText(snapshot: {
   phase: string;
   persisted: { id: number; version: number } | null;
@@ -93,13 +107,7 @@ export function NoteEditorPage({
     );
   }
 
-  if (
-    routeNoteId !== null &&
-    (id === null ||
-      (query.isError &&
-        isAxiosError(query.error) &&
-        [403, 404].includes(query.error.response?.status ?? 0)))
-  ) {
+  if (isUnavailableNote(routeNoteId, id, query)) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8">
         <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">

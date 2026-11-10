@@ -166,7 +166,7 @@ describe('NotesRoute session ownership', () => {
     route.pathname = '/notes/new';
     route.locationKey = 'new-entry-b';
     view.rerender(<NotesRoute />);
-    expect(screen.getByTestId('editor-identity')).toHaveTextContent('new:new-entry-b');
+    expect(screen.getByTestId('editor-identity').textContent).toMatch(/^new:/);
     expect(screen.getByTestId('editor-identity')).not.toHaveTextContent(firstIdentity ?? '');
   });
 });

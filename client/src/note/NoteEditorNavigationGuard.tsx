@@ -114,13 +114,13 @@ export function NoteEditorNavigationGuard({
       return;
     }
     discardDraft();
-    blocker.proceed();
+    blocker.proceed?.();
   }
 
   function signOutAnyway() {
     recordCurrentWriteState();
     discardDraft();
-    blocker.proceed();
+    blocker.proceed?.();
   }
 
   const title = isExplicitLogout
