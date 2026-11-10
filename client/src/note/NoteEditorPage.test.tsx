@@ -100,7 +100,23 @@ describe('NoteEditorPage', () => {
     expect(title).toHaveValue('');
     expect(title).toHaveAttribute('placeholder', 'Untitled note');
     expect(screen.getByLabelText('Note content')).toBeInTheDocument();
-    expect(screen.getByText('Saved')).toBeInTheDocument();
+    expect(screen.getByText('Not saved yet')).toBeInTheDocument();
+  });
+
+  it('shows dirty and saving states before a new Note is confirmed by the server', () => {
+    state.snapshot = {
+      ...state.snapshot,
+      phase: 'dirty',
+      draft: { title: 'Draft', content: null },
+      hasUnsavedChanges: true,
+    };
+    const rendered = renderEditor();
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    state.snapshot = { ...state.snapshot, phase: 'saving' };
+    rendered.rerender(
+      <NoteEditorPage routeNoteId={null} ownerId={12} onBack={vi.fn()} onCreated={vi.fn()} />
+    );
+    expect(screen.getByText('Saving…')).toBeInTheDocument();
   });
 
   it('passes the user-entered title as a draft without inserting a display fallback', () => {

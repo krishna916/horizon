@@ -13,12 +13,14 @@ import type { NoteDraftRecoveryEntry } from './NoteDraftRecoveryProvider';
 
 const blankDraft: NoteDraft = { title: '', content: null };
 
-function statusText(phase: string): string {
-  if (phase === 'saving') return 'Saving…';
-  if (phase === 'saved' || phase === 'clean') return 'Saved';
-  if (phase === 'failed') return 'Save failed';
-  if (phase === 'conflict') return 'This note changed elsewhere';
-  if (phase === 'paused') return 'Save paused';
+function statusText(snapshot: { phase: string; persisted: { id: number; version: number } | null }): string {
+  if (snapshot.phase === 'saving') return 'Saving…';
+  if (snapshot.phase === 'saved' || snapshot.phase === 'clean') {
+    return snapshot.persisted ? 'Saved' : 'Not saved yet';
+  }
+  if (snapshot.phase === 'failed') return 'Save failed';
+  if (snapshot.phase === 'conflict') return 'This note changed elsewhere';
+  if (snapshot.phase === 'paused') return 'Save paused';
   return 'Unsaved changes';
 }
 
@@ -237,7 +239,7 @@ function ActiveNoteEditor({
             <span
               className={snapshot.phase === 'failed' ? 'text-destructive' : 'text-muted-foreground'}
             >
-              {statusText(snapshot.phase)}
+            {statusText(snapshot)}
             </span>
             {snapshot.phase === 'failed' && (
               <button type="button" onClick={() => void retry()} className="font-medium underline">

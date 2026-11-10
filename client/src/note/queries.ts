@@ -24,7 +24,7 @@ export function useNoteList(
     getNextPageParam: (lastPage) => (lastPage.data.hasNext ? lastPage.data.page + 1 : undefined),
     enabled: userId !== undefined,
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnMount: true,
     // These private pages stay in memory for same-owner detail visits; logout and owner changes clear them.
     gcTime: Infinity,
   });
