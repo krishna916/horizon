@@ -39,6 +39,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
+        persistedNoteId={14}
         phase="dirty"
         writeInFlight={false}
         outcomeUncertain={false}
@@ -62,6 +63,12 @@ describe('NoteEditorNavigationGuard', () => {
         next: { pathname: '/notes/14' },
       })
     ).toBe(false);
+    expect(
+      blockerState.options?.shouldBlockFn({
+        current: { pathname: '/notes/new' },
+        next: { pathname: '/notes/99' },
+      })
+    ).toBe(true);
   });
 
   it('offers Stay or Retry and leave when a save failed', async () => {
@@ -71,6 +78,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
+        persistedNoteId={null}
         phase="failed"
         writeInFlight={false}
         outcomeUncertain={true}
@@ -98,6 +106,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
+        persistedNoteId={null}
         phase="dirty"
         writeInFlight={false}
         outcomeUncertain={false}
@@ -122,6 +131,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
+        persistedNoteId={null}
         phase="saving"
         writeInFlight={true}
         outcomeUncertain={false}
@@ -145,6 +155,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => false}
+        persistedNoteId={null}
         phase="saving"
         writeInFlight
         outcomeUncertain={false}
@@ -172,6 +183,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => false}
+        persistedNoteId={null}
         phase="saving"
         writeInFlight={true}
         outcomeUncertain={false}
@@ -186,5 +198,34 @@ describe('NoteEditorNavigationGuard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Wait for save' }));
     await waitFor(() => expect(flush).toHaveBeenCalledOnce());
     expect(blockerState.proceed).not.toHaveBeenCalled();
+  });
+
+  it('moves focus into the leave modal, traps Tab, and lets Escape stay', () => {
+    blockerState.status = 'blocked';
+    blockerState.nextPathname = '/login';
+    render(
+      <NoteEditorNavigationGuard
+        canLeave={false}
+        canLeaveNow={() => false}
+        persistedNoteId={null}
+        phase="dirty"
+        writeInFlight={false}
+        outcomeUncertain={false}
+        flush={vi.fn()}
+        retry={vi.fn()}
+        discardDraft={vi.fn()}
+      >
+        <p>Editor</p>
+      </NoteEditorNavigationGuard>
+    );
+
+    const dialog = screen.getByRole('dialog');
+    const stay = screen.getByRole('button', { name: 'Stay' });
+    const discard = screen.getByRole('button', { name: 'Discard unsent changes and sign out' });
+    expect(document.activeElement).toBe(stay);
+    fireEvent.keyDown(stay, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(discard);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(blockerState.reset).toHaveBeenCalledOnce();
   });
 });

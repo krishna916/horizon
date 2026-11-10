@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import { NotesBrowseProvider } from './NotesBrowseContext';
 import { NoteEditorPage } from './NoteEditorPage';
@@ -16,6 +16,7 @@ export function NotesRoute() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const router = useRouter();
   const navigate = useNavigate({ from: '/notes' });
+  const priorEditorRoute = useRef<{ pathname: string; identity: string } | null>(null);
 
   if (
     phase === 'verified' &&
@@ -41,6 +42,18 @@ export function NotesRoute() {
     routeNoteId === null || (routeId !== null && routeId === promotedCreatedNoteId)
       ? 'new'
       : `note:${routeNoteId}`;
+  const trustedNewOrigin =
+    routeNoteId === null && isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation);
+
+  useLayoutEffect(() => {
+    const isEditorRoute = pathname === '/notes/new' || pathname.startsWith('/notes/');
+    const previous = priorEditorRoute.current;
+    if (isEditorRoute && (!previous || previous.identity !== editorIdentity)) {
+      const main = document.querySelector<HTMLElement>('main');
+      if (main) main.scrollTop = 0;
+    }
+    priorEditorRoute.current = isEditorRoute ? { pathname, identity: editorIdentity } : null;
+  }, [editorIdentity, pathname]);
 
   useEffect(() => {
     if (pathname === '/notes/new') return;
@@ -82,7 +95,11 @@ export function NotesRoute() {
               to: '/notes/$id',
               params: { id: String(note.id) },
               replace: true,
-              state: { horizonNoteNavigation: { kind: 'from-workspace', noteId: note.id } },
+              state: {
+                horizonNoteNavigation: trustedNewOrigin
+                  ? { kind: 'from-workspace', noteId: note.id }
+                  : undefined,
+              },
             });
           }}
         />

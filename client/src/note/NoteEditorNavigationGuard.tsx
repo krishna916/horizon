@@ -1,10 +1,12 @@
 import { useBlocker } from '@tanstack/react-router';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { useNoteModal } from './useNoteModal';
 
 export function NoteEditorNavigationGuard({
   canLeave,
   canLeaveNow,
+  persistedNoteId,
   phase,
   writeInFlight,
   outcomeUncertain,
@@ -15,6 +17,7 @@ export function NoteEditorNavigationGuard({
 }: {
   readonly canLeave: boolean;
   readonly canLeaveNow: () => boolean;
+  readonly persistedNoteId: number | null;
   readonly phase: string;
   readonly writeInFlight: boolean;
   readonly outcomeUncertain: boolean;
@@ -29,11 +32,17 @@ export function NoteEditorNavigationGuard({
     shouldBlockFn: ({ current, next }) => {
       if (canLeave) return false;
       // The first confirmed POST replaces /notes/new with its canonical ID in place.
-      if (current.pathname === '/notes/new' && /^\/notes\/\d+$/.test(next.pathname)) return false;
+      if (
+        current.pathname === '/notes/new' &&
+        persistedNoteId !== null &&
+        next.pathname === `/notes/${persistedNoteId}`
+      )
+        return false;
       return true;
     },
     enableBeforeUnload: () => !canLeave,
   });
+  const leaveDialogRef = useNoteModal(blocker.status === 'blocked', () => blocker.reset?.());
   const isExplicitLogout = blocker.status === 'blocked' && blocker.next.pathname === '/login';
 
   async function waitAndLeave() {
@@ -53,7 +62,7 @@ export function NoteEditorNavigationGuard({
       {blocker.status === 'blocked' && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4">
           <dialog
-            open
+            ref={leaveDialogRef}
             aria-modal="true"
             aria-labelledby="note-leave-title"
             className="relative m-0 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-xl"

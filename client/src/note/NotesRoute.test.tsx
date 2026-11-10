@@ -10,6 +10,11 @@ const session = vi.hoisted(() => ({
     ownerRevision: 0,
   },
 }));
+const route = vi.hoisted(() => ({
+  pathname: '/notes',
+  locationState: {} as Record<string, unknown>,
+  navigate: vi.fn(),
+}));
 
 vi.mock('@/user/session/AuthSessionProvider', () => ({
   useAuthSession: () => session.value,
@@ -22,9 +27,15 @@ vi.mock('@tanstack/react-router', () => ({
     select,
   }: {
     select: (state: { location: { pathname: string } }) => unknown;
-  }) => select({ location: { pathname: '/notes' } }),
-  useRouter: () => ({ state: { location: { state: {} } }, history: { back: vi.fn() } }),
-  useNavigate: () => vi.fn(),
+  }) => select({ location: { pathname: route.pathname } }),
+  useRouter: () => ({ state: { location: { state: route.locationState } }, history: { back: vi.fn() } }),
+  useNavigate: () => route.navigate,
+}));
+
+vi.mock('./NoteEditorPage', () => ({
+  NoteEditorPage: ({ onCreated }: { onCreated: (note: { id: number }) => void }) => (
+    <button type="button" onClick={() => onCreated({ id: 501 } as never)}>Create done</button>
+  ),
 }));
 
 function BrowseProbe() {
@@ -42,6 +53,9 @@ function BrowseProbe() {
 describe('NotesRoute session ownership', () => {
   afterEach(() => {
     session.value = { phase: 'verified', verifiedUserId: 1, ownerRevision: 0 };
+    route.pathname = '/notes';
+    route.locationState = {};
+    route.navigate.mockReset();
   });
 
   it('gates an initially unverified Notes route until an owner is available', () => {
@@ -80,5 +94,43 @@ describe('NotesRoute session ownership', () => {
     session.value = { phase: 'unauthenticated', verifiedUserId: null, ownerRevision: 1 };
     view.rerender(<NotesRoute />);
     expect(screen.queryByTestId('browse-state')).toBeNull();
+  });
+
+  it('starts the editor at the top and preserves scroll during new-to-created-ID replacement', () => {
+    const main = document.createElement('main');
+    document.body.append(main);
+    main.scrollTop = 700;
+    const view = render(<NotesRoute />);
+    route.pathname = '/notes/new';
+    view.rerender(<NotesRoute />);
+    expect(main.scrollTop).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create done' }));
+    main.scrollTop = 143;
+    route.pathname = '/notes/501';
+    view.rerender(<NotesRoute />);
+    expect(main.scrollTop).toBe(143);
+    main.remove();
+  });
+
+  it('carries workspace origin through create only when the new route was trusted', () => {
+    const view = render(<NotesRoute />);
+    route.pathname = '/notes/new';
+    route.locationState = {};
+    view.rerender(<NotesRoute />);
+    fireEvent.click(screen.getByRole('button', { name: 'Create done' }));
+    expect(route.navigate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ state: { horizonNoteNavigation: undefined } })
+    );
+
+    route.pathname = '/notes/new';
+    route.locationState = { horizonNoteNavigation: { kind: 'from-workspace' } };
+    view.rerender(<NotesRoute />);
+    fireEvent.click(screen.getByRole('button', { name: 'Create done' }));
+    expect(route.navigate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        state: { horizonNoteNavigation: { kind: 'from-workspace', noteId: 501 } },
+      })
+    );
   });
 });

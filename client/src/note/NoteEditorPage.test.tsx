@@ -192,4 +192,19 @@ describe('NoteEditorPage', () => {
 
     expect(screen.getByLabelText('Note content')).toBe(editor);
   });
+
+  it('closes the conflict confirmation with Escape', () => {
+    state.note = archivedNote;
+    state.snapshot = {
+      ...state.snapshot,
+      draft: { title: 'Local', content },
+      phase: 'conflict',
+      persisted: { id: 6, version: 2 },
+      hasUnsavedChanges: true,
+    };
+    renderEditor('6');
+    fireEvent.click(screen.getByRole('button', { name: 'Load latest version' }));
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 });

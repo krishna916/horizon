@@ -7,6 +7,7 @@ import { useNoteDraftRecovery } from './NoteDraftRecoveryProvider';
 import { NoteEditorNavigationGuard } from './NoteEditorNavigationGuard';
 import { useRef, useState } from 'react';
 import { useNoteAutosave } from './useNoteAutosave';
+import { useNoteModal } from './useNoteModal';
 import type { NoteDetail } from './types';
 import type { NoteDraft } from './noteDraft';
 import type { NoteDraftRecoveryEntry } from './NoteDraftRecoveryProvider';
@@ -215,10 +216,13 @@ function ActiveNoteEditor({
     edit({ ...snapshot.draft, content });
   }
 
+  const conflictDialogRef = useNoteModal(conflictChoice !== null, () => setConflictChoice(null));
+
   return (
     <NoteEditorNavigationGuard
       canLeave={canLeave}
       canLeaveNow={canLeaveNow}
+      persistedNoteId={snapshot.persisted?.id ?? null}
       phase={snapshot.phase}
       writeInFlight={snapshot.writeInFlight}
       outcomeUncertain={snapshot.outcomeUncertain}
@@ -311,7 +315,7 @@ function ActiveNoteEditor({
         {conflictChoice && (
           <div className="fixed inset-0 z-30 grid place-items-center bg-black/30 p-4">
             <dialog
-              open
+              ref={conflictDialogRef}
               aria-modal="true"
               aria-labelledby="conflict-confirm-title"
               className="relative m-0 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-xl"
