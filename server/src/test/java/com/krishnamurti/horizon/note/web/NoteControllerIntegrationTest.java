@@ -217,6 +217,43 @@ class NoteControllerIntegrationTest {
     }
 
     @Test
+    void replayOfInitiallyUntaggedCreateReturnsTagsAddedLater() throws Exception {
+        String key = UUID.randomUUID().toString();
+        MvcResult created =
+                mockMvc.perform(
+                                post("/api/v1/notes")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", key)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content("{\"title\":\"Initially untagged\"}"))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.tags").isEmpty())
+                        .andReturn();
+        Number id = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id.longValue())
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":0,\"tags\":[{\"name\":\"Added"
+                                                + " later\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags[0].name").value("Added later"));
+
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Initially untagged\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(id.longValue()))
+                .andExpect(jsonPath("$.tags.length()").value(1))
+                .andExpect(jsonPath("$.tags[0].name").value("Added later"));
+    }
+
+    @Test
     void patchUsesExpectedVersionAndRejectsUnknownFields() throws Exception {
         long id = createNote("{\"title\":\"Before\"}");
         mockMvc.perform(

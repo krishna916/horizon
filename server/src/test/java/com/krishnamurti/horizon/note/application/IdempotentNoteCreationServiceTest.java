@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -51,14 +52,16 @@ class IdempotentNoteCreationServiceTest {
     void firstRequestCreatesAndCompletesReceipt() {
         UUID key = UUID.randomUUID();
         Map<String, Object> content = body("new note");
-        Note created = Note.create(12L, "Title", content);
+        Note created = mock(Note.class);
+        when(created.getId()).thenReturn(73L);
         when(requestRepository.claim(eq(12L), eq(key), any())).thenReturn(true);
         when(commandService.create(" Title ", content, List.of())).thenReturn(created);
+        when(noteTagQueryService.tagsForNotes(12L, List.of(73L))).thenReturn(Map.of());
 
         Note result = service.create(key, " Title ", content);
 
         assertThat(result).isSameAs(created);
-        verify(requestRepository).complete(12L, key, null);
+        verify(requestRepository).complete(12L, key, 73L);
     }
 
     @Test
@@ -66,12 +69,14 @@ class IdempotentNoteCreationServiceTest {
         UUID key = UUID.randomUUID();
         Map<String, Object> content = body("retry");
         String fingerprint = NoteCreationFingerprint.compute("Title", content);
-        Note existing = Note.create(12L, "Title", content);
+        Note existing = mock(Note.class);
+        when(existing.getId()).thenReturn(81L);
         when(requestRepository.claim(12L, key, fingerprint)).thenReturn(false);
         when(requestRepository.find(12L, key))
                 .thenReturn(Optional.of(new NoteCreationReceipt(fingerprint, 81L)));
         when(noteRepository.findByIdAndUserIdAndDeletedAtIsNull(81L, 12L))
                 .thenReturn(Optional.of(existing));
+        when(noteTagQueryService.tagsForNotes(12L, List.of(81L))).thenReturn(Map.of());
 
         assertThat(service.create(key, " Title ", content)).isSameAs(existing);
         verify(commandService, never()).create(any(), any(), anyList());

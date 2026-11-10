@@ -73,7 +73,7 @@ public class IdempotentNoteCreationService {
         if (requestRepository.claim(userId, requestKey, fingerprint)) {
             Note created = commandService.create(title, content, tags);
             requestRepository.complete(userId, requestKey, created.getId());
-            return withTags(userId, created, tags);
+            return withTags(userId, created);
         }
 
         NoteCreationReceipt receipt =
@@ -87,13 +87,10 @@ public class IdempotentNoteCreationService {
                 noteRepository
                         .findByIdAndUserIdAndDeletedAtIsNull(receipt.noteId(), userId)
                         .orElseThrow(NoteCreationConflictException::new);
-        return withTags(userId, replayed, tags);
+        return withTags(userId, replayed);
     }
 
-    private NoteCreationResult withTags(Long userId, Note note, List<NoteTagSelection> selections) {
-        if (selections.isEmpty()) {
-            return new NoteCreationResult(note, List.of());
-        }
+    private NoteCreationResult withTags(Long userId, Note note) {
         return new NoteCreationResult(
                 note,
                 noteTagQueryService
