@@ -17,6 +17,7 @@ export function NotesRoute() {
     sourceIdentity: string;
   } | null>(null);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const locationKey = useRouterState({ select: (state) => state.location.key });
   const router = useRouter();
   const navigate = useNavigate({ from: '/notes' });
   const priorEditorRoute = useRef<{ pathname: string; identity: string } | null>(null);
@@ -43,7 +44,7 @@ export function NotesRoute() {
   const routeId = routeNoteId === null ? null : parseNoteId(routeNoteId);
   const editorIdentity =
     routeNoteId === null
-      ? (promotedCreatedNote?.sourceIdentity ?? 'new')
+      ? `new:${locationKey}`
       : routeId !== null && routeId === promotedCreatedNote?.id
         ? promotedCreatedNote.sourceIdentity
         : `note:${routeNoteId}`;

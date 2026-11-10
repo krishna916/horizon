@@ -12,6 +12,7 @@ const session = vi.hoisted(() => ({
 }));
 const route = vi.hoisted(() => ({
   pathname: '/notes',
+  locationKey: 'workspace',
   locationState: {} as Record<string, unknown>,
   navigate: vi.fn(),
 }));
@@ -26,8 +27,8 @@ vi.mock('@tanstack/react-router', () => ({
   useRouterState: ({
     select,
   }: {
-    select: (state: { location: { pathname: string } }) => unknown;
-  }) => select({ location: { pathname: route.pathname } }),
+    select: (state: { location: { pathname: string; key: string } }) => unknown;
+  }) => select({ location: { pathname: route.pathname, key: route.locationKey } }),
   useRouter: () => ({
     state: { location: { state: route.locationState } },
     history: { back: vi.fn() },
@@ -36,10 +37,19 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('./NoteEditorPage', () => ({
-  NoteEditorPage: ({ onCreated }: { onCreated: (note: { id: number }) => void }) => (
-    <button type="button" onClick={() => onCreated({ id: 501 } as never)}>
-      Create done
-    </button>
+  NoteEditorPage: ({
+    identityKey,
+    onCreated,
+  }: {
+    identityKey: string;
+    onCreated: (note: { id: number }) => void;
+  }) => (
+    <>
+      <output data-testid="editor-identity">{identityKey}</output>
+      <button type="button" onClick={() => onCreated({ id: 501 } as never)}>
+        Create done
+      </button>
+    </>
   ),
 }));
 
@@ -59,6 +69,7 @@ describe('NotesRoute session ownership', () => {
   afterEach(() => {
     session.value = { phase: 'verified', verifiedUserId: 1, ownerRevision: 0 };
     route.pathname = '/notes';
+    route.locationKey = 'workspace';
     route.locationState = {};
     route.navigate.mockReset();
   });
@@ -137,5 +148,25 @@ describe('NotesRoute session ownership', () => {
         state: { horizonNoteNavigation: { kind: 'from-workspace', noteId: 501 } },
       })
     );
+  });
+
+  it('uses a fresh editor identity for a second new Note after create-to-ID promotion', () => {
+    const view = render(<NotesRoute />);
+    route.pathname = '/notes/new';
+    route.locationKey = 'new-entry-a';
+    view.rerender(<NotesRoute />);
+    const firstIdentity = screen.getByTestId('editor-identity').textContent;
+    fireEvent.click(screen.getByRole('button', { name: 'Create done' }));
+
+    route.pathname = '/notes/501';
+    route.locationKey = 'created-entry-a';
+    view.rerender(<NotesRoute />);
+    expect(screen.getByTestId('editor-identity')).toHaveTextContent(firstIdentity ?? '');
+
+    route.pathname = '/notes/new';
+    route.locationKey = 'new-entry-b';
+    view.rerender(<NotesRoute />);
+    expect(screen.getByTestId('editor-identity')).toHaveTextContent('new:new-entry-b');
+    expect(screen.getByTestId('editor-identity')).not.toHaveTextContent(firstIdentity ?? '');
   });
 });
