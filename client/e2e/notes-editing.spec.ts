@@ -350,7 +350,11 @@ test('opens a fresh draft after creating a Note and never patches the prior Note
   await page.getByRole('textbox', { name: 'Note title' }).fill('First Note');
   await expect(page).toHaveURL(/\/notes\/802$/);
 
-  await page.goto('/notes/new');
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/notes/new');
+    window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+  });
+  await expect(page).toHaveURL(/\/notes\/new$/);
   const secondTitle = page.getByRole('textbox', { name: 'Note title' });
   await expect(secondTitle).toHaveValue('');
   await secondTitle.fill('Second Note');
