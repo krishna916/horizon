@@ -107,7 +107,8 @@ public class NoteRequestMapper {
 
     public NotePatch toPatch(UpdateNoteRequest request) {
         Map<String, JsonNode> fields = request.fields();
-        rejectUnknown(fields, Set.of(EXPECTED_VERSION_FIELD, TITLE_FIELD, CONTENT_FIELD));
+        rejectUnknown(
+                fields, Set.of(EXPECTED_VERSION_FIELD, TITLE_FIELD, CONTENT_FIELD, TAGS_FIELD));
         JsonNode expected = fields.get(EXPECTED_VERSION_FIELD);
         if (expected == null || !expected.isIntegralNumber() || !expected.canConvertToLong()) {
             fail(EXPECTED_VERSION_FIELD, "A nonnegative integer is required.");
@@ -121,6 +122,9 @@ public class NoteRequestMapper {
                         : FieldUpdate.absent(),
                 fields.containsKey(CONTENT_FIELD)
                         ? FieldUpdate.of(content(fields, CONTENT_FIELD))
+                        : FieldUpdate.absent(),
+                fields.containsKey(TAGS_FIELD)
+                        ? FieldUpdate.of(parseTags(fields.get(TAGS_FIELD), true))
                         : FieldUpdate.absent());
     }
 

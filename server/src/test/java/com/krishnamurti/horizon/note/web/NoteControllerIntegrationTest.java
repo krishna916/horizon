@@ -255,6 +255,115 @@ class NoteControllerIntegrationTest {
     }
 
     @Test
+    void patchReplacesTagsVersionedAndReadsReturnSortedOwnerScopedTags() throws Exception {
+        long id = createNote("{\"title\":\"Before\"}");
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":0,\"tags\":[{\"id\":9223372036854775807},{\"name\":\"Rollback\"}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.tags").exists());
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM tag WHERE user_id = ?",
+                                Integer.class,
+                                ownerId))
+                .isZero();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT version FROM note WHERE id = ?", Long.class, id))
+                .isZero();
+
+        MvcResult tagged =
+                mockMvc.perform(
+                                patch("/api/v1/notes/{id}", id)
+                                        .cookie(ownerCookie)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(
+                                                "{\"expectedVersion\":0,\"tags\":[{\"name\":\"Zebra\"},{\"name\":\"Alpha\"},{\"name\":\"alpha\"}]}"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.version").value(1))
+                        .andExpect(jsonPath("$.tags.length()").value(2))
+                        .andExpect(jsonPath("$.tags[0].name").value("Alpha"))
+                        .andExpect(jsonPath("$.tags[1].name").value("Zebra"))
+                        .andReturn();
+        String taggedJson = tagged.getResponse().getContentAsString();
+        Number alphaId = JsonPath.read(taggedJson, "$.tags[0].id");
+        String updatedAt =
+                mockMvc.perform(get("/api/v1/notes/{id}", id).cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        updatedAt = JsonPath.read(updatedAt, "$.updatedAt");
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":1,\"tags\":[{\"id\":"
+                                                + alphaId
+                                                + "},{\"name\":\" zebra \"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.updatedAt").value(updatedAt));
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":1,\"title\":\"After\",\"tags\":[{\"name\":\"Gamma\"},{\"id\":"
+                                                + alphaId
+                                                + "}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.tags.length()").value(2));
+
+        mockMvc.perform(get("/api/v1/notes/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags[0].name").value("Alpha"))
+                .andExpect(jsonPath("$.tags[1].name").value("Gamma"));
+        mockMvc.perform(get("/api/v1/notes").cookie(ownerCookie).param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].tags[0].name").value("Alpha"))
+                .andExpect(jsonPath("$.items[0].tags[1].name").value("Gamma"));
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"expectedVersion\":2,\"tags\":null}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.tags").exists());
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"expectedVersion\":2,\"tags\":[]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(3))
+                .andExpect(jsonPath("$.tags.length()").value(0));
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM note_tag WHERE note_id = ?",
+                                Integer.class,
+                                id))
+                .isZero();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM tag WHERE user_id = ?",
+                                Integer.class,
+                                ownerId))
+                .isEqualTo(3);
+    }
+
+    @Test
     void limitsRawNoteBodiesBeforeParsingAndKeepsSemanticContentLimit() throws Exception {
         String oversizedText = "x".repeat((int) NoteRequestBodyLimitAdvice.MAX_REQUEST_BYTES + 1);
         String oversizedBody = noteBody("Large", oversizedText);

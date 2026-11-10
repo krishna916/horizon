@@ -1,6 +1,5 @@
 package com.krishnamurti.horizon.note.application;
 
-import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.note.infrastructure.NoteTagAssociationRepository;
 import com.krishnamurti.horizon.tag.api.TagCommandApi;
@@ -40,18 +39,18 @@ public class NoteTagAssignmentService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean replace(Long ownerId, Long noteId, List<NoteTagSelection> selections) {
-        Note note =
+        Long ownedNoteId =
                 noteRepository
                         .lockOwnedForTagWrite(noteId, ownerId)
+                        .map(ownedNote -> ownedNote.getId())
                         .orElseThrow(() -> new NoteNotFoundException(noteId));
         Set<Long> resolvedIds = resolve(ownerId, selections);
-        Set<Long> currentIds = associationRepository.findTagIdsForNote(ownerId, noteId);
+        Set<Long> currentIds = associationRepository.findTagIdsForNote(ownerId, ownedNoteId);
         if (currentIds.equals(resolvedIds)) {
             return false;
         }
 
-        associationRepository.replace(ownerId, noteId, resolvedIds);
-        noteRepository.saveAndFlush(note);
+        associationRepository.replace(ownerId, ownedNoteId, resolvedIds);
         return true;
     }
 

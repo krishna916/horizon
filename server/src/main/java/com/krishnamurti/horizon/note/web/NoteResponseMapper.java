@@ -5,6 +5,7 @@ import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.note.domain.NotePreviewBuilder;
 import com.krishnamurti.horizon.tag.api.TagReference;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 
 /** Maps Note application results into explicit public response DTOs. */
@@ -31,7 +32,18 @@ public class NoteResponseMapper {
     }
 
     public NoteListResponse toList(NotePage page) {
-        List<NoteSummaryResponse> items = page.items().stream().map(this::toSummary).toList();
+        return toList(page, Map.of());
+    }
+
+    public NoteListResponse toList(NotePage page, Map<Long, List<TagReference>> tagsByNoteId) {
+        List<NoteSummaryResponse> items =
+                page.items().stream()
+                        .map(
+                                note ->
+                                        toSummary(
+                                                note,
+                                                tagsByNoteId.getOrDefault(note.getId(), List.of())))
+                        .toList();
         return new NoteListResponse(
                 items,
                 page.page(),
@@ -40,7 +52,7 @@ public class NoteResponseMapper {
                 new NoteCountsResponse(page.counts().active(), page.counts().archived()));
     }
 
-    private NoteSummaryResponse toSummary(Note note) {
+    private NoteSummaryResponse toSummary(Note note, List<TagReference> tags) {
         return new NoteSummaryResponse(
                 note.getId(),
                 note.getTitle(),
@@ -49,6 +61,7 @@ public class NoteResponseMapper {
                 note.isInbox(),
                 note.getArchivedAt(),
                 note.getCreatedAt(),
-                note.getUpdatedAt());
+                note.getUpdatedAt(),
+                tags.stream().map(NoteTagResponse::from).toList());
     }
 }

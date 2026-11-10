@@ -60,7 +60,7 @@ public class NoteCommandService {
                                                 "User is not authenticated"));
         Note note =
                 noteRepository
-                        .findByIdAndUserIdAndDeletedAtIsNull(noteId, userId)
+                        .lockOwnedForTagWrite(noteId, userId)
                         .orElseThrow(() -> new NoteNotFoundException(noteId));
         if (note.getVersion() != patch.expectedVersion()) {
             throw new NoteVersionConflictException();
@@ -68,14 +68,22 @@ public class NoteCommandService {
 
         String originalTitle = note.getTitle();
         Map<String, Object> originalContent = note.getContent();
+        boolean tagsChanged =
+                patch.tags().present()
+                        && noteTagAssignmentService.replace(userId, noteId, patch.tags().value());
         if (patch.title().present()) {
             note.updateTitle(patch.title().value());
         }
         if (patch.content().present()) {
             note.updateContent(patch.content().value());
         }
-        if (Objects.equals(originalTitle, note.getTitle())
-                && Objects.equals(originalContent, note.getContent())) {
+        boolean fieldsChanged =
+                !Objects.equals(originalTitle, note.getTitle())
+                        || !Objects.equals(originalContent, note.getContent());
+        if (tagsChanged) {
+            note.touchMetadata();
+        }
+        if (!fieldsChanged && !tagsChanged) {
             return note;
         }
         try {

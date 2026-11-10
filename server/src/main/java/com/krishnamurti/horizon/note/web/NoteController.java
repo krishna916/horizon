@@ -54,13 +54,23 @@ public class NoteController {
 
     @GetMapping("/{id}")
     public NoteDetailResponse get(@PathVariable Long id) {
-        return responseMapper.toDetail(queryService.get(id));
+        var note = queryService.get(id);
+        var tags =
+                queryService
+                        .tagsForNotes(java.util.List.of(id))
+                        .getOrDefault(id, java.util.List.of());
+        return responseMapper.toDetail(note, tags);
     }
 
     @PatchMapping("/{id}")
     public NoteDetailResponse update(
             @PathVariable Long id, @RequestBody UpdateNoteRequest request) {
-        return responseMapper.toDetail(commandService.update(id, requestMapper.toPatch(request)));
+        var note = commandService.update(id, requestMapper.toPatch(request));
+        var tags =
+                queryService
+                        .tagsForNotes(java.util.List.of(id))
+                        .getOrDefault(id, java.util.List.of());
+        return responseMapper.toDetail(note, tags);
     }
 
     @GetMapping
@@ -74,7 +84,8 @@ public class NoteController {
         int parsedPage = requestMapper.parsePage(page, 0, "page", 0, Integer.MAX_VALUE);
         int parsedSize = requestMapper.parsePage(size, 30, "size", 1, 100);
         requestMapper.validateOffset(parsedPage, parsedSize);
-        return responseMapper.toList(
-                queryService.list(parsedCollection, parsedSort, parsedPage, parsedSize));
+        var pageData = queryService.list(parsedCollection, parsedSort, parsedPage, parsedSize);
+        var noteIds = pageData.items().stream().map(note -> note.getId()).toList();
+        return responseMapper.toList(pageData, queryService.tagsForNotes(noteIds));
     }
 }
