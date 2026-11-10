@@ -187,8 +187,9 @@ async function loginAsB(page: Page) {
 
 test('switches the receiving tab from A to B without showing A task data or its draft', async ({
   browser,
+  baseURL,
 }) => {
-  const context = await browser.newContext({ baseURL: 'http://localhost:5173' });
+  const context = await browser.newContext({ baseURL });
   const session = new MockSession();
   const { first, second } = await openPair(context, session);
   await first.goto('/tasks?task=41');
@@ -226,8 +227,9 @@ test('switches the receiving tab from A to B without showing A task data or its 
 
 test('receiving tab hides A and routes to Login after logout in the other tab', async ({
   browser,
+  baseURL,
 }) => {
-  const context = await browser.newContext({ baseURL: 'http://localhost:5173' });
+  const context = await browser.newContext({ baseURL });
   const session = new MockSession();
   const { first, second } = await openPair(context, session);
   await first.goto('/tasks');
@@ -245,8 +247,9 @@ test('receiving tab hides A and routes to Login after logout in the other tab', 
 
 test('confirmed cross-tab logout discards a dirty task draft and reaches Login', async ({
   browser,
+  baseURL,
 }) => {
-  const context = await browser.newContext({ baseURL: 'http://localhost:5173' });
+  const context = await browser.newContext({ baseURL });
   const session = new MockSession();
   const { first, second } = await openPair(context, session);
   await first.goto('/tasks?task=41');
@@ -279,8 +282,9 @@ test('confirmed cross-tab logout discards a dirty task draft and reaches Login',
 
 test('recovers a marker missed while the tab was suspended when focus returns', async ({
   browser,
+  baseURL,
 }) => {
-  const context = await browser.newContext({ baseURL: 'http://localhost:5173' });
+  const context = await browser.newContext({ baseURL });
   const session = new MockSession();
   const { first, second } = await openPair(context, session);
   await first.goto('/tasks');
@@ -300,8 +304,9 @@ test('recovers a marker missed while the tab was suspended when focus returns', 
 
 test('keeps a selected route through /me 503 and retry when the new owner can access it', async ({
   browser,
+  baseURL,
 }) => {
-  const context = await browser.newContext({ baseURL: 'http://localhost:5173' });
+  const context = await browser.newContext({ baseURL });
   const session = new MockSession();
   session.tasksByUser.set(2, [task(41, 'Shared task for B', 'Shared note')]);
   const { first, second } = await openPair(context, session);
