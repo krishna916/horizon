@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.note.application;
 import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.shared.security.CurrentUserProvider;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -18,6 +19,10 @@ public class NoteCommandService {
     private final CurrentUserProvider currentUserProvider;
     private final NoteTagAssignmentService noteTagAssignmentService;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification =
+                    "The injected collaborators are private final Spring-managed dependencies.")
     public NoteCommandService(
             NoteRepository noteRepository,
             CurrentUserProvider currentUserProvider,

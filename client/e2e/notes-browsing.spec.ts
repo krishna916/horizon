@@ -4,6 +4,7 @@ type NoteSummary = {
   id: number;
   title: string | null;
   preview: Record<string, unknown> | null;
+  tags: Array<{ id: number; name: string }>;
   version: number;
   inbox: boolean;
   archivedAt: string | null;
@@ -57,6 +58,7 @@ function summary(
           }
         : richText(id === 7 ? '<img src=x onerror=alert(1)>' : `Preview for ${id}`),
     version: 1,
+    tags: [],
     inbox: false,
     archivedAt: collection === 'archived' ? timestamps.updatedAt : null,
     ...timestamps,
