@@ -49,11 +49,11 @@ export function NoteEditorNavigationGuard({
       {children}
       {blocker.status === 'blocked' && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4">
-          <section
-            role="dialog"
+          <dialog
+            open
             aria-modal="true"
             aria-labelledby="note-leave-title"
-            className="w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-xl"
+            className="relative m-0 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-xl"
           >
             <h2 id="note-leave-title" className="text-lg font-medium">
               {isExplicitLogout
@@ -73,7 +73,7 @@ export function NoteEditorNavigationGuard({
               >
                 Stay
               </button>
-              {phase === 'failed' ? (
+              {phase === 'failed' && (
                 <button
                   type="button"
                   onClick={() => void retryAndLeave()}
@@ -81,7 +81,8 @@ export function NoteEditorNavigationGuard({
                 >
                   Retry and leave
                 </button>
-              ) : phase !== 'conflict' && phase !== 'paused' ? (
+              )}
+              {phase !== 'failed' && phase !== 'conflict' && phase !== 'paused' && (
                 <button
                   type="button"
                   onClick={() => void waitAndLeave()}
@@ -89,7 +90,7 @@ export function NoteEditorNavigationGuard({
                 >
                   Wait for save
                 </button>
-              ) : null}
+              )}
               {isExplicitLogout && (
                 <button
                   type="button"
@@ -103,7 +104,7 @@ export function NoteEditorNavigationGuard({
                 </button>
               )}
             </div>
-          </section>
+          </dialog>
         </div>
       )}
     </>

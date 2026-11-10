@@ -252,15 +252,12 @@ function ActiveNoteEditor({
         </div>
 
         {conflictChoice && (
-          <div
-            className="fixed inset-0 z-30 grid place-items-center bg-black/30 p-4"
-            role="presentation"
-          >
-            <section
-              role="dialog"
+          <div className="fixed inset-0 z-30 grid place-items-center bg-black/30 p-4">
+            <dialog
+              open
               aria-modal="true"
               aria-labelledby="conflict-confirm-title"
-              className="w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-xl"
+              className="relative m-0 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-xl"
             >
               <h2 id="conflict-confirm-title" className="text-lg font-medium">
                 {conflictChoice === 'keep-local'
@@ -292,7 +289,7 @@ function ActiveNoteEditor({
                   Confirm
                 </button>
               </div>
-            </section>
+            </dialog>
           </div>
         )}
       </article>

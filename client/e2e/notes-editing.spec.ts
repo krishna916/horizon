@@ -12,6 +12,7 @@ function document(text: string) {
 test('creates a title-only note from the full-page editor and replaces the route in place', async ({
   page,
 }) => {
+  await page.clock.install();
   let created: Record<string, unknown> | null = null;
   let createCount = 0;
 
@@ -77,7 +78,7 @@ test('creates a title-only note from the full-page editor and replaces the route
   await expect(title).toBeVisible();
   await expect(editor).toBeVisible();
   await expect(page.getByText('Saved')).toBeVisible();
-  await page.waitForTimeout(1_100);
+  await page.clock.fastForward(1_100);
   expect(createCount).toBe(0);
 
   const editorBeforeCreate = await editor.elementHandle();

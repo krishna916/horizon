@@ -13,8 +13,7 @@ export interface NoteDraft {
 function isJavaWhitespace(codePoint: string): boolean {
   const value = codePoint.codePointAt(0);
   return (
-    /^[\p{White_Space}]$/u.test(codePoint) ||
-    (value !== undefined && value >= 0x1c && value <= 0x1f)
+    /^\p{White_Space}$/u.test(codePoint) || (value !== undefined && value >= 0x1c && value <= 0x1f)
   );
 }
 

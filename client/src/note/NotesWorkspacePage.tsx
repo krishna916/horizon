@@ -17,6 +17,12 @@ function getMain(element: HTMLElement | null): HTMLElement | null {
   return element?.closest('main') ?? null;
 }
 
+function recoveryHrefForId(recoveryId: string | null): '/notes/new' | '/notes/$id' | null {
+  if (recoveryId === 'new') return '/notes/new';
+  if (recoveryId && parseNoteId(recoveryId)) return '/notes/$id';
+  return null;
+}
+
 function LoadingSkeleton({ view }: { readonly view: NoteViewMode }) {
   if (view === 'list') {
     return (
@@ -337,8 +343,7 @@ export function NotesWorkspacePage() {
   const recoveryId = recovery?.editorRoute.startsWith('/notes/')
     ? recovery.editorRoute.slice('/notes/'.length)
     : null;
-  const recoveryHref =
-    recoveryId === 'new' ? '/notes/new' : parseNoteId(recoveryId ?? '') ? '/notes/$id' : null;
+  const recoveryHref = recoveryHrefForId(recoveryId);
 
   useLayoutEffect(() => {
     const main = getMain(rootRef.current);

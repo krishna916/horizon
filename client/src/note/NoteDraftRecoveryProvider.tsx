@@ -1,5 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ReactNode } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import type { CreateNoteRequest } from './types';
@@ -132,13 +140,16 @@ export function NoteDraftRecoveryProvider({ children }: { readonly children: Rea
     }
   }, [discard, phase, verifiedUserId]);
 
-  const value = {
-    stash,
-    peekForVerifiedOwner,
-    consumeForVerifiedOwner,
-    hasRecoveryForVerifiedOwner,
-    discard,
-  };
+  const value = useMemo(
+    () => ({
+      stash,
+      peekForVerifiedOwner,
+      consumeForVerifiedOwner,
+      hasRecoveryForVerifiedOwner,
+      discard,
+    }),
+    [stash, peekForVerifiedOwner, consumeForVerifiedOwner, hasRecoveryForVerifiedOwner, discard]
+  );
   return (
     <NoteDraftRecoveryContext.Provider value={value}>{children}</NoteDraftRecoveryContext.Provider>
   );
