@@ -372,4 +372,52 @@ describe('NoteEditorNavigationGuard', () => {
       screen.queryByRole('button', { name: 'Discard unsent changes and sign out' })
     ).toBeNull();
   });
+
+  it('uses the uncertain-write warning for a restored frozen create', () => {
+    blockerState.status = 'idle';
+    blockerState.nextPathname = '/login';
+    const discardDraft = vi.fn();
+    const props = {
+      canLeave: false,
+      canLeaveNow: () => false,
+      holdQueuedWritesForNavigation: noHold,
+      releaseQueuedWritesForNavigation: noHold,
+      getNavigationSaveStateNow: () => ({
+        writeInFlight: false,
+        outcomeUncertain: true,
+        hasUnsavedChanges: true,
+        persistedNoteId: null,
+      }),
+      persistedNoteIdNow: () => null,
+      phase: 'dirty',
+      writeInFlight: false,
+      outcomeUncertain: true,
+      flush: vi.fn(),
+      retry: vi.fn(),
+      discardDraft,
+      children: <p>Editor</p>,
+    };
+    const view = render(<NoteEditorNavigationGuard {...props} />);
+    act(() => {
+      expect(
+        blockerState.options?.shouldBlockFn({
+          current: { pathname: '/notes/new' },
+          next: { pathname: '/login' },
+        })
+      ).toBe(true);
+    });
+    blockerState.status = 'blocked';
+    view.rerender(<NoteEditorNavigationGuard {...props} />);
+
+    expect(screen.getByRole('dialog')).toHaveTextContent('may still be applied');
+    expect(screen.getByRole('button', { name: 'Sign out without waiting' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Discard unsent changes and sign out' })
+    ).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out without waiting' }));
+    expect(blockerState.proceed).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /changes may already have saved/ }));
+    expect(discardDraft).toHaveBeenCalledOnce();
+    expect(blockerState.proceed).toHaveBeenCalledOnce();
+  });
 });

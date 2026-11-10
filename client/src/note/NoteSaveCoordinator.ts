@@ -396,6 +396,7 @@ export class NoteSaveCoordinator {
     const pendingCreate = options.recovery?.frozenCreateRequest;
     if (!options.initialNote && pendingCreate) {
       this.pendingCreate = { ...pendingCreate, revision: 0 };
+      this.outcomeUncertain = true;
     }
   }
 

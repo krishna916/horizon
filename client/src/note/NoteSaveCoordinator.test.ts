@@ -150,6 +150,71 @@ describe('NoteSaveCoordinator', () => {
     coordinator.dispose();
   });
 
+  it('marks a restored frozen create uncertain and replays its exact key and body before newer edits', async () => {
+    vi.useFakeTimers();
+    const originalDraft = { title: 'Original title', content: null };
+    const newerDraft = { title: 'Edited after recovery', content: textDocument('Newer body') };
+    const originalBody = { title: 'Original title', content: null };
+    const originalKey = 'original-create-key';
+    const create = vi.fn().mockResolvedValue(detail(501, 0, originalDraft));
+    const update = vi.fn().mockResolvedValue(detail(501, 1, newerDraft));
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: originalDraft,
+      initialNote: null,
+      recovery: { frozenCreateRequest: { body: originalBody, key: originalKey } },
+      transport: { create, update, get: vi.fn() },
+      onChange: vi.fn(),
+      debounceMs: 900,
+    });
+
+    expect(coordinator.snapshot()).toMatchObject({ outcomeUncertain: true, persisted: null });
+    coordinator.edit(newerDraft);
+    await vi.advanceTimersByTimeAsync(900);
+
+    expect(create).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledWith(originalBody, originalKey);
+    expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(501, {
+      expectedVersion: 0,
+      title: newerDraft.title,
+      content: newerDraft.content,
+    });
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: newerDraft,
+      phase: 'saved',
+      outcomeUncertain: false,
+      persisted: { id: 501, version: 1 },
+    });
+    coordinator.dispose();
+  });
+
+  it('does not replay an uncertain frozen create when the live owner gate rejects dispatch', async () => {
+    const create = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: { title: 'Original title', content: null },
+      initialNote: null,
+      recovery: {
+        frozenCreateRequest: {
+          body: { title: 'Original title', content: null },
+          key: 'original-create-key',
+        },
+      },
+      transport: { create, update: vi.fn(), get: vi.fn() },
+      onChange: vi.fn(),
+      canDispatch: () => false,
+    });
+
+    await coordinator.flush();
+
+    expect(create).not.toHaveBeenCalled();
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'paused',
+      outcomeUncertain: true,
+      persisted: null,
+    });
+    coordinator.dispose();
+  });
+
   it('reconciles a previously issued PATCH after same-owner recovery', async () => {
     const original = { title: 'Existing', content: null };
     const local = { title: 'Existing', content: textDocument('In flight') };
