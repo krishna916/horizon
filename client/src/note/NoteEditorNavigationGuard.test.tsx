@@ -56,7 +56,9 @@ describe('NoteEditorNavigationGuard', () => {
           persistedNoteId: 7,
         })}
         persistedNoteIdNow={() => 7}
-        phase="dirty"
+        // The render can still say "saved" while the synchronous coordinator
+        // snapshot has already observed the edit.
+        phase="saved"
         writeInFlight={false}
         outcomeUncertain={false}
         flush={vi.fn()}
