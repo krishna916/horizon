@@ -115,9 +115,41 @@ describe('Notes list query', () => {
       queryKey: ['notes', 1, 'list', 'active', 'updated_desc'],
     });
     expect(cachedList?.options.gcTime).toBe(Infinity);
-    expect((cachedList?.options as { refetchOnMount?: boolean } | undefined)?.refetchOnMount).toBe(
-      false
-    );
+    const refetchOnMount = (
+      cachedList?.options as
+        { refetchOnMount?: (query: { state: { isInvalidated: boolean } }) => boolean } | undefined
+    )?.refetchOnMount;
+    expect(refetchOnMount?.(cachedList!)).toBe(false);
     expect(queryClient.getQueryData(['notes', 1, 'list', 'active', 'updated_desc'])).toBeDefined();
+  });
+
+  it('refreshes invalidated cached pages on return without dropping loaded pagination', async () => {
+    const listSpy = vi
+      .spyOn(noteApi, 'list')
+      .mockResolvedValueOnce(page(0, true, 'Old first'))
+      .mockResolvedValueOnce(page(1, false, 'Old second'));
+    const { Wrapper, queryClient } = createWrapper();
+    const renderList = () =>
+      renderHook(() => useNoteList(1, 'active', 'title_asc'), { wrapper: Wrapper });
+    const firstVisit = renderList();
+    await waitFor(() => expect(firstVisit.result.current.data?.pages).toHaveLength(1));
+    await act(async () => firstVisit.result.current.fetchNextPage());
+    await waitFor(() => expect(firstVisit.result.current.data?.pages).toHaveLength(2));
+    firstVisit.unmount();
+
+    await queryClient.invalidateQueries({ queryKey: ['notes', 1, 'list', 'active', 'title_asc'] });
+    listSpy
+      .mockResolvedValueOnce(page(0, true, 'Fresh first'))
+      .mockResolvedValueOnce(page(1, false, 'Fresh second'));
+    const returning = renderList();
+    expect(returning.result.current.data?.pages).toHaveLength(2);
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(4));
+    await waitFor(() =>
+      expect(returning.result.current.data?.pages.map(({ data }) => data.items[0]?.title)).toEqual([
+        'Fresh first',
+        'Fresh second',
+      ])
+    );
+    returning.unmount();
   });
 });

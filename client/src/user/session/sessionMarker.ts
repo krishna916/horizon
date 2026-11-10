@@ -41,8 +41,9 @@ export function readSessionMarker(): string | null {
   }
 }
 
-export function publishSessionMarker(): string | null {
-  const marker = createOpaqueMarker();
+export function publishSessionMarker(intent: 'change' | 'logout' = 'change'): string | null {
+  const opaqueMarker = createOpaqueMarker();
+  const marker = intent === 'logout' ? `logout:${opaqueMarker}` : opaqueMarker;
   try {
     const storage = getStorage();
     if (!storage) return null;
@@ -51,4 +52,8 @@ export function publishSessionMarker(): string | null {
   } catch {
     return null;
   }
+}
+
+export function isExplicitLogoutMarker(marker: string | null): boolean {
+  return marker?.startsWith('logout:') ?? false;
 }

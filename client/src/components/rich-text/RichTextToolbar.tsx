@@ -24,9 +24,10 @@ import { isSafeRichTextHref } from './richTextDocument';
 interface RichTextToolbarProps {
   readonly editor: Editor;
   readonly disabled: boolean;
+  readonly ariaLabel: string;
 }
 
-export function RichTextToolbar({ editor, disabled }: RichTextToolbarProps) {
+export function RichTextToolbar({ editor, disabled, ariaLabel }: RichTextToolbarProps) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [href, setHref] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -99,7 +100,7 @@ export function RichTextToolbar({ editor, disabled }: RichTextToolbarProps) {
   }
 
   return (
-    <div className="rich-text-toolbar" role="toolbar" aria-label="Description formatting">
+    <div className="rich-text-toolbar" role="toolbar" aria-label={`${ariaLabel} formatting`}>
       {toolbarButton(
         'Bold',
         <Bold />,

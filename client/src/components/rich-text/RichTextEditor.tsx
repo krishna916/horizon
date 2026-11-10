@@ -14,6 +14,7 @@ interface RichTextEditorProps {
   readonly disabled?: boolean;
   readonly ariaLabel: string;
   readonly id?: string;
+  readonly externalReplacementKey?: number;
 }
 
 export function RichTextEditor({
@@ -22,9 +23,11 @@ export function RichTextEditor({
   disabled = false,
   ariaLabel,
   id,
+  externalReplacementKey,
 }: RichTextEditorProps) {
   const onChangeRef = useRef(onChange);
   const lastEmittedDocument = useRef<string | null>(null);
+  const replacementKey = useRef(externalReplacementKey);
   const extensions = useMemo(() => getRichTextExtensions(), []);
   const editor = useEditor({
     extensions,
@@ -56,6 +59,16 @@ export function RichTextEditor({
 
   useEffect(() => {
     if (!editor) return;
+    if (externalReplacementKey !== undefined) {
+      if (replacementKey.current === externalReplacementKey) return;
+      replacementKey.current = externalReplacementKey;
+      const replacement = toEditorDocument(value);
+      if (JSON.stringify(editor.getJSON()) !== JSON.stringify(replacement)) {
+        lastEmittedDocument.current = null;
+        editor.commands.setContent(replacement, { emitUpdate: false });
+      }
+      return;
+    }
     const nextDocument = toEditorDocument(value);
     const serialized = JSON.stringify(nextDocument);
     if (lastEmittedDocument.current === serialized) {
@@ -65,7 +78,7 @@ export function RichTextEditor({
     if (JSON.stringify(editor.getJSON()) !== serialized) {
       editor.commands.setContent(nextDocument, { emitUpdate: false });
     }
-  }, [editor, value]);
+  }, [editor, externalReplacementKey, value]);
 
   if (!editor) {
     return <div className="rich-text-editor" aria-label={ariaLabel} aria-busy="true" />;
@@ -73,7 +86,7 @@ export function RichTextEditor({
 
   return (
     <div className="rich-text-editor" data-testid="rich-text-editor">
-      <RichTextToolbar editor={editor} disabled={disabled} />
+      <RichTextToolbar editor={editor} disabled={disabled} ariaLabel={ariaLabel} />
       <EditorContent editor={editor} />
     </div>
   );

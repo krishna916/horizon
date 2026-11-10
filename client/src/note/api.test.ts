@@ -67,4 +67,28 @@ describe('noteApi', () => {
       signal,
     });
   });
+
+  it('creates a nullable-title note with the required idempotency key', async () => {
+    const detail: NoteDetail = { ...summary, content: null };
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue(response(detail) as never);
+    const body = { title: null, content: null };
+
+    await expect(
+      noteApi.create(body, 'f3d8e47a-7775-45eb-a226-4cc01eacb2f1')
+    ).resolves.toMatchObject({
+      data: { id: 7, title: null, content: null },
+    });
+    expect(postSpy).toHaveBeenCalledWith('/notes', body, {
+      headers: { 'Idempotency-Key': 'f3d8e47a-7775-45eb-a226-4cc01eacb2f1' },
+    });
+  });
+
+  it('updates a note with its expected version and nullable title', async () => {
+    const detail: NoteDetail = { ...summary, content: null };
+    const patchSpy = vi.spyOn(apiClient, 'patch').mockResolvedValue(response(detail) as never);
+    const body = { expectedVersion: 4, title: null };
+
+    await expect(noteApi.update(7, body)).resolves.toMatchObject({ data: { id: 7, version: 1 } });
+    expect(patchSpy).toHaveBeenCalledWith('/notes/7', body);
+  });
 });

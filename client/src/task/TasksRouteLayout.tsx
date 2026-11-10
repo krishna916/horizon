@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { Outlet } from '@tanstack/react-router';
+import { Outlet, useRouterState } from '@tanstack/react-router';
 import { createContext, useContext, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { useCurrentUser } from '@/user/hooks/useCurrentUser';
@@ -50,6 +50,7 @@ function TasksLayoutSession({ children, listRatio, setListRatio }: TasksLayoutSe
 
 export function TasksRouteLayout() {
   const [listRatio, setListRatio] = useState(60);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const currentUser = useCurrentUser();
   const sessionVerified =
     currentUser.data !== undefined &&
@@ -57,12 +58,13 @@ export function TasksRouteLayout() {
     !currentUser.isFetching &&
     !currentUser.isError;
   const lifecycleOwnerKey = currentUser.isError ? 'no-user' : (currentUser.data?.id ?? 'no-user');
+  const layoutSessionKey = `${lifecycleOwnerKey}:${pathname.startsWith('/tasks') ? 'tasks' : 'outside'}`;
 
   return (
     <TaskDraftNavigationGuard>
       <TaskLifecycleProvider key={lifecycleOwnerKey} userId={currentUser.data?.id}>
         <TasksLayoutSession
-          key={lifecycleOwnerKey}
+          key={layoutSessionKey}
           listRatio={listRatio}
           setListRatio={setListRatio}
         >

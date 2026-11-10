@@ -52,6 +52,19 @@ async function installTaskApi(page: Page, initial: Task[] = [task(1), task(2)]) 
       body: JSON.stringify({ id: 1, email: 'task-lifecycle@example.com' }),
     })
   );
+  await page.route(/\/api\/v1\/notes(?:\?.*)?$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [],
+        page: 0,
+        size: 20,
+        hasNext: false,
+        counts: { active: 0, archived: 0 },
+      }),
+    })
+  );
   await page.route('**/api/v1/tasks**', async (route: Route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace('/api/v1', '');

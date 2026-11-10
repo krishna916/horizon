@@ -7,12 +7,20 @@ import { useNotesBrowse } from './NotesBrowseContext';
 import { NoteCard } from './NoteCard';
 import { NoteListRow } from './NoteListRow';
 import type { NoteCollection, NoteSort, NoteSummary, NoteViewMode } from './types';
+import { useNoteDraftRecovery } from './NoteDraftRecoveryProvider';
+import { parseNoteId } from './noteNavigation';
 
 const skeletonIds = Array.from({ length: 8 }, (_, index) => `note-skeleton-${index + 1}`);
 type NotesListQuery = ReturnType<typeof useNoteList>;
 
 function getMain(element: HTMLElement | null): HTMLElement | null {
   return element?.closest('main') ?? null;
+}
+
+function recoveryHrefForId(recoveryId: string | null): '/notes/new' | '/notes/$id' | null {
+  if (recoveryId === 'new') return '/notes/new';
+  if (recoveryId && parseNoteId(recoveryId)) return '/notes/$id';
+  return null;
 }
 
 function LoadingSkeleton({ view }: { readonly view: NoteViewMode }) {
@@ -318,6 +326,7 @@ function NoteResults({
 
 export function NotesWorkspacePage() {
   const { phase, verifiedUserId, verifySession } = useAuthSession();
+  const recoveryContext = useNoteDraftRecovery();
   const { state, setCollection, setSort, setView, rememberScroll } = useNotesBrowse();
   const userId = phase === 'verified' ? (verifiedUserId ?? undefined) : undefined;
   const query = useNoteList(userId, state.collection, state.sort);
@@ -330,6 +339,11 @@ export function NotesWorkspacePage() {
     [query.data]
   );
   const counts = query.data?.pages[0]?.data.counts;
+  const recovery = userId === undefined ? null : recoveryContext.peekForVerifiedOwner(userId);
+  const recoveryId = recovery?.editorRoute.startsWith('/notes/')
+    ? recovery.editorRoute.slice('/notes/'.length)
+    : null;
+  const recoveryHref = recoveryHrefForId(recoveryId);
 
   useLayoutEffect(() => {
     const main = getMain(rootRef.current);
@@ -393,6 +407,42 @@ export function NotesWorkspacePage() {
               New note
             </Link>
           </header>
+
+          {recovery && recoveryHref && (
+            <aside
+              className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-4"
+              aria-label="Unsaved note draft"
+            >
+              <div>
+                <p className="text-sm font-medium">You have an unsaved note draft.</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Resume where you left off or discard this draft.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link
+                  to={recoveryHref}
+                  params={recoveryHref === '/notes/$id' ? { id: recoveryId! } : undefined}
+                  state={{
+                    horizonNoteNavigation: {
+                      kind: 'from-workspace',
+                      noteId: recovery.persistedVersion?.id,
+                    },
+                  }}
+                  className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+                >
+                  Resume unsaved note
+                </Link>
+                <button
+                  type="button"
+                  onClick={recoveryContext.discard}
+                  className="rounded-md px-3 py-2 text-sm hover:bg-muted"
+                >
+                  Discard draft
+                </button>
+              </div>
+            </aside>
+          )}
 
           <div className="mb-6 flex flex-col gap-4 border-b border-border pb-5">
             <div className="flex flex-wrap items-center justify-between gap-4">

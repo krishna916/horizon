@@ -12,7 +12,7 @@ export const useLogoutUser = () => {
     },
     onSuccess: () => {
       acceptLocalLogout();
-      publishSessionMarker();
+      publishSessionMarker('logout');
     },
   });
 };

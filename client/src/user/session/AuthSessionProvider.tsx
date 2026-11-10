@@ -12,7 +12,7 @@ import {
 import type { ReactNode } from 'react';
 import { userApi } from '../api';
 import type { CurrentUserResponse } from '../types';
-import { readSessionMarker, SESSION_MARKER_KEY } from './sessionMarker';
+import { isExplicitLogoutMarker, readSessionMarker, SESSION_MARKER_KEY } from './sessionMarker';
 import {
   setCurrentOwnerRevision,
   setCurrentSessionEpoch,
@@ -26,6 +26,7 @@ interface AuthSessionValue {
   verifiedUserId: number | null;
   ownerRevision: number;
   epoch: number;
+  explicitLogoutRevision: number;
   verifySession: () => Promise<void>;
   acceptLocalAuthentication: (user: CurrentUserResponse) => void;
   acceptLocalLogout: () => void;
@@ -60,6 +61,8 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
     ownerRevision: 0,
     epoch: 0,
   });
+  const [explicitLogoutRevision, setExplicitLogoutRevision] = useState(0);
+  const explicitLogoutRevisionRef = useRef(0);
   const stateRef = useRef(state);
   const generationRef = useRef(0);
   const lastMarkerRef = useRef(readSessionMarker());
@@ -71,6 +74,11 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
     setCurrentSessionEpoch(next.epoch);
     setCurrentOwnerRevision(next.ownerRevision);
     setState(next);
+  }, []);
+
+  const signalExplicitLogout = useCallback(() => {
+    explicitLogoutRevisionRef.current += 1;
+    setExplicitLogoutRevision(explicitLogoutRevisionRef.current);
   }, []);
 
   const acceptVerifiedUser = useCallback(
@@ -180,6 +188,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
     const previous = stateRef.current;
     generationRef.current += 1;
     lastVerifiedUserIdRef.current = null;
+    signalExplicitLogout();
     inFlightRef.current = null;
     queryClient.removeQueries({ queryKey: ['me'], exact: true });
     queryClient.removeQueries({ predicate: (query) => isPrivateQuery(query.queryKey) });
@@ -190,7 +199,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
       ownerRevision: previous.ownerRevision + (previous.userId === null ? 0 : 1),
       epoch: previous.epoch + 1,
     });
-  }, [queryClient, updateState]);
+  }, [queryClient, signalExplicitLogout, updateState]);
 
   const handleProtectedUnauthorized = useCallback(
     (requestEpoch: number) => {
@@ -216,6 +225,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
     const observeMarker = (marker: string | null) => {
       if (marker === lastMarkerRef.current) return false;
       lastMarkerRef.current = marker;
+      if (isExplicitLogoutMarker(marker)) signalExplicitLogout();
       void verifySession();
       return true;
     };
@@ -244,7 +254,7 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
       window.removeEventListener('focus', handleResume);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [handleProtectedUnauthorized, verifySession]);
+  }, [handleProtectedUnauthorized, signalExplicitLogout, verifySession]);
 
   const value = useMemo<AuthSessionValue>(
     () => ({
@@ -252,11 +262,12 @@ export function AuthSessionProvider({ children }: { readonly children: ReactNode
       verifiedUserId: state.phase === 'verified' ? state.userId : null,
       ownerRevision: state.ownerRevision,
       epoch: state.epoch,
+      explicitLogoutRevision,
       verifySession,
       acceptLocalAuthentication,
       acceptLocalLogout,
     }),
-    [state, verifySession, acceptLocalAuthentication, acceptLocalLogout]
+    [state, explicitLogoutRevision, verifySession, acceptLocalAuthentication, acceptLocalLogout]
   );
 
   return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>;

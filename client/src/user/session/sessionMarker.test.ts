@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { publishSessionMarker, readSessionMarker, SESSION_MARKER_KEY } from './sessionMarker';
+import {
+  isExplicitLogoutMarker,
+  publishSessionMarker,
+  readSessionMarker,
+  SESSION_MARKER_KEY,
+} from './sessionMarker';
 
 describe('session marker', () => {
   afterEach(() => {
@@ -52,5 +57,22 @@ describe('session marker', () => {
     expect(readSessionMarker()).toBeNull();
     localStorage.setItem(SESSION_MARKER_KEY, 'opaque-marker');
     expect(readSessionMarker()).toBe('opaque-marker');
+  });
+
+  it('keeps ordinary auth changes opaque and marks explicit logout intent only', () => {
+    const loginMarker = publishSessionMarker();
+    expect(loginMarker).toBeTruthy();
+    expect(isExplicitLogoutMarker(loginMarker)).toBe(false);
+    expect(readSessionMarker()).toBe(loginMarker);
+
+    const logoutMarker = publishSessionMarker('logout');
+    expect(logoutMarker).toMatch(/^logout:/);
+    expect(isExplicitLogoutMarker(logoutMarker)).toBe(true);
+    expect(localStorage.getItem(SESSION_MARKER_KEY)).toBe(logoutMarker);
+  });
+
+  it('treats legacy random markers as ordinary changes', () => {
+    expect(isExplicitLogoutMarker('5ca5dc36-legacy-opaque-marker')).toBe(false);
+    expect(isExplicitLogoutMarker(null)).toBe(false);
   });
 });

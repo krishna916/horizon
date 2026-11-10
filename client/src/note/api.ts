@@ -1,5 +1,12 @@
 import { apiClient } from '@/lib/api-client';
-import type { NoteCollection, NoteDetail, NoteListResponse, NoteSort } from './types';
+import type {
+  CreateNoteRequest,
+  NoteCollection,
+  NoteDetail,
+  NoteListResponse,
+  NoteSort,
+  UpdateNoteRequest,
+} from './types';
 
 export const noteApi = {
   list: (
@@ -17,4 +24,10 @@ export const noteApi = {
     signal
       ? apiClient.get<NoteDetail>(`/notes/${id}`, { signal })
       : apiClient.get<NoteDetail>(`/notes/${id}`),
+  create: (body: CreateNoteRequest, idempotencyKey: string) =>
+    apiClient.post<NoteDetail>('/notes', body, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }),
+  update: (id: number, body: UpdateNoteRequest) =>
+    apiClient.patch<NoteDetail>(`/notes/${id}`, body),
 };
