@@ -1,8 +1,8 @@
 import { apiClient } from '@/lib/api-client';
-import type { TaskTag } from '@/task/types';
+import type { Tag } from './types';
 
 export interface TagSuggestionResponse {
-  items: TaskTag[];
+  items: Tag[];
 }
 
 export const tagApi = {
