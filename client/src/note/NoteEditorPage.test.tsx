@@ -70,6 +70,7 @@ const archivedNote: NoteDetail = {
   id: 6,
   title: null,
   content,
+  tags: [],
   version: 2,
   inbox: false,
   archivedAt: '2026-11-08T10:00:00Z',

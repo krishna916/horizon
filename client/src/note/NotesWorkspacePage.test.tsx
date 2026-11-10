@@ -62,6 +62,7 @@ function summary(id: number, title: string | null = `Note ${id}`): NoteSummary {
       type: 'doc',
       content: [{ type: 'paragraph', content: [{ type: 'text', text: `Preview ${id}` }] }],
     },
+    tags: [],
     version: 1,
     inbox: false,
     archivedAt: null,

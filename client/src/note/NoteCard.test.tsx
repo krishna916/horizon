@@ -29,6 +29,7 @@ const summary = (overrides: Partial<NoteSummary> = {}): NoteSummary => ({
     type: 'doc',
     content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Train leaves at nine.' }] }],
   },
+  tags: [],
   version: 1,
   inbox: false,
   archivedAt: null,

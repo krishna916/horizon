@@ -20,6 +20,7 @@ vi.mock('@/user/api', () => ({
 const draft: NoteDraft = {
   title: 'Memory only',
   content: { type: 'doc', content: [{ type: 'paragraph' }] },
+  tags: [],
 };
 
 function RecoveryProbe() {
@@ -35,7 +36,7 @@ function RecoveryProbe() {
         type="button"
         onClick={() =>
           recovery.stash(1, '/notes/new', draft, undefined, {
-            body: { title: 'Memory only', content: draft.content },
+            body: { title: 'Memory only', content: draft.content, tags: [] },
             key: '79c95e5a-c4e8-47f3-a4a0-bbc7fd0c3241',
           })
         }

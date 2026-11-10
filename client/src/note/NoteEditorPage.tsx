@@ -12,7 +12,7 @@ import type { NoteDetail } from './types';
 import type { NoteDraft } from './noteDraft';
 import type { NoteDraftRecoveryEntry } from './NoteDraftRecoveryProvider';
 
-const blankDraft: NoteDraft = { title: '', content: null };
+const blankDraft: NoteDraft = { title: '', content: null, tags: [] };
 
 function isUnavailableNote(
   routeNoteId: string | null,

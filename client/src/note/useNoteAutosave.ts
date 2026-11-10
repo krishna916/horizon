@@ -64,6 +64,9 @@ export function useNoteAutosave({
       void queryClient.invalidateQueries({
         queryKey: ['notes', ownerIdRef.current, 'list'],
       });
+      void queryClient.invalidateQueries({
+        queryKey: ['tags', 'suggestions', ownerIdRef.current],
+      });
       if (created) onCreatedRef.current(note);
     },
     [queryClient]
@@ -75,6 +78,7 @@ export function useNoteAutosave({
       initialDraft ?? {
         title: initialNote?.title ?? '',
         content: initialNote?.content ?? null,
+        tags: initialNote?.tags.map(({ id }) => ({ id })) ?? [],
       };
     return new NoteSaveCoordinator({
       initialDraft: draft,
@@ -139,7 +143,7 @@ export function useNoteAutosave({
       ? currentSnapshot
       : {
           ...currentSnapshot,
-          draft: { title: '', content: null },
+          draft: { title: '', content: null, tags: [] },
           persisted: null,
           phase: 'paused' as const,
           hasUnsavedChanges: false,

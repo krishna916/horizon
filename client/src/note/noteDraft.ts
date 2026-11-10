@@ -4,10 +4,12 @@ import {
   type RichTextDocument,
 } from '@/components/rich-text/richTextDocument';
 import type { CreateNoteRequest } from './types';
+import type { TagSelection } from '@/tag/types';
 
 export interface NoteDraft {
   title: string;
   content: RichTextDocument | null;
+  tags?: TagSelection[];
 }
 
 function isJavaWhitespace(codePoint: string): boolean {
@@ -41,9 +43,28 @@ function containsMeaningfulText(value: unknown): boolean {
 }
 
 export function normalizeNoteDraft(draft: NoteDraft): CreateNoteRequest {
+  const tags: TagSelection[] = [];
+  const seen = new Set<string>();
+  for (const selection of draft.tags ?? []) {
+    if ('id' in selection) {
+      const key = `id:${selection.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        tags.push({ id: selection.id });
+      }
+    } else {
+      const name = selection.name.trim();
+      const key = `name:${name.toLowerCase()}`;
+      if (name && !seen.has(key)) {
+        seen.add(key);
+        tags.push({ name });
+      }
+    }
+  }
   return {
     title: normalizeTitle(draft.title),
     content: normalizeRichTextDocument(draft.content),
+    tags,
   };
 }
 
@@ -55,5 +76,15 @@ export function hasMeaningfulNoteDraft(draft: NoteDraft): boolean {
 export function noteDraftsEqual(first: NoteDraft, second: NoteDraft): boolean {
   const a = normalizeNoteDraft(first);
   const b = normalizeNoteDraft(second);
-  return a.title === b.title && richTextDocumentsEqual(a.content, b.content);
+  return (
+    a.title === b.title &&
+    richTextDocumentsEqual(a.content, b.content) &&
+    tagSelectionSet(a.tags) === tagSelectionSet(b.tags)
+  );
+}
+
+function tagSelectionSet(tags: TagSelection[]): string {
+  return [...new Set(tags.map((tag) =>
+    'id' in tag ? `id:${tag.id}` : `name:${tag.name.trim().toLowerCase()}`
+  ))].sort().join('\u0000');
 }

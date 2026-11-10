@@ -24,6 +24,7 @@ const initial: NoteDetail = {
   id: 7,
   title: 'Existing',
   content: null,
+  tags: [],
   version: 2,
   inbox: false,
   archivedAt: null,

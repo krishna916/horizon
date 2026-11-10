@@ -32,6 +32,7 @@ export interface NoteTransport {
       expectedVersion: number;
       title: string | null;
       content: NonNullable<ReturnType<typeof normalizeNoteDraft>['content']> | null;
+      tags: ReturnType<typeof normalizeNoteDraft>['tags'];
     }
   ) => Promise<NoteDetail>;
   get: (id: number) => Promise<NoteDetail>;
@@ -71,13 +72,14 @@ export interface FrozenNoteUpdate {
     expectedVersion: number;
     title: string | null;
     content: ReturnType<typeof normalizeNoteDraft>['content'];
+    tags: ReturnType<typeof normalizeNoteDraft>['tags'];
   };
   draft: NoteDraft;
   revision: number;
 }
 
 function noteDraft(note: NoteDetail): NoteDraft {
-  return { title: note.title ?? '', content: note.content };
+  return { title: note.title ?? '', content: note.content, tags: note.tags.map(({ id }) => ({ id })) };
 }
 
 function errorStatus(error: unknown): number | null {
@@ -268,6 +270,7 @@ export class NoteSaveCoordinator {
         expectedVersion: latest.version,
         title: normalized.title,
         content: normalized.content,
+        tags: normalized.tags,
       },
       draft: local,
       revision: this.localRevision,
@@ -476,14 +479,19 @@ export class NoteSaveCoordinator {
       this.outcomeUncertain = false;
       this.pendingCreate = null;
       this.persisted = { id: created.id, version: created.version };
-      this.baseline = { title: request.body.title ?? '', content: request.body.content };
+      this.baseline = {
+        title: request.body.title ?? '',
+        content: request.body.content,
+        tags: request.body.tags,
+      };
       this.confirmedRevision = request.revision;
       this.phase = this.hasWork() ? 'dirty' : 'saved';
       this.publish();
       this.onCreated?.(created);
-    } catch {
+    } catch (error) {
       if (this.disposed || generation !== this.generation) return;
-      this.outcomeUncertain = true;
+      this.outcomeUncertain = errorStatus(error) !== 400;
+      if (!this.outcomeUncertain) this.pendingCreate = null;
       this.phase = 'failed';
       this.publish();
     }
@@ -506,6 +514,7 @@ export class NoteSaveCoordinator {
           expectedVersion: persisted.version,
           title: normalized.title,
           content: normalized.content,
+          tags: normalized.tags,
         },
         draft: { ...this.draft },
         revision: this.localRevision,
@@ -530,6 +539,13 @@ export class NoteSaveCoordinator {
     generation: number
   ): Promise<void> {
     const status = errorStatus(error);
+    if (status === 400) {
+      this.pendingUpdate = null;
+      this.outcomeUncertain = false;
+      this.phase = 'failed';
+      this.publish();
+      return;
+    }
     if (status === 409) {
       this.outcomeUncertain = false;
       this.phase = 'conflict';
@@ -574,7 +590,7 @@ export class NoteSaveCoordinator {
     this.pendingUpdate = null;
     this.outcomeUncertain = false;
     this.persisted = { id: request.id, version: updated.version };
-    this.baseline = { ...request.draft };
+    this.baseline = { ...request.draft, tags: [...(request.draft.tags ?? [])] };
     this.confirmedRevision = request.revision;
     this.phase = this.hasWork() ? 'dirty' : 'saved';
     this.publish();
