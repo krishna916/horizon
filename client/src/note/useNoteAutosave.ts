@@ -201,6 +201,7 @@ export function useNoteAutosave({
     const latest = coordinator.snapshot();
     return !latest.hasUnsavedChanges && latest.phase !== 'saving';
   }, [coordinator]);
+  const persistedNoteIdNow = useCallback(() => coordinator.snapshot().persisted?.id ?? null, [coordinator]);
 
   return {
     snapshot,
@@ -211,5 +212,6 @@ export function useNoteAutosave({
     discardDraft,
     canLeave: !snapshot.hasUnsavedChanges && snapshot.phase !== 'saving',
     canLeaveNow,
+    persistedNoteIdNow,
   };
 }

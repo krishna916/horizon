@@ -176,6 +176,7 @@ export class NoteSaveCoordinator {
     const generation = this.generation;
     const operation = Promise.resolve().then(() => this.saveOnce(generation));
     this.inFlight = operation;
+    this.publish();
     await operation;
     if (this.inFlight === operation) {
       this.inFlight = null;

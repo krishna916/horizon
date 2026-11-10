@@ -77,7 +77,7 @@ test('creates a title-only note from the full-page editor and replaces the route
   const editor = page.getByLabel('Note content editor');
   await expect(title).toBeVisible();
   await expect(editor).toBeVisible();
-  await expect(page.getByText('Saved')).toBeVisible();
+  await expect(page.getByText('Not saved yet')).toBeVisible();
   await page.clock.fastForward(1_100);
   expect(createCount).toBe(0);
 
@@ -172,8 +172,10 @@ test('blocks workspace navigation while the note draft is dirty and lets the use
   await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue('Pending title');
 });
 
-test('requires explicit draft discard before signing out', async ({ page }) => {
+test('discards an unsent draft before signing out without dispatching a write', async ({ page }) => {
+  await page.clock.install();
   let logoutCount = 0;
+  let writeCount = 0;
   await page.route('**/api/v1/users/me', (route) =>
     route.fulfill({
       status: 200,
@@ -185,14 +187,82 @@ test('requires explicit draft discard before signing out', async ({ page }) => {
     logoutCount += 1;
     await route.fulfill({ status: 204, body: '' });
   });
+  await page.route('**/api/v1/notes', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+    writeCount += 1;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
+  });
 
   await page.goto('/notes/new');
   await page.getByRole('textbox', { name: 'Note title' }).fill('Keep me unless confirmed');
   await page.getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.getByRole('dialog')).toContainText('Signing out will discard');
+  await expect(page.getByRole('dialog')).toContainText('unsent changes');
   expect(logoutCount).toBe(0);
 
-  await page.getByRole('button', { name: 'Discard draft and sign out' }).click();
+  await page.getByRole('button', { name: 'Discard unsent changes and sign out' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => logoutCount).toBe(1);
+  await page.clock.fastForward(1_000);
+  expect(writeCount).toBe(0);
+});
+
+test('warns that an issued PATCH may save and waits before signing out', async ({ page }) => {
+  await page.clock.install();
+  let releasePatch!: () => void;
+  const patchGate = new Promise<void>((resolve) => {
+    releasePatch = resolve;
+  });
+  let logoutCount = 0;
+  let patchCount = 0;
+  const existing = {
+    id: 601,
+    title: 'Before',
+    content: null,
+    version: 2,
+    inbox: false,
+    archivedAt: null,
+    ...timestamps,
+  };
+  await page.route('**/api/v1/users/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 6, email: 'owner-six@example.test' }),
+    })
+  );
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    logoutCount += 1;
+    await route.fulfill({ status: 204, body: '' });
+  });
+  await page.route('**/api/v1/notes/601', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(existing) });
+      return;
+    }
+    patchCount += 1;
+    await patchGate;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...existing, title: 'After', version: 3 }),
+    });
+  });
+
+  await page.goto('/notes/601');
+  await page.getByRole('textbox', { name: 'Note title' }).fill('After');
+  await page.clock.fastForward(900);
+  await expect.poll(() => patchCount).toBe(1);
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('dialog')).toContainText('may still be applied');
+  await expect(page.getByRole('button', { name: /Discard/ })).toHaveCount(0);
+  expect(logoutCount).toBe(0);
+
+  const saveAndSignOut = page.getByRole('button', { name: 'Wait for save and sign out' });
+  await saveAndSignOut.click();
+  releasePatch();
   await expect(page).toHaveURL(/\/login$/);
   await expect.poll(() => logoutCount).toBe(1);
 });

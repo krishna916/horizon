@@ -39,7 +39,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
-        persistedNoteId={14}
+        persistedNoteIdNow={() => 14}
         phase="dirty"
         writeInFlight={false}
         outcomeUncertain={false}
@@ -78,7 +78,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
-        persistedNoteId={null}
+        persistedNoteIdNow={() => null}
         phase="failed"
         writeInFlight={false}
         outcomeUncertain={true}
@@ -106,7 +106,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
-        persistedNoteId={null}
+        persistedNoteIdNow={() => null}
         phase="dirty"
         writeInFlight={false}
         outcomeUncertain={false}
@@ -131,7 +131,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => true}
-        persistedNoteId={null}
+        persistedNoteIdNow={() => null}
         phase="saving"
         writeInFlight={true}
         outcomeUncertain={false}
@@ -155,7 +155,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => false}
-        persistedNoteId={null}
+        persistedNoteIdNow={() => null}
         phase="saving"
         writeInFlight
         outcomeUncertain={false}
@@ -183,7 +183,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => false}
-        persistedNoteId={null}
+        persistedNoteIdNow={() => null}
         phase="saving"
         writeInFlight={true}
         outcomeUncertain={false}
@@ -207,7 +207,7 @@ describe('NoteEditorNavigationGuard', () => {
       <NoteEditorNavigationGuard
         canLeave={false}
         canLeaveNow={() => false}
-        persistedNoteId={null}
+        persistedNoteIdNow={() => null}
         phase="dirty"
         writeInFlight={false}
         outcomeUncertain={false}

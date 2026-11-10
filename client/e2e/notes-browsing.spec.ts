@@ -83,6 +83,8 @@ async function installNotesApi(page: Page, initialOwner = 1, archivedCount = 3) 
   const listOwners: number[] = [];
   const detailRequests: number[] = [];
   const writes: string[] = [];
+  const createdNotes: NoteSummary[] = [];
+  const changedNotes = new Map<number, NoteDetail>();
 
   await page.route('**/api/v1/users/me', async (route) => {
     if (nextUserGate !== null) {
@@ -104,6 +106,24 @@ async function installNotesApi(page: Page, initialOwner = 1, archivedCount = 3) 
 
   // Match the collection endpoint before the item endpoint. The collection path is exact.
   await page.route(/\/api\/v1\/notes(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as {
+        title: string | null;
+        content: Record<string, unknown> | null;
+      };
+      const id = 900 + createdNotes.length;
+      const item = summary(id, 'active', body.title ?? 'Untitled note', ownerId, ownerLabels);
+      createdNotes.unshift(item);
+      const created = { ...item, content: body.content };
+      changedNotes.set(id, created);
+      writes.push('POST');
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+      return;
+    }
     if (route.request().method() !== 'GET') {
       writes.push(route.request().method());
       await route.fulfill({ status: 405, body: '' });
@@ -125,6 +145,11 @@ async function installNotesApi(page: Page, initialOwner = 1, archivedCount = 3) 
         : Array.from({ length: 40 }, (_, index) =>
             summary(index + 1, 'active', undefined, ownerId, ownerLabels)
           );
+    if (collection === 'active') all.unshift(...createdNotes);
+    for (const [id, updated] of changedNotes) {
+      const index = all.findIndex((item) => item.id === id);
+      if (index >= 0) all[index] = { ...all[index]!, title: updated.title, updatedAt: updated.updatedAt };
+    }
     if (sort === 'title_asc') all.reverse();
     const items = all.slice(pageNumber * size, (pageNumber + 1) * size);
     await route.fulfill({
@@ -135,7 +160,7 @@ async function installNotesApi(page: Page, initialOwner = 1, archivedCount = 3) 
         page: pageNumber,
         size,
         hasNext: (pageNumber + 1) * size < all.length,
-        counts: { active: 40, archived: 3 },
+        counts: { active: 40 + createdNotes.length, archived: 3 },
       }),
     });
   });
@@ -144,8 +169,15 @@ async function installNotesApi(page: Page, initialOwner = 1, archivedCount = 3) 
     const url = new URL(route.request().url());
     const rawId = url.pathname.split('/').at(-1) ?? '';
     if (route.request().method() !== 'GET') {
+      const id = Number(rawId);
+      const current = changedNotes.get(id) ?? detail(id, ownerId);
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      const updated = { ...current, ...body, version: current.version + 1, updatedAt: timestamps.updatedAt } as NoteDetail;
+      changedNotes.set(id, updated);
+      const item = createdNotes.find((note) => note.id === id);
+      if (item) item.title = updated.title;
       writes.push(route.request().method());
-      await route.fulfill({ status: 405, body: '' });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(updated) });
       return;
     }
     if (!/^\d+$/.test(rawId)) {
@@ -158,10 +190,11 @@ async function installNotesApi(page: Page, initialOwner = 1, archivedCount = 3) 
       await route.fulfill({ status: 404, contentType: 'application/problem+json', body: '{}' });
       return;
     }
+    const found = changedNotes.get(id) ?? detail(id, ownerId);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(detail(id, ownerId)),
+      body: JSON.stringify(found),
     });
   });
 
@@ -329,10 +362,44 @@ test('supports direct editor routes and keeps an untouched /notes/new draft empt
   await expect(page).toHaveURL(/\/notes\/new$/);
   await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue('');
   await expect(page.getByLabel('Note content editor')).toBeVisible();
-  await expect(page.getByText('Saved')).toBeVisible();
+  await expect(page.getByText('Not saved yet')).toBeVisible();
   await page.getByRole('button', { name: 'Back to Notes' }).click();
   await expect(page).toHaveURL(/\/notes\/?$/);
   expect(api.detailRequests).toEqual([7, 404]);
+  expect(api.writes).toEqual([]);
+});
+
+test('refreshes the saved Notes list and count after creating a note without a reload', async ({
+  page,
+}) => {
+  const api = await installNotesApi(page);
+  await page.goto('/notes');
+  await expect(page.getByRole('button', { name: 'Active 40' })).toBeVisible();
+  await page.getByRole('link', { name: 'New note' }).click();
+  await page.getByRole('textbox', { name: 'Note title' }).fill('Created without reload');
+  await expect(page).toHaveURL(/\/notes\/900$/);
+  await page.getByRole('button', { name: 'Back to Notes' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Created without reload' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Active 41' })).toBeVisible();
+  expect(api.listRequests.length).toBeGreaterThan(1);
+});
+
+test('keeps the same editor instance through same-owner focus verification', async ({ page }) => {
+  const api = await installNotesApi(page);
+  await page.goto('/notes/7');
+  const editor = page.getByLabel('Note content editor');
+  const before = await editor.elementHandle();
+  await editor.click();
+
+  const releaseVerification = api.holdNextUserResponse();
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByText('Verifying session…').first()).toBeVisible();
+  await expect(page.getByTestId('private-content')).toHaveAttribute('aria-hidden', 'true');
+  releaseVerification();
+
+  await expect(page.getByTestId('private-content')).toHaveAttribute('aria-hidden', 'false');
+  expect(await editor.evaluate((current, prior) => current === prior, before)).toBe(true);
   expect(api.writes).toEqual([]);
 });
 

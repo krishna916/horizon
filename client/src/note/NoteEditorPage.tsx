@@ -197,6 +197,7 @@ function ActiveNoteEditor({
     discardDraft,
     canLeave,
     canLeaveNow,
+    persistedNoteIdNow,
   } = useNoteAutosave(
     {
       ownerId,
@@ -222,7 +223,7 @@ function ActiveNoteEditor({
     <NoteEditorNavigationGuard
       canLeave={canLeave}
       canLeaveNow={canLeaveNow}
-      persistedNoteId={snapshot.persisted?.id ?? null}
+      persistedNoteIdNow={persistedNoteIdNow}
       phase={snapshot.phase}
       writeInFlight={snapshot.writeInFlight}
       outcomeUncertain={snapshot.outcomeUncertain}

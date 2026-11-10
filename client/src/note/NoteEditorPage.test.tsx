@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
   flush: vi.fn(),
   discardDraft: vi.fn(),
   canLeaveNow: vi.fn(() => true),
+  persistedNoteIdNow: vi.fn(() => null),
 }));
 
 vi.mock('@/user/session/AuthSessionProvider', () => ({
@@ -51,6 +52,7 @@ vi.mock('./useNoteAutosave', () => ({
     discardDraft: state.discardDraft,
     canLeave: true,
     canLeaveNow: state.canLeaveNow,
+    persistedNoteIdNow: state.persistedNoteIdNow,
   }),
 }));
 vi.mock('./NoteDraftRecoveryProvider', () => ({

@@ -115,9 +115,12 @@ describe('Notes list query', () => {
       queryKey: ['notes', 1, 'list', 'active', 'updated_desc'],
     });
     expect(cachedList?.options.gcTime).toBe(Infinity);
-    expect((cachedList?.options as { refetchOnMount?: boolean } | undefined)?.refetchOnMount).toBe(
-      true
-    );
+    const refetchOnMount = (
+      cachedList?.options as
+        | { refetchOnMount?: (query: { state: { isInvalidated: boolean } }) => boolean }
+        | undefined
+    )?.refetchOnMount;
+    expect(refetchOnMount?.(cachedList!)).toBe(false);
     expect(queryClient.getQueryData(['notes', 1, 'list', 'active', 'updated_desc'])).toBeDefined();
   });
 

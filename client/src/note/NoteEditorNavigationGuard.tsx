@@ -6,7 +6,7 @@ import { useNoteModal } from './useNoteModal';
 export function NoteEditorNavigationGuard({
   canLeave,
   canLeaveNow,
-  persistedNoteId,
+  persistedNoteIdNow,
   phase,
   writeInFlight,
   outcomeUncertain,
@@ -17,7 +17,7 @@ export function NoteEditorNavigationGuard({
 }: {
   readonly canLeave: boolean;
   readonly canLeaveNow: () => boolean;
-  readonly persistedNoteId: number | null;
+  readonly persistedNoteIdNow: () => number | null;
   readonly phase: string;
   readonly writeInFlight: boolean;
   readonly outcomeUncertain: boolean;
@@ -34,8 +34,8 @@ export function NoteEditorNavigationGuard({
       // The first confirmed POST replaces /notes/new with its canonical ID in place.
       if (
         current.pathname === '/notes/new' &&
-        persistedNoteId !== null &&
-        next.pathname === `/notes/${persistedNoteId}`
+        persistedNoteIdNow() !== null &&
+        next.pathname === `/notes/${persistedNoteIdNow()}`
       )
         return false;
       return true;
