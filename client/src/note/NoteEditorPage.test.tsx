@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
     persisted: null as { id: number; version: number } | null,
     writeInFlight: false,
     outcomeUncertain: false,
+    resolvingConflict: false,
   },
   edit: vi.fn(),
   retry: vi.fn(),
@@ -90,6 +91,7 @@ describe('NoteEditorPage', () => {
       persisted: null,
       writeInFlight: false,
       outcomeUncertain: false,
+      resolvingConflict: false,
     };
     vi.clearAllMocks();
   });
@@ -137,6 +139,7 @@ describe('NoteEditorPage', () => {
       persisted: { id: 6, version: 2 },
       writeInFlight: false,
       outcomeUncertain: false,
+      resolvingConflict: false,
     };
     renderEditor('6');
 
@@ -157,6 +160,7 @@ describe('NoteEditorPage', () => {
       persisted: { id: 6, version: 2 },
       writeInFlight: false,
       outcomeUncertain: false,
+      resolvingConflict: false,
     };
     renderEditor('6');
 

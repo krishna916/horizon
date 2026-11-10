@@ -18,6 +18,7 @@ export interface NoteSaveSnapshot {
   hasUnsavedChanges: boolean;
   writeInFlight: boolean;
   outcomeUncertain: boolean;
+  resolvingConflict: boolean;
   replacementRevision: number;
   frozenCreateRequest?: { body: ReturnType<typeof normalizeNoteDraft>; key: string };
 }
@@ -38,6 +39,7 @@ export interface NoteTransport {
 export interface NoteSaveRecoveryState {
   persistedVersion: { id: number; version: number } | undefined;
   frozenCreateRequest: { body: ReturnType<typeof normalizeNoteDraft>; key: string } | undefined;
+  frozenUpdateRequest: FrozenNoteUpdate | undefined;
 }
 
 interface NoteSaveCoordinatorOptions {
@@ -47,10 +49,12 @@ interface NoteSaveCoordinatorOptions {
   onChange: (snapshot: NoteSaveSnapshot) => void;
   onCreated?: (note: NoteDetail) => void;
   onUpdated?: (note: NoteDetail) => void;
+  canDispatch?: () => boolean;
   debounceMs?: number;
   recovery?: {
     persistedVersion?: { id: number; version: number };
     frozenCreateRequest?: { body: ReturnType<typeof normalizeNoteDraft>; key: string };
+    frozenUpdateRequest?: FrozenNoteUpdate;
   };
 }
 
@@ -60,7 +64,7 @@ interface FrozenCreate {
   revision: number;
 }
 
-interface FrozenUpdate {
+export interface FrozenNoteUpdate {
   id: number;
   body: {
     expectedVersion: number;
@@ -104,13 +108,15 @@ export class NoteSaveCoordinator {
   private readonly onChange: (snapshot: NoteSaveSnapshot) => void;
   private readonly onCreated?: (note: NoteDetail) => void;
   private readonly onUpdated?: (note: NoteDetail) => void;
+  private readonly canDispatch?: () => boolean;
   private readonly debounceMs: number;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private debounceElapsed = false;
   private inFlight: Promise<void> | null = null;
   private outcomeUncertain = false;
+  private resolvingConflict = false;
   private pendingCreate: FrozenCreate | null = null;
-  private pendingUpdate: FrozenUpdate | null = null;
+  private pendingUpdate: FrozenNoteUpdate | null = null;
   private paused = false;
   private disposed = false;
   private generation = 0;
@@ -124,8 +130,10 @@ export class NoteSaveCoordinator {
     this.onChange = options.onChange;
     this.onCreated = options.onCreated;
     this.onUpdated = options.onUpdated;
+    this.canDispatch = options.canDispatch;
     this.debounceMs = options.debounceMs ?? 900;
     this.restorePendingCreate(options);
+    this.restorePendingUpdate(options);
     this.restoreVersionState(options);
     this.restoreDraftState(options.initialNote);
   }
@@ -185,11 +193,24 @@ export class NoteSaveCoordinator {
   }
 
   async resolveConflict(choice: 'keep-local' | 'load-server'): Promise<void> {
+    if (this.resolvingConflict) return;
+    this.resolvingConflict = true;
+    this.publish();
+    try {
+      await this.resolveConflictOnce(choice);
+    } finally {
+      this.resolvingConflict = false;
+      this.publish();
+    }
+  }
+
+  private async resolveConflictOnce(choice: 'keep-local' | 'load-server'): Promise<void> {
     if (this.disposed || this.paused || this.phase !== 'conflict' || !this.persisted) return;
     if (this.inFlight) await this.inFlight;
     if (this.disposed || this.paused || this.phase !== 'conflict' || !this.persisted) return;
 
     const generation = this.generation;
+    const confirmedRevision = this.localRevision;
     let latest: NoteDetail;
     try {
       latest = await this.transport.get(this.persisted.id);
@@ -200,6 +221,10 @@ export class NoteSaveCoordinator {
     if (this.disposed || this.paused || generation !== this.generation) return;
 
     if (choice === 'load-server') {
+      if (this.localRevision !== confirmedRevision) {
+        this.publish();
+        return;
+      }
       this.draft = noteDraft(latest);
       this.baseline = { ...this.draft };
       this.persisted = { id: latest.id, version: latest.version };
@@ -287,6 +312,7 @@ export class NoteSaveCoordinator {
         this.phase === 'conflict',
       writeInFlight: this.inFlight !== null,
       outcomeUncertain: this.outcomeUncertain,
+      resolvingConflict: this.resolvingConflict,
       ...(this.pendingCreate
         ? {
             frozenCreateRequest: {
@@ -304,11 +330,24 @@ export class NoteSaveCoordinator {
       frozenCreateRequest: this.pendingCreate
         ? { body: { ...this.pendingCreate.body }, key: this.pendingCreate.key }
         : undefined,
+      frozenUpdateRequest: this.pendingUpdate
+        ? {
+            ...this.pendingUpdate,
+            body: { ...this.pendingUpdate.body },
+            draft: { ...this.pendingUpdate.draft },
+          }
+        : undefined,
     };
   }
 
   private async saveOnce(generation: number): Promise<void> {
     if (this.disposed || this.paused || generation !== this.generation) return;
+    if (this.canDispatch && !this.canDispatch()) {
+      this.paused = true;
+      this.phase = 'paused';
+      this.publish();
+      return;
+    }
 
     if (!this.persisted) {
       await this.createNote(generation);
@@ -325,9 +364,23 @@ export class NoteSaveCoordinator {
     }
   }
 
+  private restorePendingUpdate(options: NoteSaveCoordinatorOptions): void {
+    const pendingUpdate = options.recovery?.frozenUpdateRequest;
+    if (!options.initialNote || !pendingUpdate || pendingUpdate.id !== options.initialNote.id) return;
+    this.pendingUpdate = {
+      ...pendingUpdate,
+      body: { ...pendingUpdate.body },
+      draft: { ...pendingUpdate.draft },
+    };
+    this.outcomeUncertain = true;
+    this.paused = true;
+    this.phase = 'paused';
+  }
+
   private restoreVersionState(options: NoteSaveCoordinatorOptions): void {
     const initialNote = options.initialNote;
     const recoveryVersion = options.recovery?.persistedVersion;
+    if (options.recovery?.frozenUpdateRequest) return;
     if (!initialNote || !recoveryVersion || recoveryVersion.id !== initialNote.id) return;
     if (recoveryVersion.version === initialNote.version) return;
     this.phase = noteDraftsEqual(this.draft, noteDraft(initialNote)) ? 'saved' : 'conflict';
@@ -347,7 +400,7 @@ export class NoteSaveCoordinator {
     const generation = this.generation;
     try {
       const latest = await this.transport.get(persisted.id);
-      if (this.disposed || generation !== this.generation) return false;
+      if (this.disposed || this.paused || generation !== this.generation) return false;
       if (this.pendingUpdate && noteDraftsEqual(this.pendingUpdate.draft, noteDraft(latest))) {
         this.acknowledgeUpdate(this.pendingUpdate, latest);
       } else if (latest.version !== persisted.version) {
@@ -436,7 +489,7 @@ export class NoteSaveCoordinator {
 
   private async handleUpdateFailure(
     error: unknown,
-    request: FrozenUpdate,
+    request: FrozenNoteUpdate,
     generation: number
   ): Promise<void> {
     const status = errorStatus(error);
@@ -455,7 +508,7 @@ export class NoteSaveCoordinator {
     await this.reconcileFailedUpdate(request, generation);
   }
 
-  private async reconcileFailedUpdate(request: FrozenUpdate, generation: number): Promise<void> {
+  private async reconcileFailedUpdate(request: FrozenNoteUpdate, generation: number): Promise<void> {
     try {
       const latest = await this.transport.get(request.id);
       if (this.disposed || this.paused || generation !== this.generation) return;
@@ -477,7 +530,7 @@ export class NoteSaveCoordinator {
     }
   }
 
-  private acknowledgeUpdate(request: FrozenUpdate, updated: NoteDetail): void {
+  private acknowledgeUpdate(request: FrozenNoteUpdate, updated: NoteDetail): void {
     this.pendingUpdate = null;
     this.outcomeUncertain = false;
     this.persisted = { id: request.id, version: updated.version };

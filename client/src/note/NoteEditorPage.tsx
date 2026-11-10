@@ -341,6 +341,7 @@ function ActiveNoteEditor({
                     setConflictChoice(null);
                     void resolveConflict(choice);
                   }}
+                  disabled={snapshot.resolvingConflict}
                   className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
                 >
                   Confirm

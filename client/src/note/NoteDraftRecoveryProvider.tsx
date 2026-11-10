@@ -12,6 +12,7 @@ import type { ReactNode } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import type { CreateNoteRequest } from './types';
 import type { NoteDraft } from './noteDraft';
+import type { FrozenNoteUpdate } from './NoteSaveCoordinator';
 
 export interface NoteDraftRecoveryEntry {
   ownerId: number;
@@ -19,6 +20,7 @@ export interface NoteDraftRecoveryEntry {
   draft: NoteDraft;
   persistedVersion?: { id: number; version: number };
   frozenCreateRequest?: { body: CreateNoteRequest; key: string };
+  frozenUpdateRequest?: FrozenNoteUpdate;
 }
 
 interface NoteDraftRecoveryValue {
@@ -27,7 +29,8 @@ interface NoteDraftRecoveryValue {
     editorRoute: string,
     draft: NoteDraft,
     persistedVersion?: { id: number; version: number },
-    frozenCreateRequest?: { body: CreateNoteRequest; key: string }
+    frozenCreateRequest?: { body: CreateNoteRequest; key: string },
+    frozenUpdateRequest?: FrozenNoteUpdate
   ) => void;
   peekForVerifiedOwner: (ownerId: number) => NoteDraftRecoveryEntry | null;
   consumeForVerifiedOwner: (ownerId: number) => NoteDraftRecoveryEntry | null;
@@ -47,6 +50,15 @@ function copyEntry(entry: NoteDraftRecoveryEntry): NoteDraftRecoveryEntry {
           frozenCreateRequest: {
             ...entry.frozenCreateRequest,
             body: { ...entry.frozenCreateRequest.body },
+          },
+        }
+      : {}),
+    ...(entry.frozenUpdateRequest
+      ? {
+          frozenUpdateRequest: {
+            ...entry.frozenUpdateRequest,
+            body: { ...entry.frozenUpdateRequest.body },
+            draft: { ...entry.frozenUpdateRequest.draft },
           },
         }
       : {}),
@@ -70,7 +82,8 @@ export function NoteDraftRecoveryProvider({ children }: { readonly children: Rea
       editorRoute: string,
       draft: NoteDraft,
       persistedVersion?: { id: number; version: number },
-      frozenCreateRequest?: { body: CreateNoteRequest; key: string }
+      frozenCreateRequest?: { body: CreateNoteRequest; key: string },
+      frozenUpdateRequest?: FrozenNoteUpdate
     ) => {
       const next: NoteDraftRecoveryEntry = {
         ownerId,
@@ -85,6 +98,15 @@ export function NoteDraftRecoveryProvider({ children }: { readonly children: Rea
               },
             }
           : {}),
+          ...(frozenUpdateRequest
+            ? {
+                frozenUpdateRequest: {
+                  ...frozenUpdateRequest,
+                  body: { ...frozenUpdateRequest.body },
+                  draft: { ...frozenUpdateRequest.draft },
+                },
+              }
+            : {}),
       };
       entryRef.current = next;
       setEntry(next);

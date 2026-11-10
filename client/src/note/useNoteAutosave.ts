@@ -85,12 +85,24 @@ export function useNoteAutosave({
             ...(restored.frozenCreateRequest
               ? { frozenCreateRequest: restored.frozenCreateRequest }
               : {}),
+            ...(restored.frozenUpdateRequest
+              ? { frozenUpdateRequest: restored.frozenUpdateRequest }
+              : {}),
           }
         : undefined,
       transport: {
         create: async (body, key) => (await noteApi.create(body, key)).data,
         update: async (id, body) => (await noteApi.update(id, body)).data,
         get: async (id) => (await noteApi.get(id)).data,
+      },
+      canDispatch: () => {
+        const currentSession = sessionRef.current;
+        return (
+          currentSession.phase === 'verified' &&
+          currentSession.verifiedUserId === ownerIdRef.current &&
+          currentSession.epoch === getCurrentSessionEpoch() &&
+          currentSession.ownerRevision === getCurrentOwnerRevision()
+        );
       },
       onChange: (next) => {
         if (discardedRef.current) return;
@@ -102,12 +114,14 @@ export function useNoteAutosave({
         }
         setSnapshotState(next);
         if (next.hasUnsavedChanges) {
+          const saveRecovery = coordinator.recoverySnapshot();
           recoveryRef.current.stash(
             ownerIdRef.current,
             editorRouteRef.current,
             next.draft,
             next.persisted ?? undefined,
-            next.frozenCreateRequest
+            saveRecovery.frozenCreateRequest,
+            saveRecovery.frozenUpdateRequest
           );
         } else if (next.phase === 'saved') {
           recoveryRef.current.discard();
@@ -159,7 +173,8 @@ export function useNoteAutosave({
           editorRouteRef.current,
           current.draft,
           saveRecovery.persistedVersion,
-          saveRecovery.frozenCreateRequest
+          saveRecovery.frozenCreateRequest,
+          saveRecovery.frozenUpdateRequest
         );
       }
       // React Strict Mode replays effect cleanup/setup without unmounting the editor.

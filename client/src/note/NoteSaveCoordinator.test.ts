@@ -75,6 +75,89 @@ describe('NoteSaveCoordinator', () => {
     coordinator.dispose();
   });
 
+  it('reconciles a previously issued PATCH after same-owner recovery', async () => {
+    const original = { title: 'Existing', content: null };
+    const local = { title: 'Existing', content: textDocument('In flight') };
+    const dispatched = deferred<NoteDetail>();
+    const first = new NoteSaveCoordinator({
+      initialDraft: original,
+      initialNote: detail(7, 2, original),
+      transport: { create: vi.fn(), update: vi.fn().mockReturnValue(dispatched.promise), get: vi.fn() },
+      onChange: vi.fn(),
+    });
+    first.edit(local);
+    const saving = first.flush();
+    await Promise.resolve();
+    dispatched.reject(Object.assign(new Error('expired'), { response: { status: 401 } }));
+    await saving;
+    const recovery = first.recoverySnapshot();
+    expect(recovery.frozenUpdateRequest).toMatchObject({
+      id: 7,
+      body: { expectedVersion: 2 },
+      draft: local,
+    });
+    first.dispose();
+
+    const committed = detail(7, 3, local);
+    const get = vi.fn().mockResolvedValue(committed);
+    const update = vi.fn();
+    const resumed = new NoteSaveCoordinator({
+      initialDraft: local,
+      initialNote: committed,
+      recovery,
+      transport: { create: vi.fn(), update, get },
+      onChange: vi.fn(),
+    });
+    await resumed.resume();
+
+    expect(get).toHaveBeenCalledWith(7);
+    expect(update).not.toHaveBeenCalled();
+    expect(resumed.snapshot()).toMatchObject({ phase: 'saved', persisted: { id: 7, version: 3 } });
+    resumed.dispose();
+  });
+
+  it('does not dispatch a save when the live session is no longer authorized', async () => {
+    const update = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: { title: 'Old', content: null },
+      initialNote: detail(7, 2, { title: 'Old', content: null }),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+      canDispatch: () => false,
+    });
+    coordinator.edit({ title: 'Changed', content: null });
+    await coordinator.flush();
+
+    expect(update).not.toHaveBeenCalled();
+    expect(coordinator.snapshot()).toMatchObject({ phase: 'paused', hasUnsavedChanges: true });
+    coordinator.dispose();
+  });
+
+  it('requires an explicit conflict choice when recovery finds a different server write', async () => {
+    const local = { title: 'Local pending', content: textDocument('Mine') };
+    const remote = { title: 'Remote', content: textDocument('Theirs') };
+    const frozenUpdateRequest = {
+      id: 7,
+      body: { expectedVersion: 2, title: 'Local pending', content: local.content },
+      draft: local,
+      revision: 1,
+    };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: local,
+      initialNote: detail(7, 3, remote),
+      recovery: {
+        persistedVersion: { id: 7, version: 2 },
+        frozenUpdateRequest,
+      },
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn().mockResolvedValue(detail(7, 3, remote)) },
+      onChange: vi.fn(),
+    });
+    await coordinator.resume();
+
+    expect(coordinator.snapshot()).toMatchObject({ draft: local, phase: 'conflict' });
+    coordinator.dispose();
+  });
+
   it('creates meaningful content after the idle debounce', async () => {
     vi.useFakeTimers();
     const create = vi.fn().mockResolvedValue(detail(4, 0, { title: 'First note', content: null }));
@@ -435,6 +518,36 @@ describe('NoteSaveCoordinator', () => {
     await coordinator.resolveConflict('load-server');
 
     expect(coordinator.snapshot()).toMatchObject({ draft: local, phase: 'conflict' });
+    coordinator.dispose();
+  });
+
+  it('keeps edits made during confirmed Load latest and remains in conflict', async () => {
+    const old = { title: 'Old', content: null };
+    const firstLocal = { title: 'First local', content: textDocument('Local') };
+    const laterLocal = { title: 'Later local', content: textDocument('Typed while loading') };
+    const getPending = deferred<NoteDetail>();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: old,
+      initialNote: detail(9, 5, old),
+      transport: {
+        create: vi.fn(),
+        update: vi.fn().mockRejectedValue(conflictError()),
+        get: vi.fn().mockReturnValue(getPending.promise),
+      },
+      onChange: vi.fn(),
+    });
+    coordinator.edit(firstLocal);
+    await coordinator.flush();
+    const resolution = coordinator.resolveConflict('load-server');
+    coordinator.edit(laterLocal);
+    getPending.resolve(detail(9, 6, { title: 'Server', content: null }));
+    await resolution;
+
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: laterLocal,
+      phase: 'conflict',
+      replacementRevision: 0,
+    });
     coordinator.dispose();
   });
 
