@@ -1,6 +1,7 @@
 import { isAxiosError } from 'axios';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import { RichTextEditor } from '@/components/rich-text/RichTextEditor';
+import { TagSelector } from '@/tag/TagSelector';
 import { useNoteDetail } from './queries';
 import { parseNoteId } from './noteNavigation';
 import { useNoteDraftRecovery } from './NoteDraftRecoveryProvider';
@@ -287,6 +288,16 @@ function ActiveNoteEditor({
             ) : (
               <span>Private note</span>
             )}
+          </div>
+
+          <div className="mb-6">
+            <TagSelector
+              value={snapshot.draft.tags ?? []}
+              onChange={(tags) => edit({ ...snapshot.draft, tags })}
+              userId={ownerId}
+              knownTags={initialNote?.tags ?? []}
+              createLabel="add"
+            />
           </div>
 
           {snapshot.phase === 'conflict' && (

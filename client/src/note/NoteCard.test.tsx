@@ -58,6 +58,31 @@ describe('NoteCard', () => {
     expect(screen.queryByText(/tag|file/i)).toBeNull();
   });
 
+  it('shows the first two Tags in stable order with an overflow count inside the linked card', () => {
+    render(
+      <NoteCard
+        note={summary({
+          tags: [
+            { id: 4, name: 'Travel' },
+            { id: 2, name: 'books' },
+            { id: 3, name: 'Work' },
+            { id: 1, name: 'Art' },
+          ],
+        })}
+      />
+    );
+
+    const link = screen.getByRole('link', { name: /Trip notes/ });
+    expect(link).toHaveAttribute('href', '/notes/7');
+    expect(link).toHaveTextContent('Art');
+    expect(link).toHaveTextContent('books');
+    expect(link).toHaveTextContent('+2');
+    expect(link).not.toHaveTextContent('Travel');
+    expect(link).not.toHaveTextContent('Work');
+    expect(link.querySelector('time')).toHaveTextContent(/Updated/);
+    expect(link.className).toContain('max-h-[440px]');
+  });
+
   it('keeps safe rich-text links noninteractive inside the card navigation link', () => {
     render(
       <NoteCard
