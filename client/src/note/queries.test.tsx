@@ -117,8 +117,7 @@ describe('Notes list query', () => {
     expect(cachedList?.options.gcTime).toBe(Infinity);
     const refetchOnMount = (
       cachedList?.options as
-        | { refetchOnMount?: (query: { state: { isInvalidated: boolean } }) => boolean }
-        | undefined
+        { refetchOnMount?: (query: { state: { isInvalidated: boolean } }) => boolean } | undefined
     )?.refetchOnMount;
     expect(refetchOnMount?.(cachedList!)).toBe(false);
     expect(queryClient.getQueryData(['notes', 1, 'list', 'active', 'updated_desc'])).toBeDefined();
@@ -130,7 +129,8 @@ describe('Notes list query', () => {
       .mockResolvedValueOnce(page(0, true, 'Old first'))
       .mockResolvedValueOnce(page(1, false, 'Old second'));
     const { Wrapper, queryClient } = createWrapper();
-    const renderList = () => renderHook(() => useNoteList(1, 'active', 'title_asc'), { wrapper: Wrapper });
+    const renderList = () =>
+      renderHook(() => useNoteList(1, 'active', 'title_asc'), { wrapper: Wrapper });
     const firstVisit = renderList();
     await waitFor(() => expect(firstVisit.result.current.data?.pages).toHaveLength(1));
     await act(async () => firstVisit.result.current.fetchNextPage());

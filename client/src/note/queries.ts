@@ -30,7 +30,7 @@ export function useNoteList(
   });
 }
 
-export function useNoteDetail(userId: number | undefined, id: number | null) {
+export function useNoteDetail(userId: number | undefined, id: number | null, enabled = true) {
   return useQuery({
     queryKey:
       userId === undefined || id === null
@@ -40,7 +40,7 @@ export function useNoteDetail(userId: number | undefined, id: number | null) {
       if (id === null) throw new Error('A valid Note ID is required');
       return noteApi.get(id, signal);
     },
-    enabled: userId !== undefined && id !== null,
+    enabled: enabled && userId !== undefined && id !== null,
     retry: false,
     refetchOnWindowFocus: false,
   });

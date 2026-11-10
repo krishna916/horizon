@@ -3,12 +3,16 @@ import { useEffect, useRef } from 'react';
 export function useNoteModal(open: boolean, onCancel: () => void) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const onCancelRef = useRef(onCancel);
-  onCancelRef.current = onCancel;
+
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  }, [onCancel]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!open || !dialog) return;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     if (typeof dialog.showModal === 'function') dialog.showModal();
     else dialog.setAttribute('open', '');
@@ -37,10 +41,16 @@ export function useNoteModal(open: boolean, onCancel: () => void) {
       }
       const first = focusable[0]!;
       const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      if (
+        event.shiftKey &&
+        (document.activeElement === first || !dialog.contains(document.activeElement))
+      ) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+      } else if (
+        !event.shiftKey &&
+        (document.activeElement === last || !dialog.contains(document.activeElement))
+      ) {
         event.preventDefault();
         first.focus();
       }

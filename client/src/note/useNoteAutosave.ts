@@ -37,7 +37,7 @@ export function useNoteAutosave({
   const session = useAuthSession();
   const recoveryContext = useNoteDraftRecovery();
   const sessionRef = useRef(session);
-  const ownerRevisionAtMount = useRef(session.ownerRevision);
+  const [ownerRevisionAtMount] = useState(() => session.ownerRevision);
   const recoveryRef = useRef(recoveryContext);
   const ownerIdRef = useRef(ownerId);
   const editorRouteRef = useRef(editorRoute);
@@ -114,14 +114,13 @@ export function useNoteAutosave({
         }
         setSnapshotState(next);
         if (next.hasUnsavedChanges) {
-          const saveRecovery = coordinator.recoverySnapshot();
           recoveryRef.current.stash(
             ownerIdRef.current,
             editorRouteRef.current,
             next.draft,
             next.persisted ?? undefined,
-            saveRecovery.frozenCreateRequest,
-            saveRecovery.frozenUpdateRequest
+            next.frozenCreateRequest,
+            next.frozenUpdateRequest
           );
         } else if (next.phase === 'saved') {
           recoveryRef.current.discard();
@@ -135,7 +134,7 @@ export function useNoteAutosave({
   const currentSnapshot = snapshotState ?? coordinator.snapshot();
   const snapshot =
     (session.phase === 'verified' && session.verifiedUserId === ownerId) ||
-    (session.ownerRevision === ownerRevisionAtMount.current &&
+    (session.ownerRevision === ownerRevisionAtMount &&
       (session.phase === 'verifying' || session.phase === 'retryable-error'))
       ? currentSnapshot
       : {
@@ -201,7 +200,10 @@ export function useNoteAutosave({
     const latest = coordinator.snapshot();
     return !latest.hasUnsavedChanges && latest.phase !== 'saving';
   }, [coordinator]);
-  const persistedNoteIdNow = useCallback(() => coordinator.snapshot().persisted?.id ?? null, [coordinator]);
+  const persistedNoteIdNow = useCallback(
+    () => coordinator.snapshot().persisted?.id ?? null,
+    [coordinator]
+  );
 
   return {
     snapshot,

@@ -78,12 +78,19 @@ const archivedNote: NoteDetail = {
 };
 
 function renderEditor(routeNoteId: string | null = null) {
-  return render(<NoteEditorPage routeNoteId={routeNoteId} ownerId={12} onBack={vi.fn()} onCreated={vi.fn()} />);
+  return render(
+    <NoteEditorPage routeNoteId={routeNoteId} ownerId={12} onBack={vi.fn()} onCreated={vi.fn()} />
+  );
 }
 
 describe('NoteEditorPage', () => {
   afterEach(() => {
-    state.session = { phase: 'verified', verifiedUserId: 12, ownerRevision: 0, verifySession: vi.fn() };
+    state.session = {
+      phase: 'verified',
+      verifiedUserId: 12,
+      ownerRevision: 0,
+      verifySession: vi.fn(),
+    };
     state.note = null;
     state.snapshot = {
       draft: { title: '', content: null as NoteDraft['content'] },
@@ -184,12 +191,7 @@ describe('NoteEditorPage', () => {
       verifySession: vi.fn(),
     };
     rendered.rerender(
-      <NoteEditorPage
-        routeNoteId="6"
-        ownerId={12}
-        onBack={vi.fn()}
-        onCreated={vi.fn()}
-      />
+      <NoteEditorPage routeNoteId="6" ownerId={12} onBack={vi.fn()} onCreated={vi.fn()} />
     );
 
     expect(screen.getByLabelText('Note content')).toBe(editor);

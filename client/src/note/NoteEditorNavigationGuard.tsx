@@ -105,8 +105,8 @@ export function NoteEditorNavigationGuard({
                   {isExplicitLogout ? 'Wait for save and sign out' : 'Wait for save'}
                 </button>
               )}
-              {isExplicitLogout && (
-                writeInFlight || outcomeUncertain ? (
+              {isExplicitLogout &&
+                (writeInFlight || outcomeUncertain ? (
                   confirmUncertainLogout ? (
                     <button
                       type="button"
@@ -138,8 +138,7 @@ export function NoteEditorNavigationGuard({
                   >
                     Discard unsent changes and sign out
                   </button>
-                )
-              )}
+                ))}
             </div>
           </dialog>
         </div>

@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import { NotesBrowseProvider } from './NotesBrowseContext';
 import { NoteEditorPage } from './NoteEditorPage';
@@ -12,7 +12,10 @@ export function NotesRoute() {
     userId: number;
     ownerRevision: number;
   } | null>(null);
-  const [promotedCreatedNoteId, setPromotedCreatedNoteId] = useState<number | null>(null);
+  const [promotedCreatedNote, setPromotedCreatedNote] = useState<{
+    id: number;
+    sourceIdentity: string;
+  } | null>(null);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const router = useRouter();
   const navigate = useNavigate({ from: '/notes' });
@@ -39,9 +42,11 @@ export function NotesRoute() {
   const routeNoteId = pathname === '/notes/new' ? null : pathname.slice('/notes/'.length);
   const routeId = routeNoteId === null ? null : parseNoteId(routeNoteId);
   const editorIdentity =
-    routeNoteId === null || (routeId !== null && routeId === promotedCreatedNoteId)
-      ? 'new'
-      : `note:${routeNoteId}`;
+    routeNoteId === null
+      ? (promotedCreatedNote?.sourceIdentity ?? 'new')
+      : routeId !== null && routeId === promotedCreatedNote?.id
+        ? promotedCreatedNote.sourceIdentity
+        : `note:${routeNoteId}`;
   const trustedNewOrigin =
     routeNoteId === null && isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation);
 
@@ -54,14 +59,6 @@ export function NotesRoute() {
     }
     priorEditorRoute.current = isEditorRoute ? { pathname, identity: editorIdentity } : null;
   }, [editorIdentity, pathname]);
-
-  useEffect(() => {
-    if (pathname === '/notes/new') return;
-    const currentId = pathname.startsWith('/notes/')
-      ? parseNoteId(pathname.slice('/notes/'.length))
-      : null;
-    if (currentId !== promotedCreatedNoteId) setPromotedCreatedNoteId(null);
-  }, [pathname, promotedCreatedNoteId]);
 
   if (owner === null) {
     if (phase === 'unauthenticated') return null;
@@ -90,7 +87,7 @@ export function NotesRoute() {
             }
           }}
           onCreated={(note: NoteDetail) => {
-            setPromotedCreatedNoteId(note.id);
+            setPromotedCreatedNote({ id: note.id, sourceIdentity: editorIdentity });
             void navigate({
               to: '/notes/$id',
               params: { id: String(note.id) },

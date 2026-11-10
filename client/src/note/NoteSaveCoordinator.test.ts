@@ -82,7 +82,11 @@ describe('NoteSaveCoordinator', () => {
     const first = new NoteSaveCoordinator({
       initialDraft: original,
       initialNote: detail(7, 2, original),
-      transport: { create: vi.fn(), update: vi.fn().mockReturnValue(dispatched.promise), get: vi.fn() },
+      transport: {
+        create: vi.fn(),
+        update: vi.fn().mockReturnValue(dispatched.promise),
+        get: vi.fn(),
+      },
       onChange: vi.fn(),
     });
     first.edit(local);
@@ -149,7 +153,11 @@ describe('NoteSaveCoordinator', () => {
         persistedVersion: { id: 7, version: 2 },
         frozenUpdateRequest,
       },
-      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn().mockResolvedValue(detail(7, 3, remote)) },
+      transport: {
+        create: vi.fn(),
+        update: vi.fn(),
+        get: vi.fn().mockResolvedValue(detail(7, 3, remote)),
+      },
       onChange: vi.fn(),
     });
     await coordinator.resume();

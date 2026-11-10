@@ -148,7 +148,8 @@ async function installNotesApi(page: Page, initialOwner = 1, archivedCount = 3) 
     if (collection === 'active') all.unshift(...createdNotes);
     for (const [id, updated] of changedNotes) {
       const index = all.findIndex((item) => item.id === id);
-      if (index >= 0) all[index] = { ...all[index]!, title: updated.title, updatedAt: updated.updatedAt };
+      if (index >= 0)
+        all[index] = { ...all[index]!, title: updated.title, updatedAt: updated.updatedAt };
     }
     if (sort === 'title_asc') all.reverse();
     const items = all.slice(pageNumber * size, (pageNumber + 1) * size);
@@ -172,12 +173,21 @@ async function installNotesApi(page: Page, initialOwner = 1, archivedCount = 3) 
       const id = Number(rawId);
       const current = changedNotes.get(id) ?? detail(id, ownerId);
       const body = route.request().postDataJSON() as Record<string, unknown>;
-      const updated = { ...current, ...body, version: current.version + 1, updatedAt: timestamps.updatedAt } as NoteDetail;
+      const updated = {
+        ...current,
+        ...body,
+        version: current.version + 1,
+        updatedAt: timestamps.updatedAt,
+      } as NoteDetail;
       changedNotes.set(id, updated);
       const item = createdNotes.find((note) => note.id === id);
       if (item) item.title = updated.title;
       writes.push(route.request().method());
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(updated) });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(updated),
+      });
       return;
     }
     if (!/^\d+$/.test(rawId)) {

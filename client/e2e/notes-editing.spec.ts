@@ -172,7 +172,9 @@ test('blocks workspace navigation while the note draft is dirty and lets the use
   await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue('Pending title');
 });
 
-test('discards an unsent draft before signing out without dispatching a write', async ({ page }) => {
+test('discards an unsent draft before signing out without dispatching a write', async ({
+  page,
+}) => {
   await page.clock.install();
   let logoutCount = 0;
   let writeCount = 0;
@@ -239,7 +241,11 @@ test('warns that an issued PATCH may save and waits before signing out', async (
   });
   await page.route('**/api/v1/notes/601', async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(existing) });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(existing),
+      });
       return;
     }
     patchCount += 1;

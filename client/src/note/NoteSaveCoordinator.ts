@@ -21,6 +21,7 @@ export interface NoteSaveSnapshot {
   resolvingConflict: boolean;
   replacementRevision: number;
   frozenCreateRequest?: { body: ReturnType<typeof normalizeNoteDraft>; key: string };
+  frozenUpdateRequest?: FrozenNoteUpdate;
 }
 
 export interface NoteTransport {
@@ -322,6 +323,15 @@ export class NoteSaveCoordinator {
             },
           }
         : {}),
+      ...(this.pendingUpdate
+        ? {
+            frozenUpdateRequest: {
+              ...this.pendingUpdate,
+              body: { ...this.pendingUpdate.body },
+              draft: { ...this.pendingUpdate.draft },
+            },
+          }
+        : {}),
     };
   }
 
@@ -367,7 +377,8 @@ export class NoteSaveCoordinator {
 
   private restorePendingUpdate(options: NoteSaveCoordinatorOptions): void {
     const pendingUpdate = options.recovery?.frozenUpdateRequest;
-    if (!options.initialNote || !pendingUpdate || pendingUpdate.id !== options.initialNote.id) return;
+    if (!options.initialNote || !pendingUpdate || pendingUpdate.id !== options.initialNote.id)
+      return;
     this.pendingUpdate = {
       ...pendingUpdate,
       body: { ...pendingUpdate.body },
@@ -509,7 +520,10 @@ export class NoteSaveCoordinator {
     await this.reconcileFailedUpdate(request, generation);
   }
 
-  private async reconcileFailedUpdate(request: FrozenNoteUpdate, generation: number): Promise<void> {
+  private async reconcileFailedUpdate(
+    request: FrozenNoteUpdate,
+    generation: number
+  ): Promise<void> {
     try {
       const latest = await this.transport.get(request.id);
       if (this.disposed || this.paused || generation !== this.generation) return;

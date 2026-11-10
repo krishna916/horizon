@@ -28,13 +28,18 @@ vi.mock('@tanstack/react-router', () => ({
   }: {
     select: (state: { location: { pathname: string } }) => unknown;
   }) => select({ location: { pathname: route.pathname } }),
-  useRouter: () => ({ state: { location: { state: route.locationState } }, history: { back: vi.fn() } }),
+  useRouter: () => ({
+    state: { location: { state: route.locationState } },
+    history: { back: vi.fn() },
+  }),
   useNavigate: () => route.navigate,
 }));
 
 vi.mock('./NoteEditorPage', () => ({
   NoteEditorPage: ({ onCreated }: { onCreated: (note: { id: number }) => void }) => (
-    <button type="button" onClick={() => onCreated({ id: 501 } as never)}>Create done</button>
+    <button type="button" onClick={() => onCreated({ id: 501 } as never)}>
+      Create done
+    </button>
   ),
 }));
 

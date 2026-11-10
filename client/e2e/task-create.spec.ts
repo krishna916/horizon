@@ -70,6 +70,19 @@ async function installStatefulTaskApi(
       body: JSON.stringify({ id: 1, email: 'task-create@example.com' }),
     })
   );
+  await page.route(/\/api\/v1\/notes(?:\?.*)?$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [],
+        page: 0,
+        size: 20,
+        hasNext: false,
+        counts: { active: 0, archived: 0 },
+      }),
+    })
+  );
   await page.route('**/api/v1/tasks', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
@@ -363,7 +376,9 @@ test('keeps a dirty direct-create draft on Forward and discards to that destinat
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole('button', { name: 'Discard draft' }).click();
   await expect(page).toHaveURL(/\/notes$/);
-  await expect(page.getByRole('main').getByRole('heading', { name: 'Notes' })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByRole('heading', { name: 'Notes', exact: true })
+  ).toBeVisible();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.goBack();
   await expect(page).toHaveURL(/\/tasks\?create=true$/);

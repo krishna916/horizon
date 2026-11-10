@@ -5,7 +5,7 @@ import { useNoteDetail } from './queries';
 import { parseNoteId } from './noteNavigation';
 import { useNoteDraftRecovery } from './NoteDraftRecoveryProvider';
 import { NoteEditorNavigationGuard } from './NoteEditorNavigationGuard';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNoteAutosave } from './useNoteAutosave';
 import { useNoteModal } from './useNoteModal';
 import type { NoteDetail } from './types';
@@ -14,7 +14,10 @@ import type { NoteDraftRecoveryEntry } from './NoteDraftRecoveryProvider';
 
 const blankDraft: NoteDraft = { title: '', content: null };
 
-function statusText(snapshot: { phase: string; persisted: { id: number; version: number } | null }): string {
+function statusText(snapshot: {
+  phase: string;
+  persisted: { id: number; version: number } | null;
+}): string {
   if (snapshot.phase === 'saving') return 'Saving…';
   if (snapshot.phase === 'saved' || snapshot.phase === 'clean') {
     return snapshot.persisted ? 'Saved' : 'Not saved yet';
@@ -44,35 +47,24 @@ export function NoteEditorPage({
   const userId = phase === 'verified' ? (verifiedUserId ?? undefined) : undefined;
   const editorOwnerId = userId ?? retainedOwnerId;
   const logicalIdentity = identityKey ?? (routeNoteId === null ? 'new' : `note:${routeNoteId}`);
-  const query = useNoteDetail(userId, id);
+  const query = useNoteDetail(editorOwnerId, id, phase === 'verified' && userId !== undefined);
   const editorRoute = routeNoteId === null ? '/notes/new' : `/notes/${routeNoteId}`;
   const retainedRecovery =
     userId === undefined ? null : recoveryContext.peekForVerifiedOwner(userId);
   const recovery = retainedRecovery?.editorRoute === editorRoute ? retainedRecovery : null;
-  const retainedEditorRef = useRef<{
-    ownerId: number;
-    routeNoteId: string | null;
-    identityKey: string;
-    initialNote: NoteDetail | null;
-    recovery: NoteDraftRecoveryEntry | null;
-  } | null>(null);
-
   if (
     phase !== 'verified' &&
     phase !== 'unauthenticated' &&
     editorOwnerId !== undefined &&
-    retainedEditorRef.current?.ownerId === editorOwnerId &&
-    retainedEditorRef.current.routeNoteId === routeNoteId &&
-    retainedEditorRef.current.identityKey === logicalIdentity
+    (routeNoteId === null || query.data !== undefined)
   ) {
-    const retained = retainedEditorRef.current;
     return (
       <ActiveNoteEditor
-        key={`${retained.ownerId}:${retained.identityKey}`}
-        ownerId={retained.ownerId}
-        routeNoteId={retained.routeNoteId}
-        initialNote={retained.initialNote}
-        recovery={retained.recovery}
+        key={`${editorOwnerId}:${logicalIdentity}`}
+        ownerId={editorOwnerId}
+        routeNoteId={routeNoteId}
+        initialNote={query.data?.data ?? null}
+        recovery={null}
         onBack={onBack}
         onCreated={onCreated}
       />
@@ -152,13 +144,6 @@ export function NoteEditorPage({
   }
 
   const initialNote = query.data?.data ?? null;
-  retainedEditorRef.current = {
-    ownerId: userId,
-    routeNoteId,
-    identityKey: logicalIdentity,
-    initialNote,
-    recovery,
-  };
   return (
     <ActiveNoteEditor
       key={`${userId}:${logicalIdentity}`}
@@ -198,16 +183,14 @@ function ActiveNoteEditor({
     canLeave,
     canLeaveNow,
     persistedNoteIdNow,
-  } = useNoteAutosave(
-    {
-      ownerId,
-      initialNote,
-      initialDraft: initialNote ? undefined : blankDraft,
-      editorRoute: routeNoteId === null ? '/notes/new' : `/notes/${routeNoteId}`,
-      recovery,
-      onCreated,
-    }
-  );
+  } = useNoteAutosave({
+    ownerId,
+    initialNote,
+    initialDraft: initialNote ? undefined : blankDraft,
+    editorRoute: routeNoteId === null ? '/notes/new' : `/notes/${routeNoteId}`,
+    recovery,
+    onCreated,
+  });
 
   function updateTitle(title: string) {
     edit({ ...snapshot.draft, title });
@@ -244,7 +227,7 @@ function ActiveNoteEditor({
             <span
               className={snapshot.phase === 'failed' ? 'text-destructive' : 'text-muted-foreground'}
             >
-            {statusText(snapshot)}
+              {statusText(snapshot)}
             </span>
             {snapshot.phase === 'failed' && (
               <button type="button" onClick={() => void retry()} className="font-medium underline">

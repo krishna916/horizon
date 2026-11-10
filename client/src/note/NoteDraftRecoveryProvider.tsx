@@ -98,15 +98,15 @@ export function NoteDraftRecoveryProvider({ children }: { readonly children: Rea
               },
             }
           : {}),
-          ...(frozenUpdateRequest
-            ? {
-                frozenUpdateRequest: {
-                  ...frozenUpdateRequest,
-                  body: { ...frozenUpdateRequest.body },
-                  draft: { ...frozenUpdateRequest.draft },
-                },
-              }
-            : {}),
+        ...(frozenUpdateRequest
+          ? {
+              frozenUpdateRequest: {
+                ...frozenUpdateRequest,
+                body: { ...frozenUpdateRequest.body },
+                draft: { ...frozenUpdateRequest.draft },
+              },
+            }
+          : {}),
       };
       entryRef.current = next;
       setEntry(next);
