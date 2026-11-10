@@ -37,6 +37,7 @@ export function useNoteAutosave({
   const session = useAuthSession();
   const recoveryContext = useNoteDraftRecovery();
   const sessionRef = useRef(session);
+  const ownerRevisionAtMount = useRef(session.ownerRevision);
   const recoveryRef = useRef(recoveryContext);
   const ownerIdRef = useRef(ownerId);
   const editorRouteRef = useRef(editorRoute);
@@ -119,7 +120,9 @@ export function useNoteAutosave({
 
   const currentSnapshot = snapshotState ?? coordinator.snapshot();
   const snapshot =
-    session.phase === 'verified' && session.verifiedUserId === ownerId
+    (session.phase === 'verified' && session.verifiedUserId === ownerId) ||
+    (session.ownerRevision === ownerRevisionAtMount.current &&
+      (session.phase === 'verifying' || session.phase === 'retryable-error'))
       ? currentSnapshot
       : {
           ...currentSnapshot,

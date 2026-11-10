@@ -57,6 +57,7 @@ function AutosaveProbe() {
     <div>
       <output data-testid="phase">{`${session.phase}:${autosave.snapshot.phase}`}</output>
       <output data-testid="draft">{autosave.snapshot.draft.content ? 'body' : 'empty'}</output>
+      <output data-testid="unsaved">{String(autosave.snapshot.hasUnsavedChanges)}</output>
       <button
         type="button"
         onClick={() => {
@@ -214,6 +215,8 @@ describe('useNoteAutosave', () => {
     vi.mocked(noteApi.get).mockResolvedValue(response(committed));
     fireEvent.click(screen.getByRole('button', { name: 'Reverify' }));
     await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('verifying:paused'));
+    expect(screen.getByTestId('draft')).toHaveTextContent('body');
+    expect(screen.getByTestId('unsaved')).toHaveTextContent('true');
 
     resolveUpdate(response(committed));
     await act(async () => {
@@ -229,6 +232,26 @@ describe('useNoteAutosave', () => {
       })
     );
     rendered.unmount();
+  });
+
+  it('does not mark a clean editor as a recoverable draft while verification pauses it', async () => {
+    let resolveVerification!: (value: never) => void;
+    const verificationPending = new Promise<never>((resolve) => {
+      resolveVerification = resolve;
+    });
+    vi.mocked(userApi.getCurrentUser)
+      .mockResolvedValueOnce({ data: { id: 1, email: 'one@example.com' } } as never)
+      .mockReturnValueOnce(verificationPending);
+    vi.mocked(noteApi.get).mockResolvedValue(response(initial));
+    renderAutosave();
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('verified:saved'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reverify' }));
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('verifying:paused'));
+    expect(screen.getByTestId('unsaved')).toHaveTextContent('false');
+    await act(async () => {
+      resolveVerification({ data: { id: 1, email: 'one@example.com' } } as never);
+    });
   });
 
   it('cancels pending autosave and ignores an old response after owner change', async () => {

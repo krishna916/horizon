@@ -284,8 +284,7 @@ export class NoteSaveCoordinator {
         this.hasWork() ||
         this.localRevision > this.confirmedRevision ||
         this.phase === 'failed' ||
-        this.phase === 'conflict' ||
-        this.phase === 'paused',
+        this.phase === 'conflict',
       writeInFlight: this.inFlight !== null,
       outcomeUncertain: this.outcomeUncertain,
       ...(this.pendingCreate

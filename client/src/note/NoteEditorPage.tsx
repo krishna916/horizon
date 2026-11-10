@@ -5,7 +5,7 @@ import { useNoteDetail } from './queries';
 import { parseNoteId } from './noteNavigation';
 import { useNoteDraftRecovery } from './NoteDraftRecoveryProvider';
 import { NoteEditorNavigationGuard } from './NoteEditorNavigationGuard';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNoteAutosave } from './useNoteAutosave';
 import type { NoteDetail } from './types';
 import type { NoteDraft } from './noteDraft';
@@ -24,10 +24,14 @@ function statusText(phase: string): string {
 
 export function NoteEditorPage({
   routeNoteId,
+  ownerId: retainedOwnerId,
+  identityKey,
   onBack,
   onCreated,
 }: {
   readonly routeNoteId: string | null;
+  readonly ownerId?: number;
+  readonly identityKey?: string;
   readonly onBack: () => void;
   readonly onCreated: (note: NoteDetail) => void;
 }) {
@@ -35,11 +39,42 @@ export function NoteEditorPage({
   const recoveryContext = useNoteDraftRecovery();
   const id = routeNoteId === null ? null : parseNoteId(routeNoteId);
   const userId = phase === 'verified' ? (verifiedUserId ?? undefined) : undefined;
+  const editorOwnerId = userId ?? retainedOwnerId;
+  const logicalIdentity = identityKey ?? (routeNoteId === null ? 'new' : `note:${routeNoteId}`);
   const query = useNoteDetail(userId, id);
   const editorRoute = routeNoteId === null ? '/notes/new' : `/notes/${routeNoteId}`;
   const retainedRecovery =
     userId === undefined ? null : recoveryContext.peekForVerifiedOwner(userId);
   const recovery = retainedRecovery?.editorRoute === editorRoute ? retainedRecovery : null;
+  const retainedEditorRef = useRef<{
+    ownerId: number;
+    routeNoteId: string | null;
+    identityKey: string;
+    initialNote: NoteDetail | null;
+    recovery: NoteDraftRecoveryEntry | null;
+  } | null>(null);
+
+  if (
+    phase !== 'verified' &&
+    phase !== 'unauthenticated' &&
+    editorOwnerId !== undefined &&
+    retainedEditorRef.current?.ownerId === editorOwnerId &&
+    retainedEditorRef.current.routeNoteId === routeNoteId &&
+    retainedEditorRef.current.identityKey === logicalIdentity
+  ) {
+    const retained = retainedEditorRef.current;
+    return (
+      <ActiveNoteEditor
+        key={`${retained.ownerId}:${retained.identityKey}`}
+        ownerId={retained.ownerId}
+        routeNoteId={retained.routeNoteId}
+        initialNote={retained.initialNote}
+        recovery={retained.recovery}
+        onBack={onBack}
+        onCreated={onCreated}
+      />
+    );
+  }
 
   if (phase !== 'verified' || userId === undefined) {
     return (
@@ -113,12 +148,20 @@ export function NoteEditorPage({
     );
   }
 
+  const initialNote = query.data?.data ?? null;
+  retainedEditorRef.current = {
+    ownerId: userId,
+    routeNoteId,
+    identityKey: logicalIdentity,
+    initialNote,
+    recovery,
+  };
   return (
     <ActiveNoteEditor
-      key={userId}
+      key={`${userId}:${logicalIdentity}`}
       ownerId={userId}
       routeNoteId={routeNoteId}
-      initialNote={query.data?.data ?? null}
+      initialNote={initialNote}
       recovery={recovery}
       onBack={onBack}
       onCreated={onCreated}

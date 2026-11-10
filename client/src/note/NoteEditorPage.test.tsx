@@ -5,17 +5,28 @@ import type { NoteDraft } from './noteDraft';
 import type { NoteDetail } from './types';
 
 const state = vi.hoisted(() => ({
-  session: { phase: 'verified', verifiedUserId: 12, verifySession: vi.fn() },
+  session: {
+    phase: 'verified',
+    verifiedUserId: 12 as number | null,
+    ownerRevision: 0,
+    verifySession: vi.fn(),
+  },
   note: null as NoteDetail | null,
   snapshot: {
     draft: { title: '', content: null as NoteDraft['content'] },
     phase: 'clean',
     replacementRevision: 0,
     hasUnsavedChanges: false,
+    persisted: null as { id: number; version: number } | null,
+    writeInFlight: false,
+    outcomeUncertain: false,
   },
   edit: vi.fn(),
   retry: vi.fn(),
   resolveConflict: vi.fn(),
+  flush: vi.fn(),
+  discardDraft: vi.fn(),
+  canLeaveNow: vi.fn(() => true),
 }));
 
 vi.mock('@/user/session/AuthSessionProvider', () => ({
@@ -35,6 +46,10 @@ vi.mock('./useNoteAutosave', () => ({
     edit: state.edit,
     retry: state.retry,
     resolveConflict: state.resolveConflict,
+    flush: state.flush,
+    discardDraft: state.discardDraft,
+    canLeave: true,
+    canLeaveNow: state.canLeaveNow,
   }),
 }));
 vi.mock('./NoteDraftRecoveryProvider', () => ({
@@ -60,18 +75,21 @@ const archivedNote: NoteDetail = {
 };
 
 function renderEditor(routeNoteId: string | null = null) {
-  return render(<NoteEditorPage routeNoteId={routeNoteId} onBack={vi.fn()} onCreated={vi.fn()} />);
+  return render(<NoteEditorPage routeNoteId={routeNoteId} ownerId={12} onBack={vi.fn()} onCreated={vi.fn()} />);
 }
 
 describe('NoteEditorPage', () => {
   afterEach(() => {
-    state.session = { phase: 'verified', verifiedUserId: 12, verifySession: vi.fn() };
+    state.session = { phase: 'verified', verifiedUserId: 12, ownerRevision: 0, verifySession: vi.fn() };
     state.note = null;
     state.snapshot = {
       draft: { title: '', content: null as NoteDraft['content'] },
       phase: 'clean',
       replacementRevision: 0,
       hasUnsavedChanges: false,
+      persisted: null,
+      writeInFlight: false,
+      outcomeUncertain: false,
     };
     vi.clearAllMocks();
   });
@@ -100,6 +118,9 @@ describe('NoteEditorPage', () => {
       phase: 'failed',
       replacementRevision: 0,
       hasUnsavedChanges: true,
+      persisted: { id: 6, version: 2 },
+      writeInFlight: false,
+      outcomeUncertain: false,
     };
     renderEditor('6');
 
@@ -117,6 +138,9 @@ describe('NoteEditorPage', () => {
       phase: 'conflict',
       replacementRevision: 0,
       hasUnsavedChanges: true,
+      persisted: { id: 6, version: 2 },
+      writeInFlight: false,
+      outcomeUncertain: false,
     };
     renderEditor('6');
 
@@ -125,5 +149,27 @@ describe('NoteEditorPage', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent('replaces your current draft');
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     expect(state.resolveConflict).toHaveBeenCalledWith('load-server');
+  });
+
+  it('keeps the same editor mounted during same-owner session verification', () => {
+    state.note = archivedNote;
+    const rendered = renderEditor('6');
+    const editor = screen.getByLabelText('Note content');
+    state.session = {
+      phase: 'verifying',
+      verifiedUserId: null,
+      ownerRevision: 0,
+      verifySession: vi.fn(),
+    };
+    rendered.rerender(
+      <NoteEditorPage
+        routeNoteId="6"
+        ownerId={12}
+        onBack={vi.fn()}
+        onCreated={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText('Note content')).toBe(editor);
   });
 });

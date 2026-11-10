@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import { NotesBrowseProvider } from './NotesBrowseContext';
 import { NoteEditorPage } from './NoteEditorPage';
@@ -12,6 +12,7 @@ export function NotesRoute() {
     userId: number;
     ownerRevision: number;
   } | null>(null);
+  const [promotedCreatedNoteId, setPromotedCreatedNoteId] = useState<number | null>(null);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const router = useRouter();
   const navigate = useNavigate({ from: '/notes' });
@@ -33,6 +34,22 @@ export function NotesRoute() {
   } else if (phase === 'unauthenticated') {
     owner = null;
   }
+
+  const routeNoteId = pathname === '/notes/new' ? null : pathname.slice('/notes/'.length);
+  const routeId = routeNoteId === null ? null : parseNoteId(routeNoteId);
+  const editorIdentity =
+    routeNoteId === null || (routeId !== null && routeId === promotedCreatedNoteId)
+      ? 'new'
+      : `note:${routeNoteId}`;
+
+  useEffect(() => {
+    if (pathname === '/notes/new') return;
+    const currentId = pathname.startsWith('/notes/')
+      ? parseNoteId(pathname.slice('/notes/'.length))
+      : null;
+    if (currentId !== promotedCreatedNoteId) setPromotedCreatedNoteId(null);
+  }, [pathname, promotedCreatedNoteId]);
+
   if (owner === null) {
     if (phase === 'unauthenticated') return null;
     return <output>Verifying your session…</output>;
@@ -42,7 +59,9 @@ export function NotesRoute() {
     <NotesBrowseProvider key={`${owner.ownerRevision}:${owner.userId}`} userId={owner.userId}>
       {pathname === '/notes/new' || pathname.startsWith('/notes/') ? (
         <NoteEditorPage
-          routeNoteId={pathname === '/notes/new' ? null : pathname.slice('/notes/'.length)}
+          routeNoteId={routeNoteId}
+          ownerId={owner.userId}
+          identityKey={editorIdentity}
           onBack={() => {
             const routeNoteId = pathname === '/notes/new' ? null : pathname.slice('/notes/'.length);
             const noteId = routeNoteId === null ? undefined : parseNoteId(routeNoteId);
@@ -58,6 +77,7 @@ export function NotesRoute() {
             }
           }}
           onCreated={(note: NoteDetail) => {
+            setPromotedCreatedNoteId(note.id);
             void navigate({
               to: '/notes/$id',
               params: { id: String(note.id) },
