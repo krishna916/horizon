@@ -296,6 +296,11 @@ function ActiveNoteEditor({
               knownTags={initialNote?.tags ?? []}
               createLabel="add"
             />
+            {snapshot.tagValidationError && (
+              <p role="alert" className="mt-2 text-sm text-destructive">
+                {snapshot.tagValidationError}
+              </p>
+            )}
           </div>
 
           {snapshot.phase === 'conflict' && (

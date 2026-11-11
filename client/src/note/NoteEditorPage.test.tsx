@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
     phase: 'clean',
     replacementRevision: 0,
     hasUnsavedChanges: false,
+    tagValidationError: null as string | null,
     persisted: null as { id: number; version: number } | null,
     writeInFlight: false,
     outcomeUncertain: false,
@@ -118,6 +119,7 @@ describe('NoteEditorPage', () => {
       phase: 'clean',
       replacementRevision: 0,
       hasUnsavedChanges: false,
+      tagValidationError: null,
       persisted: null,
       writeInFlight: false,
       outcomeUncertain: false,
@@ -187,6 +189,7 @@ describe('NoteEditorPage', () => {
       phase: 'failed',
       replacementRevision: 0,
       hasUnsavedChanges: true,
+      tagValidationError: null,
       persisted: { id: 6, version: 2 },
       writeInFlight: false,
       outcomeUncertain: false,
@@ -201,6 +204,21 @@ describe('NoteEditorPage', () => {
     expect(state.retry).toHaveBeenCalledOnce();
   });
 
+  it('shows Tag validation feedback beside the Tag selector without losing the draft', () => {
+    state.snapshot = {
+      ...state.snapshot,
+      draft: { title: 'Keep this note', content, tags: [{ id: 42 }] },
+      phase: 'failed',
+      tagValidationError: 'Tag no longer exists',
+    };
+    renderEditor();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Tag no longer exists');
+    expect(screen.getByRole('textbox', { name: 'Note title' })).toHaveValue('Keep this note');
+    expect(screen.getByLabelText('Note Tags')).toHaveTextContent('Tag 42');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
   it('requires confirmation before either conflict choice is applied', () => {
     state.note = archivedNote;
     state.snapshot = {
@@ -208,6 +226,7 @@ describe('NoteEditorPage', () => {
       phase: 'conflict',
       replacementRevision: 0,
       hasUnsavedChanges: true,
+      tagValidationError: null,
       persisted: { id: 6, version: 2 },
       writeInFlight: false,
       outcomeUncertain: false,

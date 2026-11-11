@@ -36,6 +36,104 @@ const conflictError = () =>
 afterEach(() => vi.useRealTimers());
 
 describe('NoteSaveCoordinator', () => {
+  it('exposes Tag validation errors from create responses for a manual retry', async () => {
+    const create = vi.fn().mockRejectedValue(
+      Object.assign(new Error('invalid'), {
+        response: { status: 400, data: { errors: { tags: ['Tag name is too long'] } } },
+      })
+    );
+    const draft = { title: 'Keep this', content: null, tags: [{ name: 'Planning' }] };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: draft,
+      initialNote: null,
+      transport: { create, update: vi.fn(), get: vi.fn() },
+      onChange: vi.fn(),
+    });
+
+    coordinator.edit(draft);
+    await coordinator.flush();
+
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'failed',
+      draft,
+      tagValidationError: 'Tag name is too long',
+    });
+    expect(create).toHaveBeenCalledOnce();
+    coordinator.dispose();
+  });
+
+  it('exposes Tag validation errors from update responses and leaves other 400 fields generic', async () => {
+    const initial = { title: 'Keep this', content: null, tags: [] as { id: number }[] };
+    const draft = { ...initial, tags: [{ id: 42 }] };
+    const update = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('invalid tags'), {
+          response: { status: 400, data: { errors: { tags: ['Tag no longer exists'] } } },
+        })
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error('invalid content'), {
+          response: { status: 400, data: { errors: { content: ['Invalid content'] } } },
+        })
+      )
+      .mockResolvedValueOnce({
+        ...detail(7, 2, { ...draft, title: 'Still here' }),
+        tags: [{ id: 42, name: 'Planning' }],
+      });
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(7, 1, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+    });
+
+    coordinator.edit(draft);
+    await coordinator.flush();
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'failed',
+      draft,
+      tagValidationError: 'Tag no longer exists',
+    });
+
+    coordinator.edit({ ...draft, title: 'Still here' });
+    expect(update).toHaveBeenCalledOnce();
+    await coordinator.retry();
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'failed',
+      tagValidationError: null,
+    });
+    expect(update).toHaveBeenCalledTimes(2);
+
+    await coordinator.retry();
+    expect(coordinator.snapshot()).toMatchObject({ phase: 'saved', tagValidationError: null });
+    expect(update).toHaveBeenCalledTimes(3);
+    coordinator.dispose();
+  });
+
+  it('uses safe copy when a Tag validation response has no usable field message', async () => {
+    const create = vi.fn().mockRejectedValue(
+      Object.assign(new Error('invalid'), {
+        response: { status: 400, data: { errors: { tags: [42] } } },
+      })
+    );
+    const draft = { title: 'Keep this', content: null, tags: [{ name: 'Planning' }] };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: draft,
+      initialNote: null,
+      transport: { create, update: vi.fn(), get: vi.fn() },
+      onChange: vi.fn(),
+    });
+
+    coordinator.edit(draft);
+    await coordinator.flush();
+
+    expect(coordinator.snapshot().tagValidationError).toBe(
+      'Some selected tags could not be saved. Review your tags and try again.'
+    );
+    coordinator.dispose();
+  });
+
   it('matches a name selection only to one canonical server Tag', () => {
     const selected: NoteDraft = {
       title: 'Existing',
