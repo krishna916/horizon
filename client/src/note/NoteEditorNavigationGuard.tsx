@@ -10,6 +10,7 @@ export function NoteEditorNavigationGuard({
   getNavigationSaveStateNow,
   persistedNoteIdNow,
   phase,
+  hasTagOnlyDraft = false,
   writeInFlight,
   outcomeUncertain,
   flush,
@@ -28,6 +29,7 @@ export function NoteEditorNavigationGuard({
   };
   readonly persistedNoteIdNow: () => number | null;
   readonly phase: string;
+  readonly hasTagOnlyDraft?: boolean;
   readonly writeInFlight: boolean;
   readonly outcomeUncertain: boolean;
   readonly flush: () => Promise<void>;
@@ -63,7 +65,7 @@ export function NoteEditorNavigationGuard({
   const blocker = useBlocker({
     withResolver: true,
     shouldBlockFn: ({ current, next }) => {
-      if (canLeaveNow()) return false;
+      if (canLeaveNow() && !hasTagOnlyDraft) return false;
       // The first confirmed POST replaces /notes/new with its canonical ID in place.
       if (
         current.pathname === '/notes/new' &&
@@ -74,7 +76,7 @@ export function NoteEditorNavigationGuard({
       holdForDecision();
       return true;
     },
-    enableBeforeUnload: () => !canLeaveNow(),
+    enableBeforeUnload: () => !canLeaveNow() || hasTagOnlyDraft,
   });
 
   useEffect(() => {
@@ -91,6 +93,8 @@ export function NoteEditorNavigationGuard({
   const leaveDialogRef = useNoteModal(blocker.status === 'blocked', stay);
   const isExplicitLogout = blocker.status === 'blocked' && blocker.next.pathname === '/login';
   const hasSentWriteDuringDecision = decisionSawSentWrite || writeInFlight || outcomeUncertain;
+  const isTagOnlyDraft =
+    blocker.status === 'blocked' && hasTagOnlyDraft && !hasSentWriteDuringDecision;
 
   async function waitAndLeave() {
     if (phase === 'failed' || phase === 'conflict' || phase === 'paused') return;
@@ -121,12 +125,18 @@ export function NoteEditorNavigationGuard({
     blocker.proceed?.();
   }
 
-  const title = isExplicitLogout
-    ? 'Sign out with an unsaved note?'
-    : 'Your note has unsaved changes';
+  let title = 'Your note has unsaved changes';
+  if (isTagOnlyDraft) {
+    title = 'Leave without adding these Tags?';
+  } else if (isExplicitLogout) {
+    title = 'Sign out with an unsaved note?';
+  }
   let description =
     'Wait for the note to save before leaving. Your draft will stay open if saving fails.';
-  if (isExplicitLogout && hasSentWriteDuringDecision) {
+  if (isTagOnlyDraft) {
+    description =
+      'These Tags are staged for this new note. Stay to keep them, or discard them and leave.';
+  } else if (isExplicitLogout && hasSentWriteDuringDecision) {
     description =
       'A save request has already been sent. It may still be applied even if you sign out.';
   } else if (isExplicitLogout) {
@@ -156,7 +166,7 @@ export function NoteEditorNavigationGuard({
               >
                 Stay
               </button>
-              {phase === 'failed' && (
+              {!isTagOnlyDraft && phase === 'failed' && (
                 <button
                   type="button"
                   onClick={() => void retryAndLeave()}
@@ -165,15 +175,18 @@ export function NoteEditorNavigationGuard({
                   {isExplicitLogout ? 'Retry save and sign out' : 'Retry and leave'}
                 </button>
               )}
-              {phase !== 'failed' && phase !== 'conflict' && phase !== 'paused' && (
-                <button
-                  type="button"
-                  onClick={() => void waitAndLeave()}
-                  className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
-                >
-                  {isExplicitLogout ? 'Wait for save and sign out' : 'Wait for save'}
-                </button>
-              )}
+              {!isTagOnlyDraft &&
+                phase !== 'failed' &&
+                phase !== 'conflict' &&
+                phase !== 'paused' && (
+                  <button
+                    type="button"
+                    onClick={() => void waitAndLeave()}
+                    className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
+                  >
+                    {isExplicitLogout ? 'Wait for save and sign out' : 'Wait for save'}
+                  </button>
+                )}
               {isExplicitLogout && hasSentWriteDuringDecision && !confirmUncertainLogout && (
                 <button
                   type="button"
@@ -195,7 +208,25 @@ export function NoteEditorNavigationGuard({
                   Sign out anyway — changes may already have saved
                 </button>
               )}
-              {isExplicitLogout && !hasSentWriteDuringDecision && (
+              {isTagOnlyDraft && !isExplicitLogout && (
+                <button
+                  type="button"
+                  onClick={discardUnsentAndLeave}
+                  className="rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background"
+                >
+                  Discard Tags and Leave
+                </button>
+              )}
+              {isExplicitLogout && isTagOnlyDraft && (
+                <button
+                  type="button"
+                  onClick={discardUnsentAndLeave}
+                  className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground"
+                >
+                  Discard Tags and sign out
+                </button>
+              )}
+              {isExplicitLogout && !isTagOnlyDraft && !hasSentWriteDuringDecision && (
                 <button
                   type="button"
                   onClick={discardUnsentAndLeave}

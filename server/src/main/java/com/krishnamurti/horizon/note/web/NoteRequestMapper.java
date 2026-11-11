@@ -4,8 +4,12 @@ import com.krishnamurti.horizon.note.application.FieldUpdate;
 import com.krishnamurti.horizon.note.application.NoteCollection;
 import com.krishnamurti.horizon.note.application.NotePatch;
 import com.krishnamurti.horizon.note.application.NoteSort;
+import com.krishnamurti.horizon.note.application.NoteTagSelection;
+import com.krishnamurti.horizon.tag.api.InvalidTagNameException;
+import com.krishnamurti.horizon.tag.api.TagNormalizationApi;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -18,8 +22,16 @@ public class NoteRequestMapper {
 
     private static final String TITLE_FIELD = "title";
     private static final String CONTENT_FIELD = "content";
+    private static final String TAGS_FIELD = "tags";
     private static final String EXPECTED_VERSION_FIELD = "expectedVersion";
-    private static final Set<String> MUTABLE_FIELDS = Set.of(TITLE_FIELD, CONTENT_FIELD);
+    private static final Set<String> MUTABLE_FIELDS =
+            Set.of(TITLE_FIELD, CONTENT_FIELD, TAGS_FIELD);
+
+    private final TagNormalizationApi tagNormalizationApi;
+
+    public NoteRequestMapper(TagNormalizationApi tagNormalizationApi) {
+        this.tagNormalizationApi = tagNormalizationApi;
+    }
 
     public UUID parseIdempotencyKey(String value) {
         if (value == null) fail("Idempotency-Key", "A canonical UUID is required.");
@@ -36,12 +48,60 @@ public class NoteRequestMapper {
     public CreateFields toCreate(CreateNoteRequest request) {
         Map<String, JsonNode> fields = request.fields();
         rejectUnknown(fields, MUTABLE_FIELDS);
-        return new CreateFields(title(fields, TITLE_FIELD), content(fields, CONTENT_FIELD));
+        return new CreateFields(
+                title(fields, TITLE_FIELD),
+                content(fields, CONTENT_FIELD),
+                parseTags(fields.get(TAGS_FIELD), fields.containsKey(TAGS_FIELD)));
+    }
+
+    private List<NoteTagSelection> parseTags(JsonNode value, boolean present) {
+        if (!present) return List.of();
+        if (value == null || value.isNull())
+            fail(TAGS_FIELD, "Must be an array of Tag references.");
+        if (!value.isArray()) fail(TAGS_FIELD, "Must be an array of Tag references.");
+
+        List<NoteTagSelection> selections = new ArrayList<>();
+        value.forEach(selection -> selections.add(parseTagSelection(selection)));
+        return List.copyOf(selections);
+    }
+
+    private NoteTagSelection parseTagSelection(JsonNode selection) {
+        if (!selection.isObject() || selection.size() != 1) {
+            fail(TAGS_FIELD, "Each Tag reference must contain exactly one of id or name.");
+        }
+        JsonNode id = selection.get("id");
+        if (id != null) return new NoteTagSelection(parseTagId(id), null);
+
+        JsonNode name = selection.get("name");
+        if (name == null) {
+            fail(TAGS_FIELD, "Each Tag reference must contain exactly one of id or name.");
+        }
+        if (!name.isString()) fail(TAGS_FIELD, "Tag names must be non-empty strings.");
+        try {
+            return new NoteTagSelection(
+                    null, tagNormalizationApi.normalizeName(name.stringValue()));
+        } catch (InvalidTagNameException exception) {
+            throw new NoteRequestValidationException(TAGS_FIELD, exception.getMessage());
+        }
+    }
+
+    private long parseTagId(JsonNode id) {
+        if (!id.isIntegralNumber()) fail(TAGS_FIELD, "Tag IDs must be positive integers.");
+        long tagId;
+        try {
+            tagId = Long.parseLong(id.numberValue().toString());
+        } catch (NumberFormatException exception) {
+            throw new NoteRequestValidationException(
+                    TAGS_FIELD, "Tag IDs must be positive integers.");
+        }
+        if (tagId <= 0) fail(TAGS_FIELD, "Tag IDs must be positive integers.");
+        return tagId;
     }
 
     public NotePatch toPatch(UpdateNoteRequest request) {
         Map<String, JsonNode> fields = request.fields();
-        rejectUnknown(fields, Set.of(EXPECTED_VERSION_FIELD, TITLE_FIELD, CONTENT_FIELD));
+        rejectUnknown(
+                fields, Set.of(EXPECTED_VERSION_FIELD, TITLE_FIELD, CONTENT_FIELD, TAGS_FIELD));
         JsonNode expected = fields.get(EXPECTED_VERSION_FIELD);
         if (expected == null || !expected.isIntegralNumber() || !expected.canConvertToLong()) {
             fail(EXPECTED_VERSION_FIELD, "A nonnegative integer is required.");
@@ -55,6 +115,9 @@ public class NoteRequestMapper {
                         : FieldUpdate.absent(),
                 fields.containsKey(CONTENT_FIELD)
                         ? FieldUpdate.of(content(fields, CONTENT_FIELD))
+                        : FieldUpdate.absent(),
+                fields.containsKey(TAGS_FIELD)
+                        ? FieldUpdate.of(parseTags(fields.get(TAGS_FIELD), true))
                         : FieldUpdate.absent());
     }
 
@@ -147,9 +210,11 @@ public class NoteRequestMapper {
         throw new NoteRequestValidationException(field, message);
     }
 
-    public record CreateFields(String title, Map<String, Object> content) {
+    public record CreateFields(
+            String title, Map<String, Object> content, List<NoteTagSelection> tags) {
         public CreateFields {
             content = NoteJsonCopy.immutableMap(content);
+            tags = List.copyOf(tags);
         }
 
         @Override

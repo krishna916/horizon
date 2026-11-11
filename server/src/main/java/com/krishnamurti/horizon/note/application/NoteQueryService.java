@@ -4,7 +4,10 @@ import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.note.infrastructure.NoteCollectionRepository;
 import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.shared.security.CurrentUserProvider;
+import com.krishnamurti.horizon.tag.api.TagReference;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,14 +20,17 @@ public class NoteQueryService {
     private final NoteRepository noteRepository;
     private final NoteCollectionRepository collectionRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final NoteTagQueryService noteTagQueryService;
 
     public NoteQueryService(
             NoteRepository noteRepository,
             NoteCollectionRepository collectionRepository,
-            CurrentUserProvider currentUserProvider) {
+            CurrentUserProvider currentUserProvider,
+            NoteTagQueryService noteTagQueryService) {
         this.noteRepository = noteRepository;
         this.collectionRepository = collectionRepository;
         this.currentUserProvider = currentUserProvider;
+        this.noteTagQueryService = noteTagQueryService;
     }
 
     public Note get(Long noteId) {
@@ -32,6 +38,13 @@ public class NoteQueryService {
         return noteRepository
                 .findByIdAndUserIdAndDeletedAtIsNull(noteId, userId)
                 .orElseThrow(() -> new NoteNotFoundException(noteId));
+    }
+
+    public Map<Long, List<TagReference>> tagsForNotes(Collection<Long> noteIds) {
+        if (noteIds.isEmpty()) {
+            return Map.of();
+        }
+        return noteTagQueryService.tagsForNotes(currentUserId(), noteIds);
     }
 
     /**

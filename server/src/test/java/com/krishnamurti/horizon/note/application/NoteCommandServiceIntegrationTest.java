@@ -186,6 +186,73 @@ class NoteCommandServiceIntegrationTest {
         }
     }
 
+    @Test
+    void concurrentTagOnlyPatchesAgainstSameVersionHaveOneWinner() throws Exception {
+        Long owner = createUserId();
+        Note note = noteRepository.saveAndFlush(Note.create(owner, "Title", body("Body")));
+        int attempts = 2;
+        CountDownLatch ready = new CountDownLatch(attempts);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(attempts);
+        try {
+            List<Callable<Boolean>> updates =
+                    List.of("First", "Second").stream()
+                            .<Callable<Boolean>>map(
+                                    name ->
+                                            () -> {
+                                                setCurrentUser(owner);
+                                                ready.countDown();
+                                                if (!start.await(10, TimeUnit.SECONDS))
+                                                    return false;
+                                                try {
+                                                    commandService.update(
+                                                            note.getId(),
+                                                            new NotePatch(
+                                                                    0,
+                                                                    FieldUpdate.absent(),
+                                                                    FieldUpdate.absent(),
+                                                                    FieldUpdate.of(
+                                                                            List.of(
+                                                                                    new NoteTagSelection(
+                                                                                            null,
+                                                                                            name)))));
+                                                    return true;
+                                                } catch (NoteVersionConflictException exception) {
+                                                    return false;
+                                                } finally {
+                                                    SecurityContextHolder.clearContext();
+                                                }
+                                            })
+                            .toList();
+            List<Future<Boolean>> results = updates.stream().map(executor::submit).toList();
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            assertThat(results.stream().filter(this::getResult).count()).isEqualTo(1);
+            entityManager.clear();
+            Note stored =
+                    noteRepository
+                            .findByIdAndUserIdAndDeletedAtIsNull(note.getId(), owner)
+                            .orElseThrow();
+            assertThat(stored.getVersion()).isEqualTo(1L);
+            assertThat(
+                            jdbcTemplate.queryForObject(
+                                    "SELECT COUNT(*) FROM note_tag WHERE note_id = ?",
+                                    Integer.class,
+                                    note.getId()))
+                    .isEqualTo(1);
+            assertThat(
+                            jdbcTemplate.queryForObject(
+                                    "SELECT COUNT(*) FROM tag WHERE user_id = ?",
+                                    Integer.class,
+                                    owner))
+                    .isEqualTo(1);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
     private NotePatch noOp(long version) {
         return new NotePatch(version, FieldUpdate.absent(), FieldUpdate.absent());
     }

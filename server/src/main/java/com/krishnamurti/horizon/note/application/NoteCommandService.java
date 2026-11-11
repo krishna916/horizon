@@ -3,6 +3,8 @@ package com.krishnamurti.horizon.note.application;
 import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.shared.security.CurrentUserProvider;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -16,15 +18,33 @@ public class NoteCommandService {
 
     private final NoteRepository noteRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final NoteTagAssignmentService noteTagAssignmentService;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification =
+                    "The injected collaborators are private final Spring-managed dependencies.")
     public NoteCommandService(
-            NoteRepository noteRepository, CurrentUserProvider currentUserProvider) {
+            NoteRepository noteRepository,
+            CurrentUserProvider currentUserProvider,
+            NoteTagAssignmentService noteTagAssignmentService) {
         this.noteRepository = noteRepository;
         this.currentUserProvider = currentUserProvider;
+        this.noteTagAssignmentService = noteTagAssignmentService;
     }
 
     @Transactional
     public Note create(String title, Map<String, Object> content) {
+        return doCreate(title, content, List.of());
+    }
+
+    @Transactional
+    public Note create(
+            String title, Map<String, Object> content, java.util.List<NoteTagSelection> tags) {
+        return doCreate(title, content, tags);
+    }
+
+    private Note doCreate(String title, Map<String, Object> content, List<NoteTagSelection> tags) {
         Long userId =
                 currentUserProvider
                         .getCurrentUserId()
@@ -32,7 +52,11 @@ public class NoteCommandService {
                                 () ->
                                         new InsufficientAuthenticationException(
                                                 "User is not authenticated"));
-        return noteRepository.saveAndFlush(Note.create(userId, title, content));
+        Note note = noteRepository.saveAndFlush(Note.create(userId, title, content));
+        if (!tags.isEmpty()) {
+            noteTagAssignmentService.replace(userId, note.getId(), tags);
+        }
+        return note;
     }
 
     @Transactional
@@ -46,7 +70,7 @@ public class NoteCommandService {
                                                 "User is not authenticated"));
         Note note =
                 noteRepository
-                        .findByIdAndUserIdAndDeletedAtIsNull(noteId, userId)
+                        .lockOwnedForTagWrite(noteId, userId)
                         .orElseThrow(() -> new NoteNotFoundException(noteId));
         if (note.getVersion() != patch.expectedVersion()) {
             throw new NoteVersionConflictException();
@@ -54,14 +78,22 @@ public class NoteCommandService {
 
         String originalTitle = note.getTitle();
         Map<String, Object> originalContent = note.getContent();
+        boolean tagsChanged =
+                patch.tags().present()
+                        && noteTagAssignmentService.replace(userId, noteId, patch.tags().value());
         if (patch.title().present()) {
             note.updateTitle(patch.title().value());
         }
         if (patch.content().present()) {
             note.updateContent(patch.content().value());
         }
-        if (Objects.equals(originalTitle, note.getTitle())
-                && Objects.equals(originalContent, note.getContent())) {
+        boolean fieldsChanged =
+                !Objects.equals(originalTitle, note.getTitle())
+                        || !Objects.equals(originalContent, note.getContent());
+        if (tagsChanged) {
+            note.touchMetadata();
+        }
+        if (!fieldsChanged && !tagsChanged) {
             return note;
         }
         try {

@@ -1,3 +1,5 @@
+import type { Tag as TaskTag, TagSelection as TaskTagSelection } from '@/tag/types';
+
 export type TaskPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 
 export type UpdateTaskPayload =
@@ -7,12 +9,7 @@ export type UpdateTaskPayload =
   | { description: Record<string, unknown> | null }
   | { tags: TaskTagSelection[] };
 
-export interface TaskTag {
-  id: number;
-  name: string;
-}
-
-export type TaskTagSelection = { id: number } | { name: string };
+export type { Tag as TaskTag, TagSelection as TaskTagSelection } from '@/tag/types';
 
 export interface TaskSummary {
   id: number;

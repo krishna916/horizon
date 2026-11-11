@@ -1,10 +1,13 @@
 import {
   hasMeaningfulNoteDraft,
   normalizeNoteDraft,
+  noteDraftMatchesNote,
   noteDraftsEqual,
+  reconcileNoteDraftTags,
   type NoteDraft,
 } from './noteDraft';
 import type { NoteDetail } from './types';
+import type { Tag } from '@/tag/types';
 
 export type NoteSavePhase =
   'clean' | 'dirty' | 'saving' | 'saved' | 'failed' | 'conflict' | 'paused';
@@ -16,6 +19,9 @@ export interface NoteSaveSnapshot {
   persisted: { id: number; version: number } | null;
   phase: NoteSavePhase;
   hasUnsavedChanges: boolean;
+  hasTagOnlyDraft: boolean;
+  tagValidationError: string | null;
+  knownTags: Tag[];
   writeInFlight: boolean;
   outcomeUncertain: boolean;
   resolvingConflict: boolean;
@@ -32,6 +38,7 @@ export interface NoteTransport {
       expectedVersion: number;
       title: string | null;
       content: NonNullable<ReturnType<typeof normalizeNoteDraft>['content']> | null;
+      tags: ReturnType<typeof normalizeNoteDraft>['tags'];
     }
   ) => Promise<NoteDetail>;
   get: (id: number) => Promise<NoteDetail>;
@@ -71,13 +78,18 @@ export interface FrozenNoteUpdate {
     expectedVersion: number;
     title: string | null;
     content: ReturnType<typeof normalizeNoteDraft>['content'];
+    tags: ReturnType<typeof normalizeNoteDraft>['tags'];
   };
   draft: NoteDraft;
   revision: number;
 }
 
 function noteDraft(note: NoteDetail): NoteDraft {
-  return { title: note.title ?? '', content: note.content };
+  return {
+    title: note.title ?? '',
+    content: note.content,
+    tags: note.tags.map(({ id }) => ({ id })),
+  };
 }
 
 function errorStatus(error: unknown): number | null {
@@ -85,6 +97,32 @@ function errorStatus(error: unknown): number | null {
   const response = error.response;
   if (typeof response !== 'object' || response === null || !('status' in response)) return null;
   return typeof response.status === 'number' ? response.status : null;
+}
+
+function tagValidationMessage(error: unknown): string | null {
+  if (
+    errorStatus(error) !== 400 ||
+    typeof error !== 'object' ||
+    error === null ||
+    !('response' in error)
+  ) {
+    return null;
+  }
+  const response = error.response;
+  if (typeof response !== 'object' || response === null || !('data' in response)) return null;
+  const data = response.data;
+  if (typeof data !== 'object' || data === null || !('errors' in data)) return null;
+  const errors = data.errors;
+  if (typeof errors !== 'object' || errors === null || !('tags' in errors)) return null;
+  const tags = errors.tags;
+  if (typeof tags === 'string' && tags.trim()) return tags.trim();
+  if (Array.isArray(tags)) {
+    const message = tags.find(
+      (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+    );
+    if (message) return message.trim();
+  }
+  return 'Some selected tags could not be saved. Review your tags and try again.';
 }
 
 function initialBaseline(options: NoteSaveCoordinatorOptions): NoteDraft {
@@ -115,6 +153,8 @@ export class NoteSaveCoordinator {
   private debounceElapsed = false;
   private inFlight: Promise<void> | null = null;
   private outcomeUncertain = false;
+  private tagValidationError: string | null = null;
+  private knownTags: Tag[];
   private resolvingConflict = false;
   private pendingCreate: FrozenCreate | null = null;
   private pendingUpdate: FrozenNoteUpdate | null = null;
@@ -125,6 +165,7 @@ export class NoteSaveCoordinator {
 
   constructor(options: NoteSaveCoordinatorOptions) {
     this.draft = { ...options.initialDraft };
+    this.knownTags = options.initialNote ? [...options.initialNote.tags] : [];
     this.baseline = initialBaseline(options);
     this.persisted = initialPersisted(options.initialNote);
     this.phase = options.initialNote ? 'saved' : 'clean';
@@ -195,6 +236,7 @@ export class NoteSaveCoordinator {
 
   async retry(): Promise<void> {
     if (this.phase !== 'failed') return;
+    this.tagValidationError = null;
     this.phase = 'dirty';
     this.debounceElapsed = true;
     this.publish();
@@ -228,6 +270,7 @@ export class NoteSaveCoordinator {
       return;
     }
     if (this.disposed || this.paused || generation !== this.generation) return;
+    this.knownTags = [...latest.tags];
 
     if (choice === 'load-server') {
       if (this.localRevision !== confirmedRevision) {
@@ -235,6 +278,7 @@ export class NoteSaveCoordinator {
         return;
       }
       this.draft = noteDraft(latest);
+      this.tagValidationError = null;
       this.baseline = { ...this.draft };
       this.persisted = { id: latest.id, version: latest.version };
       this.pendingUpdate = null;
@@ -247,8 +291,9 @@ export class NoteSaveCoordinator {
       return;
     }
 
+    this.draft = reconcileNoteDraftTags(this.draft, this.draft.tags ?? [], latest.tags);
     const local = { ...this.draft };
-    if (noteDraftsEqual(local, noteDraft(latest))) {
+    if (noteDraftMatchesNote(local, latest)) {
       this.draft = noteDraft(latest);
       this.baseline = { ...this.draft };
       this.persisted = { id: latest.id, version: latest.version };
@@ -268,6 +313,7 @@ export class NoteSaveCoordinator {
         expectedVersion: latest.version,
         title: normalized.title,
         content: normalized.content,
+        tags: normalized.tags,
       },
       draft: local,
       revision: this.localRevision,
@@ -325,6 +371,12 @@ export class NoteSaveCoordinator {
       confirmedRevision: this.confirmedRevision,
       persisted: this.persisted ? { ...this.persisted } : null,
       phase: this.phase,
+      hasTagOnlyDraft:
+        !this.persisted &&
+        !hasMeaningfulNoteDraft(this.draft) &&
+        normalizeNoteDraft(this.draft).tags.length > 0,
+      tagValidationError: this.tagValidationError,
+      knownTags: [...this.knownTags],
       replacementRevision: this.replacementRevision,
       hasUnsavedChanges:
         this.hasWork() ||
@@ -420,10 +472,13 @@ export class NoteSaveCoordinator {
     if (options.recovery?.frozenUpdateRequest) return;
     if (!initialNote || !recoveryVersion || recoveryVersion.id !== initialNote.id) return;
     if (recoveryVersion.version === initialNote.version) return;
-    this.phase = noteDraftsEqual(this.draft, noteDraft(initialNote)) ? 'saved' : 'conflict';
+    this.phase = noteDraftMatchesNote(this.draft, initialNote) ? 'saved' : 'conflict';
   }
 
   private restoreDraftState(initialNote: NoteDetail | null | undefined): void {
+    if (initialNote) {
+      this.draft = reconcileNoteDraftTags(this.draft, this.draft.tags ?? [], initialNote.tags);
+    }
     if (this.phase === 'conflict') return;
     const hasChanges = initialNote
       ? !noteDraftsEqual(this.draft, this.baseline)
@@ -438,7 +493,8 @@ export class NoteSaveCoordinator {
     try {
       const latest = await this.transport.get(persisted.id);
       if (this.disposed || this.paused || generation !== this.generation) return false;
-      if (this.pendingUpdate && noteDraftsEqual(this.pendingUpdate.draft, noteDraft(latest))) {
+      this.knownTags = [...latest.tags];
+      if (this.pendingUpdate && noteDraftMatchesNote(this.pendingUpdate.draft, latest)) {
         this.acknowledgeUpdate(this.pendingUpdate, latest);
       } else if (latest.version !== persisted.version) {
         this.phase = 'conflict';
@@ -476,14 +532,19 @@ export class NoteSaveCoordinator {
       this.outcomeUncertain = false;
       this.pendingCreate = null;
       this.persisted = { id: created.id, version: created.version };
-      this.baseline = { title: request.body.title ?? '', content: request.body.content };
+      this.knownTags = [...created.tags];
+      this.tagValidationError = null;
+      this.draft = reconcileNoteDraftTags(this.draft, request.body.tags, created.tags);
+      this.baseline = noteDraft(created);
       this.confirmedRevision = request.revision;
       this.phase = this.hasWork() ? 'dirty' : 'saved';
       this.publish();
       this.onCreated?.(created);
-    } catch {
+    } catch (error) {
       if (this.disposed || generation !== this.generation) return;
-      this.outcomeUncertain = true;
+      this.outcomeUncertain = errorStatus(error) !== 400;
+      this.tagValidationError = tagValidationMessage(error);
+      if (!this.outcomeUncertain) this.pendingCreate = null;
       this.phase = 'failed';
       this.publish();
     }
@@ -506,6 +567,7 @@ export class NoteSaveCoordinator {
           expectedVersion: persisted.version,
           title: normalized.title,
           content: normalized.content,
+          tags: normalized.tags,
         },
         draft: { ...this.draft },
         revision: this.localRevision,
@@ -516,6 +578,7 @@ export class NoteSaveCoordinator {
     try {
       const updated = await this.transport.update(request.id, request.body);
       if (this.disposed || this.paused || generation !== this.generation) return;
+      this.knownTags = [...updated.tags];
       this.acknowledgeUpdate(request, updated);
     } catch (error) {
       if (this.disposed || generation !== this.generation) return;
@@ -530,6 +593,14 @@ export class NoteSaveCoordinator {
     generation: number
   ): Promise<void> {
     const status = errorStatus(error);
+    if (status === 400) {
+      this.pendingUpdate = null;
+      this.outcomeUncertain = false;
+      this.tagValidationError = tagValidationMessage(error);
+      this.phase = 'failed';
+      this.publish();
+      return;
+    }
     if (status === 409) {
       this.outcomeUncertain = false;
       this.phase = 'conflict';
@@ -552,7 +623,8 @@ export class NoteSaveCoordinator {
     try {
       const latest = await this.transport.get(request.id);
       if (this.disposed || this.paused || generation !== this.generation) return;
-      if (noteDraftsEqual(request.draft, noteDraft(latest))) {
+      this.knownTags = [...latest.tags];
+      if (noteDraftMatchesNote(request.draft, latest)) {
         this.acknowledgeUpdate(request, latest);
       } else if (latest.version === request.body.expectedVersion) {
         this.outcomeUncertain = false;
@@ -573,8 +645,11 @@ export class NoteSaveCoordinator {
   private acknowledgeUpdate(request: FrozenNoteUpdate, updated: NoteDetail): void {
     this.pendingUpdate = null;
     this.outcomeUncertain = false;
+    this.tagValidationError = null;
+    this.knownTags = [...updated.tags];
     this.persisted = { id: request.id, version: updated.version };
-    this.baseline = { ...request.draft };
+    this.draft = reconcileNoteDraftTags(this.draft, request.draft.tags ?? [], updated.tags);
+    this.baseline = noteDraft(updated);
     this.confirmedRevision = request.revision;
     this.phase = this.hasWork() ? 'dirty' : 'saved';
     this.publish();

@@ -35,4 +35,47 @@ class NoteCreationFingerprintTest {
         assertThat(NoteCreationFingerprint.compute("title", first))
                 .isNotEqualTo(NoteCreationFingerprint.compute("other", first));
     }
+
+    @Test
+    void tagOrderDuplicatesAndNameCaseDoNotChangeFingerprint() {
+        Map<String, Object> content = Map.of("type", "doc", "content", List.of());
+
+        assertThat(
+                        NoteCreationFingerprint.compute(
+                                "title",
+                                content,
+                                List.of(
+                                        new NoteTagSelection(null, "Work"),
+                                        new NoteTagSelection(7L, null),
+                                        new NoteTagSelection(null, "work"))))
+                .isEqualTo(
+                        NoteCreationFingerprint.compute(
+                                "title",
+                                content,
+                                List.of(
+                                        new NoteTagSelection(null, "WORK"),
+                                        new NoteTagSelection(7L, null))));
+        assertThat(NoteCreationFingerprint.compute("title", content, List.of()))
+                .isEqualTo(NoteCreationFingerprint.compute("title", content, List.of()));
+    }
+
+    @Test
+    void tagIdAndNameRepresentationsHaveDifferentFingerprints() {
+        Map<String, Object> content = Map.of("type", "doc", "content", List.of());
+
+        assertThat(
+                        NoteCreationFingerprint.compute(
+                                "title", content, List.of(new NoteTagSelection(7L, null))))
+                .isNotEqualTo(
+                        NoteCreationFingerprint.compute(
+                                "title", content, List.of(new NoteTagSelection(null, "Work"))));
+    }
+
+    @Test
+    void legacyTagFreeFingerprintMatchesPreTagSerialization() {
+        assertThat(NoteCreationFingerprint.computeLegacyTagFree("Legacy", null))
+                .isEqualTo("f55b01a3a649ab640d2e0fc71df17a141870eadda720e1b6b1e0f66b4186a82e");
+        assertThat(NoteCreationFingerprint.compute("Legacy", null, List.of()))
+                .isNotEqualTo(NoteCreationFingerprint.computeLegacyTagFree("Legacy", null));
+    }
 }

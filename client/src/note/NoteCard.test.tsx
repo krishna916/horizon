@@ -29,6 +29,7 @@ const summary = (overrides: Partial<NoteSummary> = {}): NoteSummary => ({
     type: 'doc',
     content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Train leaves at nine.' }] }],
   },
+  tags: [],
   version: 1,
   inbox: false,
   archivedAt: null,
@@ -55,6 +56,31 @@ describe('NoteCard', () => {
     expect(screen.getByRole('link')).toHaveAttribute('href', '/notes/7');
     expect(container.querySelector('img, button')).toBeNull();
     expect(screen.queryByText(/tag|file/i)).toBeNull();
+  });
+
+  it('shows the first two Tags in stable order with an overflow count inside the linked card', () => {
+    render(
+      <NoteCard
+        note={summary({
+          tags: [
+            { id: 4, name: 'Travel' },
+            { id: 2, name: 'books' },
+            { id: 3, name: 'Work' },
+            { id: 1, name: 'Art' },
+          ],
+        })}
+      />
+    );
+
+    const link = screen.getByRole('link', { name: /Trip notes/ });
+    expect(link).toHaveAttribute('href', '/notes/7');
+    expect(link).toHaveTextContent('Art');
+    expect(link).toHaveTextContent('books');
+    expect(link).toHaveTextContent('+2');
+    expect(link).not.toHaveTextContent('Travel');
+    expect(link).not.toHaveTextContent('Work');
+    expect(link.querySelector('time')).toHaveTextContent(/Updated/);
+    expect(link.className).toContain('max-h-[440px]');
   });
 
   it('keeps safe rich-text links noninteractive inside the card navigation link', () => {

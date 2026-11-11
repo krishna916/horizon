@@ -29,6 +29,7 @@ const summary = (overrides: Partial<NoteSummary> = {}): NoteSummary => ({
     type: 'doc',
     content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Train leaves at nine.' }] }],
   },
+  tags: [],
   version: 1,
   inbox: false,
   archivedAt: null,
@@ -54,5 +55,28 @@ describe('NoteListRow', () => {
     expect(screen.getByRole('link', { name: /Untitled note/ })).toHaveAttribute('href', '/notes/7');
     expect(container.querySelector('img, button')).toBeNull();
     expect(screen.queryByText(/file|tag/i)).toBeNull();
+  });
+
+  it('shows Tags in a responsive metadata column without changing the note link', () => {
+    render(
+      <NoteListRow
+        note={summary({
+          tags: [
+            { id: 2, name: 'Work' },
+            { id: 1, name: 'Personal' },
+          ],
+        })}
+      />
+    );
+
+    const link = screen.getByRole('link', { name: /Trip notes/ });
+    expect(link).toHaveAttribute('href', '/notes/7');
+    expect(link).toHaveTextContent('Personal');
+    expect(link).toHaveTextContent('Work');
+    const tags = screen.getByLabelText('Note Tags');
+    expect(tags.className).toContain('hidden');
+    expect(tags.className).toContain('sm:flex');
+    expect(tags.querySelector('img')).toBeNull();
+    expect(link).not.toHaveTextContent(/filter/i);
   });
 });

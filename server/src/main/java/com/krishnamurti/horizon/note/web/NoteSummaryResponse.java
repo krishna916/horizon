@@ -2,6 +2,7 @@ package com.krishnamurti.horizon.note.web;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 
 /** Compact Note list item; only bounded structured preview content is exposed. */
@@ -13,10 +14,12 @@ public record NoteSummaryResponse(
         boolean inbox,
         OffsetDateTime archivedAt,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt) {
+        OffsetDateTime updatedAt,
+        List<NoteTagResponse> tags) {
 
     public NoteSummaryResponse {
         preview = NoteJsonCopy.immutableMap(preview);
+        tags = List.copyOf(tags);
     }
 
     @Override

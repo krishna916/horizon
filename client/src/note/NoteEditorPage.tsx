@@ -1,6 +1,7 @@
 import { isAxiosError } from 'axios';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import { RichTextEditor } from '@/components/rich-text/RichTextEditor';
+import { TagSelector } from '@/tag/TagSelector';
 import { useNoteDetail } from './queries';
 import { parseNoteId } from './noteNavigation';
 import { useNoteDraftRecovery } from './NoteDraftRecoveryProvider';
@@ -12,7 +13,7 @@ import type { NoteDetail } from './types';
 import type { NoteDraft } from './noteDraft';
 import type { NoteDraftRecoveryEntry } from './NoteDraftRecoveryProvider';
 
-const blankDraft: NoteDraft = { title: '', content: null };
+const blankDraft: NoteDraft = { title: '', content: null, tags: [] };
 
 function isUnavailableNote(
   routeNoteId: string | null,
@@ -234,6 +235,7 @@ function ActiveNoteEditor({
       getNavigationSaveStateNow={getNavigationSaveStateNow}
       persistedNoteIdNow={persistedNoteIdNow}
       phase={snapshot.phase}
+      hasTagOnlyDraft={snapshot.hasTagOnlyDraft}
       writeInFlight={snapshot.writeInFlight}
       outcomeUncertain={snapshot.outcomeUncertain}
       flush={flush}
@@ -283,6 +285,21 @@ function ActiveNoteEditor({
               </span>
             ) : (
               <span>Private note</span>
+            )}
+          </div>
+
+          <div className="mb-6">
+            <TagSelector
+              value={snapshot.draft.tags ?? []}
+              onChange={(tags) => edit({ ...snapshot.draft, tags })}
+              userId={ownerId}
+              knownTags={snapshot.knownTags}
+              createLabel="add"
+            />
+            {snapshot.tagValidationError && (
+              <p role="alert" className="mt-2 text-sm text-destructive">
+                {snapshot.tagValidationError}
+              </p>
             )}
           </div>
 

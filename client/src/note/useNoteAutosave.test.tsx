@@ -7,8 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthSessionProvider, useAuthSession } from '@/user/session/AuthSessionProvider';
 import { userApi } from '@/user/api';
 import { noteApi } from './api';
+import { getCurrentSessionEpoch, notifySessionUnauthorized } from '@/user/session/sessionRuntime';
 import { noteQueryKeys } from './queries';
-import { NoteDraftRecoveryProvider } from './NoteDraftRecoveryProvider';
+import { NoteDraftRecoveryProvider, useNoteDraftRecovery } from './NoteDraftRecoveryProvider';
 import { useNoteAutosave } from './useNoteAutosave';
 import type { NoteDraft } from './noteDraft';
 import type { NoteDetail } from './types';
@@ -24,6 +25,7 @@ const initial: NoteDetail = {
   id: 7,
   title: 'Existing',
   content: null,
+  tags: [],
   version: 2,
   inbox: false,
   archivedAt: null,
@@ -100,6 +102,51 @@ function AutosaveProbe() {
   );
 }
 
+function NewNoteAutosaveProbe() {
+  const session = useAuthSession();
+  const recovery = useNoteDraftRecovery();
+  const [draft, setDraft] = useState<NoteDraft>({ title: '', content: null, tags: [] });
+  const autosave = useNoteAutosave({
+    ownerId: 1,
+    initialNote: null,
+    initialDraft: draft,
+    editorRoute: '/notes/new',
+    onCreated: vi.fn(),
+  });
+  return (
+    <div>
+      <output data-testid="new-phase">{`${session.phase}:${autosave.snapshot.phase}`}</output>
+      <output data-testid="new-tag-only">{String(autosave.snapshot.hasTagOnlyDraft)}</output>
+      <output data-testid="new-tags">
+        {autosave.snapshot.draft.tags
+          ?.map((tag) => ('name' in tag ? tag.name : tag.id))
+          .join(',') ?? ''}
+      </output>
+      <output data-testid="new-unsaved">{String(autosave.snapshot.hasUnsavedChanges)}</output>
+      <output data-testid="new-recovery">{String(recovery.hasRecoveryForVerifiedOwner(1))}</output>
+      <button
+        type="button"
+        onClick={() => {
+          const next = { ...draft, tags: [{ name: 'Planning' }] };
+          setDraft(next);
+          autosave.edit(next);
+        }}
+      >
+        Stage Tags
+      </button>
+      <button type="button" onClick={() => void autosave.flush()}>
+        Flush new note
+      </button>
+      <button type="button" onClick={() => void session.verifySession()}>
+        Reverify new note
+      </button>
+      <button type="button" onClick={autosave.discardDraft}>
+        Discard new draft
+      </button>
+    </div>
+  );
+}
+
 function renderAutosave(
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   strict = false
@@ -154,6 +201,44 @@ describe('useNoteAutosave', () => {
     });
     expect(noteApi.update).toHaveBeenCalledOnce();
     vi.useRealTimers();
+  });
+
+  it('retains tag-only new drafts in owner memory and hides them through auth expiry without creating a Note', async () => {
+    vi.mocked(userApi.getCurrentUser)
+      .mockResolvedValueOnce({ data: { id: 1, email: 'one@example.com' } } as never)
+      .mockResolvedValueOnce({ data: { id: 1, email: 'one@example.com' } } as never);
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AuthSessionProvider>
+          <NoteDraftRecoveryProvider>
+            <NewNoteAutosaveProbe />
+          </NoteDraftRecoveryProvider>
+        </AuthSessionProvider>
+      </QueryClientProvider>
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('new-phase')).toHaveTextContent('verified:saved')
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stage Tags' }));
+    await waitFor(() => expect(screen.getByTestId('new-recovery')).toHaveTextContent('true'));
+    expect(screen.getByTestId('new-tag-only')).toHaveTextContent('true');
+    expect(screen.getByTestId('new-unsaved')).toHaveTextContent('false');
+    expect(screen.getByTestId('new-tags')).toHaveTextContent('Planning');
+    act(() => notifySessionUnauthorized(getCurrentSessionEpoch()));
+    await waitFor(() => expect(screen.getByTestId('new-tags')).toHaveTextContent(''));
+    expect(screen.getByTestId('new-tag-only')).toHaveTextContent('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Reverify new note' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('new-phase')).toHaveTextContent('verified:saved')
+    );
+    expect(screen.getByTestId('new-tags')).toHaveTextContent('Planning');
+    fireEvent.click(screen.getByRole('button', { name: 'Discard new draft' }));
+    await waitFor(() => expect(screen.getByTestId('new-recovery')).toHaveTextContent('false'));
+    fireEvent.click(screen.getByRole('button', { name: 'Flush new note' }));
+    expect(noteApi.create).not.toHaveBeenCalled();
   });
 
   it('keeps its coordinator alive across React Strict Mode effect replay', async () => {

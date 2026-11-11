@@ -1,4 +1,5 @@
 import type { RichTextDocument } from '@/components/rich-text/richTextDocument';
+import type { Tag, TagSelection } from '@/tag/types';
 
 export type NoteCollection = 'active' | 'archived';
 export type NoteSort = 'updated_desc' | 'updated_asc' | 'title_asc';
@@ -8,6 +9,7 @@ export interface NoteSummary {
   id: number;
   title: string | null;
   preview: RichTextDocument | null;
+  tags: Tag[];
   version: number;
   inbox: boolean;
   archivedAt: string | null;
@@ -22,12 +24,14 @@ export interface NoteDetail extends Omit<NoteSummary, 'preview'> {
 export interface CreateNoteRequest {
   title: string | null;
   content: RichTextDocument | null;
+  tags: TagSelection[];
 }
 
 export interface UpdateNoteRequest {
   expectedVersion: number;
   title?: string | null;
   content?: RichTextDocument | null;
+  tags?: TagSelection[];
 }
 
 export interface NoteListResponse {

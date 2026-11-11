@@ -13,10 +13,12 @@ const state = vi.hoisted(() => ({
   },
   note: null as NoteDetail | null,
   snapshot: {
-    draft: { title: '', content: null as NoteDraft['content'] },
+    draft: { title: '', content: null as NoteDraft['content'] } as NoteDraft,
     phase: 'clean',
     replacementRevision: 0,
     hasUnsavedChanges: false,
+    tagValidationError: null as string | null,
+    knownTags: [] as Array<{ id: number; name: string }>,
     persisted: null as { id: number; version: number } | null,
     writeInFlight: false,
     outcomeUncertain: false,
@@ -64,12 +66,39 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/components/rich-text/RichTextEditor', () => ({
   RichTextEditor: ({ ariaLabel }: { ariaLabel: string }) => <div aria-label={ariaLabel} />,
 }));
+vi.mock('@/tag/TagSelector', () => ({
+  TagSelector: ({
+    value,
+    onChange,
+    userId,
+    knownTags,
+    createLabel,
+  }: {
+    value: Array<{ id: number } | { name: string }>;
+    onChange: (value: Array<{ id: number } | { name: string }>) => void;
+    userId: number;
+    knownTags: Array<{ id: number; name: string }>;
+    createLabel: string;
+  }) => (
+    <div aria-label="Note Tags" data-user-id={userId}>
+      {value.map((tag) =>
+        'name' in tag
+          ? tag.name
+          : (knownTags.find((knownTag) => knownTag.id === tag.id)?.name ?? `Tag ${tag.id}`)
+      )}
+      <button type="button" onClick={() => onChange([{ name: 'Ideas' }])}>
+        {createLabel === 'add' ? 'Add tag' : 'Create tag'}
+      </button>
+    </div>
+  ),
+}));
 
 const content = { type: 'doc' as const, content: [{ type: 'paragraph' as const }] };
 const archivedNote: NoteDetail = {
   id: 6,
   title: null,
   content,
+  tags: [],
   version: 2,
   inbox: false,
   archivedAt: '2026-11-08T10:00:00Z',
@@ -93,10 +122,12 @@ describe('NoteEditorPage', () => {
     };
     state.note = null;
     state.snapshot = {
-      draft: { title: '', content: null as NoteDraft['content'] },
+      draft: { title: '', content: null as NoteDraft['content'] } as NoteDraft,
       phase: 'clean',
       replacementRevision: 0,
       hasUnsavedChanges: false,
+      tagValidationError: null,
+      knownTags: [],
       persisted: null,
       writeInFlight: false,
       outcomeUncertain: false,
@@ -112,6 +143,27 @@ describe('NoteEditorPage', () => {
     expect(title).toHaveAttribute('placeholder', 'Untitled note');
     expect(screen.getByLabelText('Note content')).toBeInTheDocument();
     expect(screen.getByText('Not saved yet')).toBeInTheDocument();
+  });
+
+  it('places shared Tags after the title and stages changes in the note draft', () => {
+    renderEditor();
+
+    const title = screen.getByRole('textbox', { name: 'Note title' });
+    const tags = screen.getByLabelText('Note Tags');
+    const contentEditor = screen.getByLabelText('Note content');
+    expect(tags).toHaveAttribute('data-user-id', '12');
+    expect(tags).toHaveTextContent('Add tag');
+    expect(title.compareDocumentPosition(tags) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      tags.compareDocumentPosition(contentEditor) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add tag' }));
+    expect(state.edit).toHaveBeenCalledWith({
+      title: '',
+      content: null,
+      tags: [{ name: 'Ideas' }],
+    });
   });
 
   it('shows dirty and saving states before a new Note is confirmed by the server', () => {
@@ -145,6 +197,8 @@ describe('NoteEditorPage', () => {
       phase: 'failed',
       replacementRevision: 0,
       hasUnsavedChanges: true,
+      tagValidationError: null,
+      knownTags: [],
       persisted: { id: 6, version: 2 },
       writeInFlight: false,
       outcomeUncertain: false,
@@ -159,6 +213,33 @@ describe('NoteEditorPage', () => {
     expect(state.retry).toHaveBeenCalledOnce();
   });
 
+  it('shows Tag validation feedback beside the Tag selector without losing the draft', () => {
+    state.snapshot = {
+      ...state.snapshot,
+      draft: { title: 'Keep this note', content, tags: [{ id: 42 }] },
+      phase: 'failed',
+      tagValidationError: 'Tag no longer exists',
+    };
+    renderEditor();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Tag no longer exists');
+    expect(screen.getByRole('textbox', { name: 'Note title' })).toHaveValue('Keep this note');
+    expect(screen.getByLabelText('Note Tags')).toHaveTextContent('Tag 42');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('uses canonical Tag metadata published by the save coordinator', () => {
+    state.snapshot = {
+      ...state.snapshot,
+      draft: { title: 'Tagged note', content: null, tags: [{ id: 42 }] },
+      knownTags: [{ id: 42, name: 'Planning' }],
+    };
+    renderEditor();
+
+    expect(screen.getByLabelText('Note Tags')).toHaveTextContent('Planning');
+    expect(screen.getByLabelText('Note Tags')).not.toHaveTextContent('Tag 42');
+  });
+
   it('requires confirmation before either conflict choice is applied', () => {
     state.note = archivedNote;
     state.snapshot = {
@@ -166,6 +247,8 @@ describe('NoteEditorPage', () => {
       phase: 'conflict',
       replacementRevision: 0,
       hasUnsavedChanges: true,
+      tagValidationError: null,
+      knownTags: [],
       persisted: { id: 6, version: 2 },
       writeInFlight: false,
       outcomeUncertain: false,

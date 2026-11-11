@@ -26,6 +26,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -38,6 +39,7 @@ class NoteControllerIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private UserCommandService userCommandService;
     @Autowired private NoteRepository noteRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
     private Cookie ownerCookie;
     private Long ownerId;
 
@@ -133,6 +135,144 @@ class NoteControllerIntegrationTest {
     }
 
     @Test
+    void tagOnlyAndNullTagCreatesAreRejectedWithoutWrites() throws Exception {
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"tags\":[{\"name\":\"Staged\"}]}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Note\",\"tags\":null}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.tags").exists());
+
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM note WHERE user_id = ?", Long.class, ownerId))
+                .isZero();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM tag WHERE user_id = ?", Long.class, ownerId))
+                .isZero();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM note_creation_request WHERE user_id = ?",
+                                Long.class,
+                                ownerId))
+                .isZero();
+    }
+
+    @Test
+    void createTagsAreCanonicalAndRetryFingerprintIgnoresOrderCaseAndDuplicates() throws Exception {
+        String key = UUID.randomUUID().toString();
+        MvcResult created =
+                mockMvc.perform(
+                                post("/api/v1/notes")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", key)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(
+                                                "{\"title\":\"Tagged\",\"tags\":[{\"name\":\" Work "
+                                                        + "\"},{\"name\":\"work\"}]}"))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.tags.length()").value(1))
+                        .andExpect(jsonPath("$.tags[0].name").value("Work"))
+                        .andReturn();
+        Number id = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+        Number tagId = JsonPath.read(created.getResponse().getContentAsString(), "$.tags[0].id");
+
+        MvcResult replay =
+                mockMvc.perform(
+                                post("/api/v1/notes")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", key)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(
+                                                "{\"title\":\"Tagged\",\"tags\":[{\"name\":\"WORK\"},{\"name\":\""
+                                                    + " work \"}]}"))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.tags[0].id").value(tagId.longValue()))
+                        .andReturn();
+        assertThat(
+                        JsonPath.<Number>read(replay.getResponse().getContentAsString(), "$.id")
+                                .longValue())
+                .isEqualTo(id.longValue());
+
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"title\":\"Tagged\",\"tags\":[{\"id\":"
+                                                + tagId.longValue()
+                                                + "}]}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void replaysHistoricalTagFreeReceiptButRejectsChangedContentOrTags() throws Exception {
+        long noteId = createNote("{\"title\":\"Legacy\"}");
+        String key = UUID.randomUUID().toString();
+        jdbcTemplate.update(
+                "INSERT INTO note_creation_request (user_id, request_key, fingerprint, note_id,"
+                        + " created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                ownerId,
+                UUID.fromString(key),
+                "f55b01a3a649ab640d2e0fc71df17a141870eadda720e1b6b1e0f66b4186a82e",
+                noteId);
+
+        assertLegacyReceiptReplay(key, "{\"title\":\"Legacy\"}", noteId);
+        assertLegacyReceiptReplay(key, "{\"title\":\"Legacy\",\"tags\":[]}", noteId);
+        createWithKey(key, "{\"title\":\"Changed\"}", 409);
+        createWithKey(key, "{\"title\":\"Legacy\",\"tags\":[{\"name\":\"Work\"}]}", 409);
+        createWithKey(key, "{\"title\":\"Legacy\",\"tags\":[{\"id\":1}]}", 409);
+    }
+
+    @Test
+    void replayOfInitiallyUntaggedCreateReturnsTagsAddedLater() throws Exception {
+        String key = UUID.randomUUID().toString();
+        MvcResult created =
+                mockMvc.perform(
+                                post("/api/v1/notes")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", key)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content("{\"title\":\"Initially untagged\"}"))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.tags").isEmpty())
+                        .andReturn();
+        Number id = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id.longValue())
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":0,\"tags\":[{\"name\":\"Added"
+                                                + " later\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags[0].name").value("Added later"));
+
+        mockMvc.perform(
+                        post("/api/v1/notes")
+                                .cookie(ownerCookie)
+                                .header("Idempotency-Key", key)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"title\":\"Initially untagged\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(id.longValue()))
+                .andExpect(jsonPath("$.tags.length()").value(1))
+                .andExpect(jsonPath("$.tags[0].name").value("Added later"));
+    }
+
+    @Test
     void patchUsesExpectedVersionAndRejectsUnknownFields() throws Exception {
         long id = createNote("{\"title\":\"Before\"}");
         mockMvc.perform(
@@ -168,6 +308,115 @@ class NoteControllerIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"expectedVersion\":1,\"inbox\":true}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void patchReplacesTagsVersionedAndReadsReturnSortedOwnerScopedTags() throws Exception {
+        long id = createNote("{\"title\":\"Before\"}");
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":0,\"tags\":[{\"id\":9223372036854775807},{\"name\":\"Rollback\"}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.tags").exists());
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM tag WHERE user_id = ?",
+                                Integer.class,
+                                ownerId))
+                .isZero();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT version FROM note WHERE id = ?", Long.class, id))
+                .isZero();
+
+        MvcResult tagged =
+                mockMvc.perform(
+                                patch("/api/v1/notes/{id}", id)
+                                        .cookie(ownerCookie)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(
+                                                "{\"expectedVersion\":0,\"tags\":[{\"name\":\"Zebra\"},{\"name\":\"Alpha\"},{\"name\":\"alpha\"}]}"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.version").value(1))
+                        .andExpect(jsonPath("$.tags.length()").value(2))
+                        .andExpect(jsonPath("$.tags[0].name").value("Alpha"))
+                        .andExpect(jsonPath("$.tags[1].name").value("Zebra"))
+                        .andReturn();
+        String taggedJson = tagged.getResponse().getContentAsString();
+        Number alphaId = JsonPath.read(taggedJson, "$.tags[0].id");
+        String updatedAt =
+                mockMvc.perform(get("/api/v1/notes/{id}", id).cookie(ownerCookie))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        updatedAt = JsonPath.read(updatedAt, "$.updatedAt");
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":1,\"tags\":[{\"id\":"
+                                                + alphaId
+                                                + "},{\"name\":\" zebra \"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.updatedAt").value(updatedAt));
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"expectedVersion\":1,\"title\":\"After\",\"tags\":[{\"name\":\"Gamma\"},{\"id\":"
+                                                + alphaId
+                                                + "}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.tags.length()").value(2));
+
+        mockMvc.perform(get("/api/v1/notes/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags[0].name").value("Alpha"))
+                .andExpect(jsonPath("$.tags[1].name").value("Gamma"));
+        mockMvc.perform(get("/api/v1/notes").cookie(ownerCookie).param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].tags[0].name").value("Alpha"))
+                .andExpect(jsonPath("$.items[0].tags[1].name").value("Gamma"));
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"expectedVersion\":2,\"tags\":null}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.tags").exists());
+
+        mockMvc.perform(
+                        patch("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"expectedVersion\":2,\"tags\":[]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(3))
+                .andExpect(jsonPath("$.tags.length()").value(0));
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM note_tag WHERE note_id = ?",
+                                Integer.class,
+                                id))
+                .isZero();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM tag WHERE user_id = ?",
+                                Integer.class,
+                                ownerId))
+                .isEqualTo(3);
     }
 
     @Test
@@ -376,6 +625,21 @@ class NoteControllerIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(body))
                 .andExpect(status().is(expectedStatus));
+    }
+
+    private void assertLegacyReceiptReplay(String key, String body, long expectedNoteId)
+            throws Exception {
+        MvcResult replay =
+                mockMvc.perform(
+                                post("/api/v1/notes")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", key)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isCreated())
+                        .andReturn();
+        Number replayedId = JsonPath.read(replay.getResponse().getContentAsString(), "$.id");
+        assertThat(replayedId.longValue()).isEqualTo(expectedNoteId);
     }
 
     private static String previewText(Object node) {

@@ -5,6 +5,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -63,6 +65,10 @@ public class Note extends BaseEntity {
 
     public void updateContent(Map<String, Object> content) {
         this.content = NoteContentPolicy.validateAndCopy(content);
+    }
+
+    public void touchMetadata() {
+        setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
     }
 
     public Long getUserId() {

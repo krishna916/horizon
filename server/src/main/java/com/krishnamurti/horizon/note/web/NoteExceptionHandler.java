@@ -1,9 +1,11 @@
 package com.krishnamurti.horizon.note.web;
 
+import com.krishnamurti.horizon.note.application.InvalidNoteTagReferenceException;
 import com.krishnamurti.horizon.note.application.NoteCreationConflictException;
 import com.krishnamurti.horizon.note.application.NoteNotFoundException;
 import com.krishnamurti.horizon.note.application.NoteVersionConflictException;
 import com.krishnamurti.horizon.note.domain.InvalidNoteException;
+import com.krishnamurti.horizon.tag.api.InvalidTagNameException;
 import java.net.URI;
 import java.util.Map;
 import org.springframework.core.Ordered;
@@ -46,6 +48,12 @@ public class NoteExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ProblemDetail handleInvalidRequest(NoteRequestValidationException exception) {
         return validationFailure(exception.getField(), exception.getMessage());
+    }
+
+    @ExceptionHandler({InvalidNoteTagReferenceException.class, InvalidTagNameException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ProblemDetail handleInvalidTagReference(RuntimeException exception) {
+        return validationFailure("tags", "One or more Tag references are invalid.");
     }
 
     @ExceptionHandler(InvalidNoteException.class)
