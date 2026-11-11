@@ -30,6 +30,18 @@ public final class NoteCreationFingerprint {
         request.put("title", normalizedTitle == null ? null : normalizedTitle.strip());
         request.put("content", canonicalize(normalizedContent));
         request.put("tags", canonicalTags(normalizedTagRefs));
+        return hash(request);
+    }
+
+    public static String computeLegacyTagFree(
+            String normalizedTitle, Map<String, Object> normalizedContent) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("title", normalizedTitle == null ? null : normalizedTitle.strip());
+        request.put("content", canonicalize(normalizedContent));
+        return hash(request);
+    }
+
+    private static String hash(Map<String, Object> request) {
         try {
             byte[] hash =
                     MessageDigest.getInstance("SHA-256")

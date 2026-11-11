@@ -70,4 +70,12 @@ class NoteCreationFingerprintTest {
                         NoteCreationFingerprint.compute(
                                 "title", content, List.of(new NoteTagSelection(null, "Work"))));
     }
+
+    @Test
+    void legacyTagFreeFingerprintMatchesPreTagSerialization() {
+        assertThat(NoteCreationFingerprint.computeLegacyTagFree("Legacy", null))
+                .isEqualTo("f55b01a3a649ab640d2e0fc71df17a141870eadda720e1b6b1e0f66b4186a82e");
+        assertThat(NoteCreationFingerprint.compute("Legacy", null, List.of()))
+                .isNotEqualTo(NoteCreationFingerprint.computeLegacyTagFree("Legacy", null));
+    }
 }

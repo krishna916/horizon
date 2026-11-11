@@ -80,7 +80,14 @@ public class IdempotentNoteCreationService {
                 requestRepository
                         .find(userId, requestKey)
                         .orElseThrow(NoteCreationConflictException::new);
-        if (!fingerprint.equals(receipt.fingerprint()) || receipt.noteId() == null) {
+        boolean fingerprintMatches = fingerprint.equals(receipt.fingerprint());
+        if (!fingerprintMatches && tags.isEmpty()) {
+            fingerprintMatches =
+                    NoteCreationFingerprint.computeLegacyTagFree(
+                                    normalized.getTitle(), normalized.getContent())
+                            .equals(receipt.fingerprint());
+        }
+        if (!fingerprintMatches || receipt.noteId() == null) {
             throw new NoteCreationConflictException();
         }
         Note replayed =

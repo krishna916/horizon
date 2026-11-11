@@ -217,6 +217,25 @@ class NoteControllerIntegrationTest {
     }
 
     @Test
+    void replaysHistoricalTagFreeReceiptButRejectsChangedContentOrTags() throws Exception {
+        long noteId = createNote("{\"title\":\"Legacy\"}");
+        String key = UUID.randomUUID().toString();
+        jdbcTemplate.update(
+                "INSERT INTO note_creation_request (user_id, request_key, fingerprint, note_id,"
+                        + " created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                ownerId,
+                UUID.fromString(key),
+                "f55b01a3a649ab640d2e0fc71df17a141870eadda720e1b6b1e0f66b4186a82e",
+                noteId);
+
+        assertLegacyReceiptReplay(key, "{\"title\":\"Legacy\"}", noteId);
+        assertLegacyReceiptReplay(key, "{\"title\":\"Legacy\",\"tags\":[]}", noteId);
+        createWithKey(key, "{\"title\":\"Changed\"}", 409);
+        createWithKey(key, "{\"title\":\"Legacy\",\"tags\":[{\"name\":\"Work\"}]}", 409);
+        createWithKey(key, "{\"title\":\"Legacy\",\"tags\":[{\"id\":1}]}", 409);
+    }
+
+    @Test
     void replayOfInitiallyUntaggedCreateReturnsTagsAddedLater() throws Exception {
         String key = UUID.randomUUID().toString();
         MvcResult created =
@@ -606,6 +625,21 @@ class NoteControllerIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(body))
                 .andExpect(status().is(expectedStatus));
+    }
+
+    private void assertLegacyReceiptReplay(String key, String body, long expectedNoteId)
+            throws Exception {
+        MvcResult replay =
+                mockMvc.perform(
+                                post("/api/v1/notes")
+                                        .cookie(ownerCookie)
+                                        .header("Idempotency-Key", key)
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(body))
+                        .andExpect(status().isCreated())
+                        .andReturn();
+        Number replayedId = JsonPath.read(replay.getResponse().getContentAsString(), "$.id");
+        assertThat(replayedId.longValue()).isEqualTo(expectedNoteId);
     }
 
     private static String previewText(Object node) {
