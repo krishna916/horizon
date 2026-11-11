@@ -89,6 +89,6 @@ function tagSelectionSet(tags: TagSelection[]): string {
       tags.map((tag) => ('id' in tag ? `id:${tag.id}` : `name:${tag.name.trim().toLowerCase()}`))
     ),
   ]
-    .sort()
+    .sort((left, right) => left.localeCompare(right, 'en'))
     .join('\u0000');
 }

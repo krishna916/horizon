@@ -6,8 +6,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcOperations;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** Persists Note-owned links to reusable Tags using scalar identifiers only. */
@@ -23,10 +24,18 @@ public class NoteTagAssociationRepository {
             "DELETE FROM note_tag USING note "
                     + "WHERE note_tag.note_id = note.id AND note.user_id = ? AND note.id = ?";
 
+    private static final String FIND_FOR_NOTES_SQL =
+            "SELECT note_tag.note_id, note_tag.tag_id FROM note_tag "
+                    + "JOIN note ON note.id = note_tag.note_id "
+                    + "WHERE note.user_id = :ownerId AND note.id IN (:noteIds) "
+                    + "ORDER BY note_tag.note_id, note_tag.tag_id";
+
     private final JdbcOperations jdbcOperations;
+    private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
 
     public NoteTagAssociationRepository(JdbcOperations jdbcOperations) {
         this.jdbcOperations = jdbcOperations;
+        this.namedParameterJdbcTemplate = new NamedParameterJdbcTemplate(jdbcOperations);
     }
 
     public Map<Long, List<Long>> findTagIdsByNoteIds(Long ownerId, Collection<Long> noteIds) {
@@ -35,25 +44,17 @@ public class NoteTagAssociationRepository {
         }
 
         List<Long> ids = List.copyOf(noteIds);
-        String placeholders = ids.stream().map(ignored -> "?").collect(Collectors.joining(", "));
-        String sql =
-                "SELECT note_tag.note_id, note_tag.tag_id FROM note_tag "
-                        + "JOIN note ON note.id = note_tag.note_id "
-                        + "WHERE note.user_id = ? AND note.id IN ("
-                        + placeholders
-                        + ") ORDER BY note_tag.note_id, note_tag.tag_id";
         Map<Long, List<Long>> tagIdsByNote = new LinkedHashMap<>();
-        List<Object> parameters = new ArrayList<>(ids.size() + 1);
-        parameters.add(ownerId);
-        parameters.addAll(ids);
-        jdbcOperations.query(
-                sql,
+        MapSqlParameterSource parameters =
+                new MapSqlParameterSource().addValue("ownerId", ownerId).addValue("noteIds", ids);
+        namedParameterJdbcTemplate.query(
+                FIND_FOR_NOTES_SQL,
+                parameters,
                 resultSet -> {
                     Long noteId = resultSet.getLong("note_id");
                     Long tagId = resultSet.getLong("tag_id");
                     tagIdsByNote.computeIfAbsent(noteId, ignored -> new ArrayList<>()).add(tagId);
-                },
-                parameters.toArray());
+                });
         return Map.copyOf(tagIdsByNote);
     }
 
