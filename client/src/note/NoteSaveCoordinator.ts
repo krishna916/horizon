@@ -476,6 +476,9 @@ export class NoteSaveCoordinator {
   }
 
   private restoreDraftState(initialNote: NoteDetail | null | undefined): void {
+    if (initialNote) {
+      this.draft = reconcileNoteDraftTags(this.draft, this.draft.tags ?? [], initialNote.tags);
+    }
     if (this.phase === 'conflict') return;
     const hasChanges = initialNote
       ? !noteDraftsEqual(this.draft, this.baseline)
