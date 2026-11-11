@@ -37,7 +37,7 @@ public class IdempotentNoteCreationService {
 
     @Transactional
     public Note create(UUID requestKey, String title, Map<String, Object> content) {
-        return create(requestKey, title, content, List.of());
+        return doCreate(requestKey, title, content, List.of()).note();
     }
 
     @Transactional
@@ -46,11 +46,19 @@ public class IdempotentNoteCreationService {
             String title,
             Map<String, Object> content,
             List<NoteTagSelection> tags) {
-        return createWithTags(requestKey, title, content, tags).note();
+        return doCreate(requestKey, title, content, tags).note();
     }
 
     @Transactional
     public NoteCreationResult createWithTags(
+            UUID requestKey,
+            String title,
+            Map<String, Object> content,
+            List<NoteTagSelection> tags) {
+        return doCreate(requestKey, title, content, tags);
+    }
+
+    private NoteCreationResult doCreate(
             UUID requestKey,
             String title,
             Map<String, Object> content,

@@ -4,6 +4,7 @@ import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.shared.security.CurrentUserProvider;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -34,12 +35,16 @@ public class NoteCommandService {
 
     @Transactional
     public Note create(String title, Map<String, Object> content) {
-        return create(title, content, java.util.List.of());
+        return doCreate(title, content, List.of());
     }
 
     @Transactional
     public Note create(
             String title, Map<String, Object> content, java.util.List<NoteTagSelection> tags) {
+        return doCreate(title, content, tags);
+    }
+
+    private Note doCreate(String title, Map<String, Object> content, List<NoteTagSelection> tags) {
         Long userId =
                 currentUserProvider
                         .getCurrentUserId()

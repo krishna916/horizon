@@ -22,6 +22,7 @@ public record NoteCreationResult(Note note, List<TagReference> tags) {
             justification =
                     "The managed Note aggregate is intentionally carried to the HTTP adapter for"
                             + " response mapping.")
+    @Override
     public Note note() {
         return note;
     }

@@ -61,48 +61,41 @@ public class NoteRequestMapper {
         if (!value.isArray()) fail(TAGS_FIELD, "Must be an array of Tag references.");
 
         List<NoteTagSelection> selections = new ArrayList<>();
-        value.forEach(
-                selection -> {
-                    if (!selection.isObject() || selection.size() != 1) {
-                        fail(
-                                TAGS_FIELD,
-                                "Each Tag reference must contain exactly one of id or name.");
-                    }
-                    JsonNode id = selection.get("id");
-                    JsonNode name = selection.get("name");
-                    if (id != null) {
-                        if (!id.isIntegralNumber()) {
-                            fail(TAGS_FIELD, "Tag IDs must be positive integers.");
-                        }
-                        long tagId;
-                        try {
-                            tagId = Long.parseLong(id.numberValue().toString());
-                        } catch (NumberFormatException exception) {
-                            throw new NoteRequestValidationException(
-                                    TAGS_FIELD, "Tag IDs must be positive integers.");
-                        }
-                        if (tagId <= 0) fail(TAGS_FIELD, "Tag IDs must be positive integers.");
-                        selections.add(new NoteTagSelection(tagId, null));
-                    } else if (name != null) {
-                        if (!name.isString()) {
-                            fail(TAGS_FIELD, "Tag names must be non-empty strings.");
-                        }
-                        try {
-                            selections.add(
-                                    new NoteTagSelection(
-                                            null,
-                                            tagNormalizationApi.normalizeName(name.stringValue())));
-                        } catch (InvalidTagNameException exception) {
-                            throw new NoteRequestValidationException(
-                                    TAGS_FIELD, exception.getMessage());
-                        }
-                    } else {
-                        fail(
-                                TAGS_FIELD,
-                                "Each Tag reference must contain exactly one of id or name.");
-                    }
-                });
+        value.forEach(selection -> selections.add(parseTagSelection(selection)));
         return List.copyOf(selections);
+    }
+
+    private NoteTagSelection parseTagSelection(JsonNode selection) {
+        if (!selection.isObject() || selection.size() != 1) {
+            fail(TAGS_FIELD, "Each Tag reference must contain exactly one of id or name.");
+        }
+        JsonNode id = selection.get("id");
+        if (id != null) return new NoteTagSelection(parseTagId(id), null);
+
+        JsonNode name = selection.get("name");
+        if (name == null) {
+            fail(TAGS_FIELD, "Each Tag reference must contain exactly one of id or name.");
+        }
+        if (!name.isString()) fail(TAGS_FIELD, "Tag names must be non-empty strings.");
+        try {
+            return new NoteTagSelection(
+                    null, tagNormalizationApi.normalizeName(name.stringValue()));
+        } catch (InvalidTagNameException exception) {
+            throw new NoteRequestValidationException(TAGS_FIELD, exception.getMessage());
+        }
+    }
+
+    private long parseTagId(JsonNode id) {
+        if (!id.isIntegralNumber()) fail(TAGS_FIELD, "Tag IDs must be positive integers.");
+        long tagId;
+        try {
+            tagId = Long.parseLong(id.numberValue().toString());
+        } catch (NumberFormatException exception) {
+            throw new NoteRequestValidationException(
+                    TAGS_FIELD, "Tag IDs must be positive integers.");
+        }
+        if (tagId <= 0) fail(TAGS_FIELD, "Tag IDs must be positive integers.");
+        return tagId;
     }
 
     public NotePatch toPatch(UpdateNoteRequest request) {
