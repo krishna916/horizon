@@ -11,6 +11,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,7 +58,7 @@ public class NoteTagQueryService {
             List<TagReference> tags =
                     tagIdsByNote.getOrDefault(noteId, List.of()).stream()
                             .map(tagsById::get)
-                            .filter(tag -> tag != null)
+                            .filter(Objects::nonNull)
                             .sorted(TAG_ORDER)
                             .toList();
             result.put(noteId, tags);

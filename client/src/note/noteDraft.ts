@@ -3,10 +3,8 @@ import {
   richTextDocumentsEqual,
   type RichTextDocument,
 } from '@/components/rich-text/richTextDocument';
-import type { CreateNoteRequest } from './types';
-import type { NoteDetail } from './types';
-import type { TagSelection } from '@/tag/types';
-import type { Tag } from '@/tag/types';
+import type { CreateNoteRequest, NoteDetail } from './types';
+import type { Tag, TagSelection } from '@/tag/types';
 
 export interface NoteDraft {
   title: string;

@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.note.web;
 import com.krishnamurti.horizon.note.application.IdempotentNoteCreationService;
 import com.krishnamurti.horizon.note.application.NoteCommandService;
 import com.krishnamurti.horizon.note.application.NoteQueryService;
+import com.krishnamurti.horizon.shared.domain.BaseEntity;
 import java.net.URI;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -85,7 +86,7 @@ public class NoteController {
         int parsedSize = requestMapper.parsePage(size, 30, "size", 1, 100);
         requestMapper.validateOffset(parsedPage, parsedSize);
         var pageData = queryService.list(parsedCollection, parsedSort, parsedPage, parsedSize);
-        var noteIds = pageData.items().stream().map(note -> note.getId()).toList();
+        var noteIds = pageData.items().stream().map(BaseEntity::getId).toList();
         return responseMapper.toList(pageData, queryService.tagsForNotes(noteIds));
     }
 }

@@ -125,11 +125,12 @@ export function NoteEditorNavigationGuard({
     blocker.proceed?.();
   }
 
-  const title = isTagOnlyDraft
-    ? 'Leave without adding these Tags?'
-    : isExplicitLogout
-      ? 'Sign out with an unsaved note?'
-      : 'Your note has unsaved changes';
+  let title = 'Your note has unsaved changes';
+  if (isTagOnlyDraft) {
+    title = 'Leave without adding these Tags?';
+  } else if (isExplicitLogout) {
+    title = 'Sign out with an unsaved note?';
+  }
   let description =
     'Wait for the note to save before leaving. Your draft will stay open if saving fails.';
   if (isTagOnlyDraft) {

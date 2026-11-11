@@ -2,12 +2,14 @@ package com.krishnamurti.horizon.note.application;
 
 import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.note.infrastructure.NoteTagAssociationRepository;
+import com.krishnamurti.horizon.shared.domain.BaseEntity;
 import com.krishnamurti.horizon.tag.api.TagCommandApi;
 import com.krishnamurti.horizon.tag.api.TagQueryApi;
 import com.krishnamurti.horizon.tag.api.TagReference;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -42,7 +44,7 @@ public class NoteTagAssignmentService {
         Long ownedNoteId =
                 noteRepository
                         .lockOwnedForTagWrite(noteId, ownerId)
-                        .map(ownedNote -> ownedNote.getId())
+                        .map(BaseEntity::getId)
                         .orElseThrow(() -> new NoteNotFoundException(noteId));
         Set<Long> resolvedIds = resolve(ownerId, selections);
         Set<Long> currentIds = associationRepository.findTagIdsForNote(ownerId, ownedNoteId);
@@ -58,7 +60,7 @@ public class NoteTagAssignmentService {
         Set<Long> requestedIds = new LinkedHashSet<>();
         selections.stream()
                 .map(NoteTagSelection::id)
-                .filter(id -> id != null)
+                .filter(Objects::nonNull)
                 .forEach(requestedIds::add);
 
         if (!requestedIds.isEmpty()
