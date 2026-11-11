@@ -95,7 +95,8 @@ export function reconcileNoteDraftTags(
 
   for (const selection of acknowledgedTags) {
     if ('id' in selection) {
-      if (canonicalIds.has(selection.id)) acknowledgedIds.set(tagSelectionKey(selection), selection.id);
+      if (canonicalIds.has(selection.id))
+        acknowledgedIds.set(tagSelectionKey(selection), selection.id);
       continue;
     }
 
@@ -140,7 +141,5 @@ function tagSelectionSet(tags: TagSelection[]): string {
 }
 
 function tagSelectionKey(selection: TagSelection): string {
-  return 'id' in selection
-    ? `id:${selection.id}`
-    : `name:${selection.name.trim().toLowerCase()}`;
+  return 'id' in selection ? `id:${selection.id}` : `name:${selection.name.trim().toLowerCase()}`;
 }

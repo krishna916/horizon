@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   },
   note: null as NoteDetail | null,
   snapshot: {
-    draft: { title: '', content: null as NoteDraft['content'] },
+    draft: { title: '', content: null as NoteDraft['content'] } as NoteDraft,
     phase: 'clean',
     replacementRevision: 0,
     hasUnsavedChanges: false,
@@ -122,7 +122,7 @@ describe('NoteEditorPage', () => {
     };
     state.note = null;
     state.snapshot = {
-      draft: { title: '', content: null as NoteDraft['content'] },
+      draft: { title: '', content: null as NoteDraft['content'] } as NoteDraft,
       phase: 'clean',
       replacementRevision: 0,
       hasUnsavedChanges: false,

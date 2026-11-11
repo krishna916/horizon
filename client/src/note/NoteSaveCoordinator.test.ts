@@ -661,7 +661,12 @@ describe('NoteSaveCoordinator', () => {
       persistedVersion: { id: 7, version: 2 },
       frozenUpdateRequest: {
         id: 7,
-        body: { expectedVersion: 2, title: 'Existing', content: null, tags: [{ name: 'Planning' }] },
+        body: {
+          expectedVersion: 2,
+          title: 'Existing',
+          content: null,
+          tags: [{ name: 'Planning' }],
+        },
         draft: local,
         revision: 1,
       },
@@ -678,7 +683,10 @@ describe('NoteSaveCoordinator', () => {
     await coordinator.resume();
 
     expect(update).not.toHaveBeenCalled();
-    expect(coordinator.snapshot()).toMatchObject({ phase: 'saved', persisted: { id: 7, version: 3 } });
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'saved',
+      persisted: { id: 7, version: 3 },
+    });
     expect(coordinator.snapshot().draft.tags).toEqual([{ id: 42 }]);
     coordinator.dispose();
   });
@@ -1146,15 +1154,13 @@ describe('NoteSaveCoordinator', () => {
     const edited = { ...original, tags: [{ id: 8 }, { name: 'Urgent' }] };
     const createResponse = deferred<NoteDetail>();
     const create = vi.fn().mockReturnValue(createResponse.promise);
-    const update = vi
-      .fn()
-      .mockResolvedValue({
-        ...detail(89, 1, edited),
-        tags: [
-          { id: 8, name: 'Planning' },
-          { id: 9, name: 'Urgent' },
-        ],
-      });
+    const update = vi.fn().mockResolvedValue({
+      ...detail(89, 1, edited),
+      tags: [
+        { id: 8, name: 'Planning' },
+        { id: 9, name: 'Urgent' },
+      ],
+    });
     const coordinator = new NoteSaveCoordinator({
       initialDraft: original,
       initialNote: null,
