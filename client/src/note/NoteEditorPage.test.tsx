@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
     replacementRevision: 0,
     hasUnsavedChanges: false,
     tagValidationError: null as string | null,
+    knownTags: [] as Array<{ id: number; name: string }>,
     persisted: null as { id: number; version: number } | null,
     writeInFlight: false,
     outcomeUncertain: false,
@@ -70,15 +71,21 @@ vi.mock('@/tag/TagSelector', () => ({
     value,
     onChange,
     userId,
+    knownTags,
     createLabel,
   }: {
     value: Array<{ id: number } | { name: string }>;
     onChange: (value: Array<{ id: number } | { name: string }>) => void;
     userId: number;
+    knownTags: Array<{ id: number; name: string }>;
     createLabel: string;
   }) => (
     <div aria-label="Note Tags" data-user-id={userId}>
-      {value.map((tag) => ('name' in tag ? tag.name : `Tag ${tag.id}`))}
+      {value.map((tag) =>
+        'name' in tag
+          ? tag.name
+          : (knownTags.find((knownTag) => knownTag.id === tag.id)?.name ?? `Tag ${tag.id}`)
+      )}
       <button type="button" onClick={() => onChange([{ name: 'Ideas' }])}>
         {createLabel === 'add' ? 'Add tag' : 'Create tag'}
       </button>
@@ -120,6 +127,7 @@ describe('NoteEditorPage', () => {
       replacementRevision: 0,
       hasUnsavedChanges: false,
       tagValidationError: null,
+      knownTags: [],
       persisted: null,
       writeInFlight: false,
       outcomeUncertain: false,
@@ -190,6 +198,7 @@ describe('NoteEditorPage', () => {
       replacementRevision: 0,
       hasUnsavedChanges: true,
       tagValidationError: null,
+      knownTags: [],
       persisted: { id: 6, version: 2 },
       writeInFlight: false,
       outcomeUncertain: false,
@@ -219,6 +228,18 @@ describe('NoteEditorPage', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
+  it('uses canonical Tag metadata published by the save coordinator', () => {
+    state.snapshot = {
+      ...state.snapshot,
+      draft: { title: 'Tagged note', content: null, tags: [{ id: 42 }] },
+      knownTags: [{ id: 42, name: 'Planning' }],
+    };
+    renderEditor();
+
+    expect(screen.getByLabelText('Note Tags')).toHaveTextContent('Planning');
+    expect(screen.getByLabelText('Note Tags')).not.toHaveTextContent('Tag 42');
+  });
+
   it('requires confirmation before either conflict choice is applied', () => {
     state.note = archivedNote;
     state.snapshot = {
@@ -227,6 +248,7 @@ describe('NoteEditorPage', () => {
       replacementRevision: 0,
       hasUnsavedChanges: true,
       tagValidationError: null,
+      knownTags: [],
       persisted: { id: 6, version: 2 },
       writeInFlight: false,
       outcomeUncertain: false,

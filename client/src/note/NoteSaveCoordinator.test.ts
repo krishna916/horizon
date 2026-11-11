@@ -507,6 +507,33 @@ describe('NoteSaveCoordinator', () => {
     expect(update).not.toHaveBeenCalled();
     expect(coordinator.snapshot()).toMatchObject({ phase: 'saved', hasUnsavedChanges: false });
     expect(coordinator.snapshot().draft.tags).toEqual([{ id: 42 }]);
+    expect(coordinator.snapshot().knownTags).toEqual([{ id: 42, name: 'Planning' }]);
+    coordinator.dispose();
+  });
+
+  it('loads canonical Tag labels from the latest Note during conflict resolution', async () => {
+    const initial = { title: 'Local', content: null, tags: [{ id: 42 }] };
+    const original = { ...detail(7, 1, initial), tags: [] };
+    const latest = {
+      ...detail(7, 2, { ...initial, title: 'Remote' }),
+      tags: [{ id: 42, name: 'Planning' }],
+    };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: original,
+      recovery: { persistedVersion: { id: 7, version: 0 } },
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn().mockResolvedValue(latest) },
+      onChange: vi.fn(),
+    });
+
+    expect(coordinator.snapshot().phase).toBe('conflict');
+    await coordinator.resolveConflict('load-server');
+
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'saved',
+      draft: { tags: [{ id: 42 }] },
+      knownTags: [{ id: 42, name: 'Planning' }],
+    });
     coordinator.dispose();
   });
 

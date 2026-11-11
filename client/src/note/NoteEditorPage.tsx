@@ -293,7 +293,7 @@ function ActiveNoteEditor({
               value={snapshot.draft.tags ?? []}
               onChange={(tags) => edit({ ...snapshot.draft, tags })}
               userId={ownerId}
-              knownTags={initialNote?.tags ?? []}
+              knownTags={snapshot.knownTags}
               createLabel="add"
             />
             {snapshot.tagValidationError && (
