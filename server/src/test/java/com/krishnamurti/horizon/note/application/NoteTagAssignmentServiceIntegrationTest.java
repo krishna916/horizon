@@ -113,7 +113,8 @@ class NoteTagAssignmentServiceIntegrationTest {
                                                             List.of(
                                                                     new NoteTagSelection(
                                                                             null, "Rollback")))))
-                    .isInstanceOf(RuntimeException.class);
+                    .isInstanceOf(RuntimeException.class)
+                    .hasStackTraceContaining("association rejected");
 
             assertThat(tagExists(ownerId, "Rollback")).isFalse();
             assertThat(associationIds(ownerId, noteId)).isEmpty();

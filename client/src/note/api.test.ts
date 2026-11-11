@@ -8,7 +8,7 @@ const summary: NoteSummary = {
   id: 7,
   title: null,
   preview: null,
-  tags: [],
+  tags: [{ id: 42, name: 'Planning' }],
   version: 1,
   inbox: false,
   archivedAt: null,
@@ -33,7 +33,11 @@ describe('noteApi', () => {
     );
 
     await expect(noteApi.list('active', 'updated_desc', 0)).resolves.toMatchObject({
-      data: { items: [{ id: 7, title: null }], page: 0, hasNext: true },
+      data: {
+        items: [{ id: 7, title: null, tags: [{ id: 42, name: 'Planning' }] }],
+        page: 0,
+        hasNext: true,
+      },
     });
     expect(getSpy).toHaveBeenCalledWith('/notes', {
       params: { collection: 'active', sort: 'updated_desc', page: 0, size: 20 },
@@ -46,7 +50,6 @@ describe('noteApi', () => {
 
     await expect(noteApi.get(7)).resolves.toMatchObject({ data: { id: 7, content: null } });
     expect(getSpy).toHaveBeenCalledWith('/notes/7');
-    expect('tags' in summary).toBe(true);
     expect('files' in summary).toBe(false);
   });
 

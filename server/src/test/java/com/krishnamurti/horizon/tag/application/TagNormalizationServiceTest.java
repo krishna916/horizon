@@ -15,7 +15,8 @@ class TagNormalizationServiceTest {
         assertThat(normalizationService.normalizeName("\u2003Work\u00a0")).isEqualTo("Work");
         assertThatThrownBy(() -> normalizationService.normalizeName("bad\nname"))
                 .isInstanceOf(InvalidTagNameException.class);
-        assertThatThrownBy(() -> normalizationService.normalizeName("x".repeat(101)))
+        String tooLongName = "x".repeat(101);
+        assertThatThrownBy(() -> normalizationService.normalizeName(tooLongName))
                 .isInstanceOf(InvalidTagNameException.class);
     }
 }
