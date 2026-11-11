@@ -1,7 +1,9 @@
 import {
   hasMeaningfulNoteDraft,
   normalizeNoteDraft,
+  noteDraftMatchesNote,
   noteDraftsEqual,
+  reconcileNoteDraftTags,
   type NoteDraft,
 } from './noteDraft';
 import type { NoteDetail } from './types';
@@ -254,8 +256,9 @@ export class NoteSaveCoordinator {
       return;
     }
 
+    this.draft = reconcileNoteDraftTags(this.draft, this.draft.tags ?? [], latest.tags);
     const local = { ...this.draft };
-    if (noteDraftsEqual(local, noteDraft(latest))) {
+    if (noteDraftMatchesNote(local, latest)) {
       this.draft = noteDraft(latest);
       this.baseline = { ...this.draft };
       this.persisted = { id: latest.id, version: latest.version };
@@ -432,7 +435,7 @@ export class NoteSaveCoordinator {
     if (options.recovery?.frozenUpdateRequest) return;
     if (!initialNote || !recoveryVersion || recoveryVersion.id !== initialNote.id) return;
     if (recoveryVersion.version === initialNote.version) return;
-    this.phase = noteDraftsEqual(this.draft, noteDraft(initialNote)) ? 'saved' : 'conflict';
+    this.phase = noteDraftMatchesNote(this.draft, initialNote) ? 'saved' : 'conflict';
   }
 
   private restoreDraftState(initialNote: NoteDetail | null | undefined): void {
@@ -450,7 +453,7 @@ export class NoteSaveCoordinator {
     try {
       const latest = await this.transport.get(persisted.id);
       if (this.disposed || this.paused || generation !== this.generation) return false;
-      if (this.pendingUpdate && noteDraftsEqual(this.pendingUpdate.draft, noteDraft(latest))) {
+      if (this.pendingUpdate && noteDraftMatchesNote(this.pendingUpdate.draft, latest)) {
         this.acknowledgeUpdate(this.pendingUpdate, latest);
       } else if (latest.version !== persisted.version) {
         this.phase = 'conflict';
@@ -488,11 +491,8 @@ export class NoteSaveCoordinator {
       this.outcomeUncertain = false;
       this.pendingCreate = null;
       this.persisted = { id: created.id, version: created.version };
-      this.baseline = {
-        title: request.body.title ?? '',
-        content: request.body.content,
-        tags: request.body.tags,
-      };
+      this.draft = reconcileNoteDraftTags(this.draft, request.body.tags, created.tags);
+      this.baseline = noteDraft(created);
       this.confirmedRevision = request.revision;
       this.phase = this.hasWork() ? 'dirty' : 'saved';
       this.publish();
@@ -577,7 +577,7 @@ export class NoteSaveCoordinator {
     try {
       const latest = await this.transport.get(request.id);
       if (this.disposed || this.paused || generation !== this.generation) return;
-      if (noteDraftsEqual(request.draft, noteDraft(latest))) {
+      if (noteDraftMatchesNote(request.draft, latest)) {
         this.acknowledgeUpdate(request, latest);
       } else if (latest.version === request.body.expectedVersion) {
         this.outcomeUncertain = false;
@@ -599,7 +599,8 @@ export class NoteSaveCoordinator {
     this.pendingUpdate = null;
     this.outcomeUncertain = false;
     this.persisted = { id: request.id, version: updated.version };
-    this.baseline = { ...request.draft, tags: [...(request.draft.tags ?? [])] };
+    this.draft = reconcileNoteDraftTags(this.draft, request.draft.tags ?? [], updated.tags);
+    this.baseline = noteDraft(updated);
     this.confirmedRevision = request.revision;
     this.phase = this.hasWork() ? 'dirty' : 'saved';
     this.publish();

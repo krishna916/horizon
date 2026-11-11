@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RichTextDocument } from '@/components/rich-text/richTextDocument';
 import type { NoteDetail } from './types';
 import { NoteSaveCoordinator } from './NoteSaveCoordinator';
+import { noteDraftMatchesNote } from './noteDraft';
 import type { NoteDraft } from './noteDraft';
 
 const emptyDraft: NoteDraft = { title: '', content: null };
@@ -35,6 +36,30 @@ const conflictError = () =>
 afterEach(() => vi.useRealTimers());
 
 describe('NoteSaveCoordinator', () => {
+  it('matches a name selection only to one canonical server Tag', () => {
+    const selected: NoteDraft = {
+      title: 'Existing',
+      content: null,
+      tags: [{ name: ' Planning ' }],
+    };
+    const canonical = {
+      ...detail(7, 2, selected),
+      tags: [{ id: 42, name: 'Planning' }],
+    };
+    const missing = { ...canonical, tags: [] };
+    const ambiguous = {
+      ...canonical,
+      tags: [
+        { id: 42, name: 'Planning' },
+        { id: 43, name: 'planning' },
+      ],
+    };
+
+    expect(noteDraftMatchesNote(selected, canonical)).toBe(true);
+    expect(noteDraftMatchesNote(selected, missing)).toBe(false);
+    expect(noteDraftMatchesNote(selected, ambiguous)).toBe(false);
+  });
+
   it('does not create a Note for an untouched new draft', async () => {
     const create = vi.fn();
     const coordinator = new NoteSaveCoordinator({
@@ -355,6 +380,38 @@ describe('NoteSaveCoordinator', () => {
     coordinator.dispose();
   });
 
+  it('uses canonical Tags from a successful create without issuing a redundant PATCH', async () => {
+    const draft: NoteDraft = {
+      title: 'First note',
+      content: null,
+      tags: [{ name: 'Planning' }],
+    };
+    const created = {
+      ...detail(4, 0, draft),
+      tags: [{ id: 42, name: 'Planning' }],
+    };
+    const create = vi.fn().mockResolvedValue(created);
+    const update = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: emptyDraft,
+      initialNote: null,
+      transport: { create, update, get: vi.fn() },
+      onChange: vi.fn(),
+    });
+
+    coordinator.edit(draft);
+    await coordinator.flush();
+
+    expect(create).toHaveBeenCalledWith(
+      { title: 'First note', content: null, tags: [{ name: 'Planning' }] },
+      expect.any(String)
+    );
+    expect(update).not.toHaveBeenCalled();
+    expect(coordinator.snapshot()).toMatchObject({ phase: 'saved', hasUnsavedChanges: false });
+    expect(coordinator.snapshot().draft.tags).toEqual([{ id: 42 }]);
+    coordinator.dispose();
+  });
+
   it('serializes edits made during creation into one versioned update without replacing the draft', async () => {
     vi.useFakeTimers();
     const createRequest = deferred<NoteDetail>();
@@ -391,7 +448,7 @@ describe('NoteSaveCoordinator', () => {
       content: latest.content,
       tags: [],
     });
-    expect(coordinator.snapshot().draft).toEqual(latest);
+    expect(coordinator.snapshot().draft).toEqual({ ...latest, tags: [] });
     expect(coordinator.snapshot().phase).toBe('saved');
     coordinator.dispose();
   });
@@ -425,6 +482,120 @@ describe('NoteSaveCoordinator', () => {
       phase: 'saved',
       hasUnsavedChanges: false,
     });
+    coordinator.dispose();
+  });
+
+  it('reconciles a lost name-tag PATCH response against its canonical server Tag', async () => {
+    vi.useFakeTimers();
+    const initial: NoteDraft = { title: 'Existing', content: null, tags: [] };
+    const selected: NoteDraft = {
+      ...initial,
+      tags: [{ name: 'Planning' }],
+    };
+    const saved = {
+      ...detail(7, 2, selected),
+      tags: [{ id: 42, name: 'Planning' }],
+    };
+    const update = vi.fn().mockRejectedValue(new Error('response lost'));
+    const get = vi.fn().mockResolvedValue(saved);
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(7, 1, initial),
+      transport: { create: vi.fn(), update, get },
+      onChange: vi.fn(),
+      debounceMs: 10,
+    });
+
+    coordinator.edit(selected);
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(get).toHaveBeenCalledWith(7);
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'saved',
+      persisted: { id: 7, version: 2 },
+      hasUnsavedChanges: false,
+    });
+    expect(coordinator.snapshot().draft.tags).toEqual([{ id: 42 }]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(update).toHaveBeenCalledOnce();
+    coordinator.dispose();
+  });
+
+  it('reconciles a frozen name-tag PATCH after same-owner recovery', async () => {
+    const local: NoteDraft = {
+      title: 'Existing',
+      content: null,
+      tags: [{ name: 'Planning' }],
+    };
+    const committed = {
+      ...detail(7, 3, local),
+      tags: [{ id: 42, name: 'Planning' }],
+    };
+    const recovery = {
+      persistedVersion: { id: 7, version: 2 },
+      frozenUpdateRequest: {
+        id: 7,
+        body: { expectedVersion: 2, title: 'Existing', content: null, tags: [{ name: 'Planning' }] },
+        draft: local,
+        revision: 1,
+      },
+    };
+    const update = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: local,
+      initialNote: committed,
+      recovery,
+      transport: { create: vi.fn(), update, get: vi.fn().mockResolvedValue(committed) },
+      onChange: vi.fn(),
+    });
+
+    await coordinator.resume();
+
+    expect(update).not.toHaveBeenCalled();
+    expect(coordinator.snapshot()).toMatchObject({ phase: 'saved', persisted: { id: 7, version: 3 } });
+    expect(coordinator.snapshot().draft.tags).toEqual([{ id: 42 }]);
+    coordinator.dispose();
+  });
+
+  it('keeps canonical-equivalent Tag selections while resolving a real content conflict', async () => {
+    const local: NoteDraft = {
+      title: 'Local title',
+      content: null,
+      tags: [{ name: 'Planning' }],
+    };
+    const latest = {
+      ...detail(7, 3, { ...local, title: 'Remote title' }),
+      tags: [{ id: 42, name: 'Planning' }],
+    };
+    const update = vi.fn().mockResolvedValue({
+      ...detail(7, 4, local),
+      tags: [{ id: 42, name: 'Planning' }],
+    });
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: local,
+      initialNote: latest,
+      recovery: { persistedVersion: { id: 7, version: 2 } },
+      transport: { create: vi.fn(), update, get: vi.fn().mockResolvedValue(latest) },
+      onChange: vi.fn(),
+    });
+
+    expect(coordinator.snapshot().phase).toBe('conflict');
+    await coordinator.resolveConflict('keep-local');
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(7, {
+      expectedVersion: 3,
+      title: 'Local title',
+      content: null,
+      tags: [{ id: 42 }],
+    });
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'saved',
+      persisted: { id: 7, version: 4 },
+      hasUnsavedChanges: false,
+    });
+    expect(coordinator.snapshot().draft.tags).toEqual([{ id: 42 }]);
     coordinator.dispose();
   });
 
@@ -575,7 +746,7 @@ describe('NoteSaveCoordinator', () => {
     expect(update).toHaveBeenCalledOnce();
 
     firstRequest.resolve(detail(7, 2, first));
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(10);
 
     expect(update).toHaveBeenCalledTimes(2);
     expect(update.mock.calls[1]).toEqual([
@@ -586,6 +757,59 @@ describe('NoteSaveCoordinator', () => {
       draft: latest,
       persisted: { id: 7, version: 3 },
       phase: 'saved',
+    });
+    coordinator.dispose();
+  });
+
+  it('preserves newer Tag edits and sends one canonical versioned PATCH after acknowledgement', async () => {
+    vi.useFakeTimers();
+    const initial: NoteDraft = { title: 'Existing', content: null, tags: [] };
+    const first: NoteDraft = { ...initial, tags: [{ name: 'Planning' }] };
+    const latest: NoteDraft = {
+      title: 'Edited while saving',
+      content: null,
+      tags: [{ name: 'Planning' }, { name: 'Later' }],
+    };
+    const issued = deferred<NoteDetail>();
+    const update = vi
+      .fn()
+      .mockReturnValueOnce(issued.promise)
+      .mockResolvedValueOnce({
+        ...detail(7, 3, latest),
+        tags: [
+          { id: 42, name: 'Planning' },
+          { id: 43, name: 'Later' },
+        ],
+      });
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(7, 1, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+      debounceMs: 10,
+    });
+
+    coordinator.edit(first);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(update).toHaveBeenCalledOnce();
+    coordinator.edit(latest);
+    issued.resolve({ ...detail(7, 2, first), tags: [{ id: 42, name: 'Planning' }] });
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update.mock.calls[1]).toEqual([
+      7,
+      {
+        expectedVersion: 2,
+        title: 'Edited while saving',
+        content: null,
+        tags: [{ id: 42 }, { name: 'Later' }],
+      },
+    ]);
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: { title: 'Edited while saving', tags: [{ id: 42 }, { id: 43 }] },
+      phase: 'saved',
+      persisted: { id: 7, version: 3 },
     });
     coordinator.dispose();
   });
@@ -784,7 +1008,10 @@ describe('NoteSaveCoordinator', () => {
     await saving;
 
     expect(update).not.toHaveBeenCalled();
-    expect(coordinator.snapshot()).toMatchObject({ draft: first, phase: 'saved' });
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: { ...first, tags: [{ id: 3 }] },
+      phase: 'saved',
+    });
     coordinator.dispose();
   });
 
@@ -796,7 +1023,13 @@ describe('NoteSaveCoordinator', () => {
     const create = vi.fn().mockReturnValue(createResponse.promise);
     const update = vi
       .fn()
-      .mockResolvedValue({ ...detail(89, 1, edited), tags: [{ id: 8, name: 'Urgent' }] });
+      .mockResolvedValue({
+        ...detail(89, 1, edited),
+        tags: [
+          { id: 8, name: 'Planning' },
+          { id: 9, name: 'Urgent' },
+        ],
+      });
     const coordinator = new NoteSaveCoordinator({
       initialDraft: original,
       initialNote: null,
@@ -818,7 +1051,10 @@ describe('NoteSaveCoordinator', () => {
       content: null,
       tags: [{ id: 8 }, { name: 'Urgent' }],
     });
-    expect(coordinator.snapshot()).toMatchObject({ draft: edited, phase: 'saved' });
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: { ...edited, tags: [{ id: 8 }, { id: 9 }] },
+      phase: 'saved',
+    });
     coordinator.dispose();
   });
 
@@ -862,7 +1098,10 @@ describe('NoteSaveCoordinator', () => {
     const update = vi
       .fn()
       .mockRejectedValueOnce(Object.assign(new Error('invalid Tag'), { response: { status: 400 } }))
-      .mockResolvedValueOnce({ ...detail(91, 3, corrected), tags: [{ id: 12, name: 'Planning' }] });
+      .mockResolvedValueOnce({
+        ...detail(91, 3, corrected),
+        tags: [{ id: 13, name: 'Planning' }],
+      });
     const coordinator = new NoteSaveCoordinator({
       initialDraft: initial,
       initialNote: { ...detail(91, 2, initial), tags: [] },

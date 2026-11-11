@@ -4,7 +4,9 @@ import {
   type RichTextDocument,
 } from '@/components/rich-text/richTextDocument';
 import type { CreateNoteRequest } from './types';
+import type { NoteDetail } from './types';
 import type { TagSelection } from '@/tag/types';
+import type { Tag } from '@/tag/types';
 
 export interface NoteDraft {
   title: string;
@@ -83,6 +85,50 @@ export function noteDraftsEqual(first: NoteDraft, second: NoteDraft): boolean {
   );
 }
 
+export function reconcileNoteDraftTags(
+  draft: NoteDraft,
+  acknowledgedTags: TagSelection[],
+  canonicalTags: Tag[]
+): NoteDraft {
+  const canonicalIds = new Set(canonicalTags.map((tag) => tag.id));
+  const acknowledgedIds = new Map<string, number>();
+
+  for (const selection of acknowledgedTags) {
+    if ('id' in selection) {
+      if (canonicalIds.has(selection.id)) acknowledgedIds.set(tagSelectionKey(selection), selection.id);
+      continue;
+    }
+
+    const name = selection.name.trim().toLowerCase();
+    const matches = canonicalTags.filter((tag) => tag.name.trim().toLowerCase() === name);
+    if (name && matches.length === 1) {
+      acknowledgedIds.set(tagSelectionKey(selection), matches[0]!.id);
+    }
+  }
+
+  const reconciledTags: TagSelection[] = [];
+  const seen = new Set<string>();
+  for (const selection of draft.tags ?? []) {
+    const acknowledgedId = acknowledgedIds.get(tagSelectionKey(selection));
+    const reconciled = acknowledgedId === undefined ? selection : { id: acknowledgedId };
+    const key = tagSelectionKey(reconciled);
+    if (!seen.has(key)) {
+      seen.add(key);
+      reconciledTags.push(reconciled);
+    }
+  }
+  return { ...draft, tags: reconciledTags };
+}
+
+export function noteDraftMatchesNote(draft: NoteDraft, note: NoteDetail): boolean {
+  const reconciled = reconcileNoteDraftTags(draft, draft.tags ?? [], note.tags);
+  return noteDraftsEqual(reconciled, {
+    title: note.title ?? '',
+    content: note.content,
+    tags: note.tags.map(({ id }) => ({ id })),
+  });
+}
+
 function tagSelectionSet(tags: TagSelection[]): string {
   return [
     ...new Set(
@@ -91,4 +137,10 @@ function tagSelectionSet(tags: TagSelection[]): string {
   ]
     .sort((left, right) => left.localeCompare(right, 'en'))
     .join('\u0000');
+}
+
+function tagSelectionKey(selection: TagSelection): string {
+  return 'id' in selection
+    ? `id:${selection.id}`
+    : `name:${selection.name.trim().toLowerCase()}`;
 }
