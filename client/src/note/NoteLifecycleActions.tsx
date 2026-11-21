@@ -9,6 +9,7 @@ interface NoteLifecycleActionsProps {
   readonly target: NoteLifecycleTarget;
   readonly placement: 'card' | 'list' | 'editor';
   readonly label: string;
+  readonly disabled?: boolean;
   readonly onExecute?: (
     operation: NoteLifecycleOperation,
     target: NoteLifecycleTarget
@@ -19,6 +20,7 @@ export function NoteLifecycleActions({
   target,
   placement,
   label,
+  disabled: disabledByCaller = false,
   onExecute,
 }: NoteLifecycleActionsProps) {
   const lifecycle = useNoteLifecycle();
@@ -29,7 +31,7 @@ export function NoteLifecycleActions({
   const state = lifecycle.stateFor(ownerId, target.id);
   const archived = target.archivedAt !== null;
   const operation = archived ? 'restore' : 'archive';
-  const disabled = state.pending || localPending;
+  const disabled = state.pending || localPending || disabledByCaller;
 
   function captureFocusDestination() {
     const row = triggerRef.current?.closest<HTMLElement>('[data-note-row]');
@@ -91,15 +93,34 @@ export function NoteLifecycleActions({
             )}
             {archived ? 'Restore from Archive' : 'Archive'}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={disabled}
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 aria-hidden="true" className="mr-2 size-4" />
-            Move to Trash
-          </Button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={disabled}
+                aria-label={`More actions for ${label}`}
+              >
+                <MoreHorizontal aria-hidden="true" className="size-4" />
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                align="end"
+                sideOffset={4}
+                className="z-50 min-w-40 rounded-md border border-border bg-background p-1 text-sm text-foreground shadow-md"
+              >
+                <DropdownMenu.Item
+                  onSelect={() => setDeleteOpen(true)}
+                  className="flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-destructive outline-none focus:bg-muted"
+                >
+                  <Trash2 aria-hidden="true" className="size-4" />
+                  Move to Trash
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
       ) : (
         <DropdownMenu.Root>
@@ -147,11 +168,9 @@ export function NoteLifecycleActions({
       {state.error && (
         <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
           <p>{state.error}</p>
-          {!onExecute && (
-            <Button type="button" variant="outline" size="sm" onClick={state.retry}>
-              Retry
-            </Button>
-          )}
+          <Button type="button" variant="outline" size="sm" onClick={state.retry}>
+            Retry
+          </Button>
         </div>
       )}
 
@@ -163,10 +182,12 @@ export function NoteLifecycleActions({
             className="fixed left-1/2 top-1/2 z-[111] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-6 shadow-xl outline-none"
           >
             <Dialog.Title className="text-base font-semibold text-foreground">
-              Move {label} to Trash?
+              {placement === 'editor' ? 'Move note to Trash?' : `Move ${label} to Trash?`}
             </Dialog.Title>
             <Dialog.Description className="mt-2 text-sm text-muted-foreground">
-              You can restore this note from the Undo message after it is moved to Trash.
+              {placement === 'editor'
+                ? 'This note and its contents remain recoverable from Trash.'
+                : 'You can restore this note from the Undo message after it is moved to Trash.'}
             </Dialog.Description>
             {state.error && (
               <p role="alert" className="mt-3 text-sm text-destructive">

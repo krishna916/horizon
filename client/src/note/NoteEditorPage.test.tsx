@@ -28,7 +28,10 @@ const state = vi.hoisted(() => ({
   prepareLifecycleMutation: vi.fn(async () => null as { id: number; version: number } | null),
   completeLifecycleMutation: vi.fn(),
   cancelLifecycleMutation: vi.fn(),
-  lifecycleRun: vi.fn(async () => null as { kind: 'note'; note: NoteDetail } | null),
+  lifecycleRun: vi.fn(
+    async () => null as { kind: 'note'; note: NoteDetail } | { kind: 'deleted' } | null
+  ),
+  onBack: vi.fn(),
   edit: vi.fn(),
   retry: vi.fn(),
   resolveConflict: vi.fn(),
@@ -66,7 +69,11 @@ vi.mock('./useNoteAutosave', () => ({
   }),
 }));
 vi.mock('./NoteLifecycleProvider', () => ({
-  useNoteLifecycle: () => ({ run: state.lifecycleRun }),
+  useNoteLifecycle: () => ({
+    ownerId: 12,
+    run: state.lifecycleRun,
+    stateFor: () => ({ pending: false, error: null, retry: vi.fn() }),
+  }),
 }));
 vi.mock('./NoteDraftRecoveryProvider', () => ({
   useNoteDraftRecovery: () => ({ peekForVerifiedOwner: () => null }),
@@ -75,7 +82,9 @@ vi.mock('@tanstack/react-router', () => ({
   useBlocker: () => ({ status: 'idle', proceed: undefined, reset: undefined }),
 }));
 vi.mock('@/components/rich-text/RichTextEditor', () => ({
-  RichTextEditor: ({ ariaLabel }: { ariaLabel: string }) => <div aria-label={ariaLabel} />,
+  RichTextEditor: ({ ariaLabel, disabled }: { ariaLabel: string; disabled?: boolean }) => (
+    <div aria-label={ariaLabel} aria-disabled={disabled} />
+  ),
 }));
 vi.mock('@/tag/TagSelector', () => ({
   TagSelector: ({
@@ -84,14 +93,16 @@ vi.mock('@/tag/TagSelector', () => ({
     userId,
     knownTags,
     createLabel,
+    disabled,
   }: {
     value: Array<{ id: number } | { name: string }>;
     onChange: (value: Array<{ id: number } | { name: string }>) => void;
     userId: number;
     knownTags: Array<{ id: number; name: string }>;
     createLabel: string;
+    disabled?: boolean;
   }) => (
-    <div aria-label="Note Tags" data-user-id={userId}>
+    <div aria-label="Note Tags" data-user-id={userId} aria-disabled={disabled}>
       {value.map((tag) =>
         'name' in tag
           ? tag.name
@@ -119,7 +130,12 @@ const archivedNote: NoteDetail = {
 
 function renderEditor(routeNoteId: string | null = null) {
   return render(
-    <NoteEditorPage routeNoteId={routeNoteId} ownerId={12} onBack={vi.fn()} onCreated={vi.fn()} />
+    <NoteEditorPage
+      routeNoteId={routeNoteId}
+      ownerId={12}
+      onBack={state.onBack}
+      onCreated={vi.fn()}
+    />
   );
 }
 
@@ -145,6 +161,9 @@ describe('NoteEditorPage', () => {
       resolvingConflict: false,
       lifecycleBusy: false,
     };
+    state.onBack.mockReset();
+    state.prepareLifecycleMutation.mockReset().mockResolvedValue(null);
+    state.lifecycleRun.mockReset().mockResolvedValue(null);
     vi.clearAllMocks();
   });
 
@@ -202,6 +221,35 @@ describe('NoteEditorPage', () => {
     expect(state.edit).toHaveBeenCalledWith({ title: 'A real title', content: null });
   });
 
+  it('shows Archive and More actions only after a Note is persisted', () => {
+    renderEditor();
+    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /More actions/ })).toBeNull();
+
+    state.note = { ...archivedNote, title: 'An active note', archivedAt: null };
+    state.snapshot = { ...state.snapshot, persisted: { id: 6, version: 2 } };
+    renderEditor('6');
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'More actions for An active note' })
+    ).toBeInTheDocument();
+  });
+
+  it('requires Trash confirmation and Cancel dispatches no lifecycle request', async () => {
+    state.note = { ...archivedNote, title: 'Recoverable note' };
+    state.snapshot = { ...state.snapshot, persisted: { id: 6, version: 2 } };
+    renderEditor('6');
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for Recoverable note' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('contents remain recoverable');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(state.prepareLifecycleMutation).not.toHaveBeenCalled();
+    expect(state.lifecycleRun).not.toHaveBeenCalled();
+    expect(state.onBack).not.toHaveBeenCalled();
+  });
+
   it('allows archived notes to be edited and keeps retry visible after a save failure', () => {
     state.note = archivedNote;
     state.snapshot = {
@@ -252,6 +300,99 @@ describe('NoteEditorPage', () => {
     );
     expect(state.prepareLifecycleMutation).toHaveBeenCalledOnce();
     expect(state.completeLifecycleMutation).toHaveBeenCalledWith(restored);
+  });
+
+  it('disables title, Tags, and content while the lifecycle preparation is pending', async () => {
+    state.note = { ...archivedNote, title: 'Pending save', archivedAt: null };
+    state.snapshot = {
+      ...state.snapshot,
+      draft: { title: 'Pending save', content },
+      persisted: { id: 6, version: 2 },
+    };
+    let releasePreparation!: (target: { id: number; version: number } | null) => void;
+    state.prepareLifecycleMutation.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releasePreparation = resolve;
+        })
+    );
+    renderEditor('6');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Note title' })).toBeDisabled());
+    expect(screen.getByLabelText('Note Tags')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByLabelText('Note content')).toHaveAttribute('aria-disabled', 'true');
+
+    releasePreparation({ id: 6, version: 3 });
+    await waitFor(() => expect(state.lifecycleRun).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Note title' })).toBeEnabled());
+  });
+
+  it('keeps the editor mounted after Archive and displays returned lifecycle metadata', async () => {
+    state.note = { ...archivedNote, title: 'Keep editing', archivedAt: null };
+    state.snapshot = {
+      ...state.snapshot,
+      draft: { title: 'Keep editing', content },
+      persisted: { id: 6, version: 2 },
+    };
+    state.prepareLifecycleMutation.mockResolvedValueOnce({ id: 6, version: 3 });
+    const archived = { ...state.note, version: 4, archivedAt: '2026-11-21T12:00:00Z' };
+    state.lifecycleRun.mockResolvedValueOnce({ kind: 'note', note: archived });
+    renderEditor('6');
+    const title = screen.getByRole('textbox', { name: 'Note title' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Restore from Archive' })).toBeInTheDocument()
+    );
+    expect(screen.getByRole('textbox', { name: 'Note title' })).toBe(title);
+    expect(title).toHaveValue('Keep editing');
+    expect(state.completeLifecycleMutation).toHaveBeenCalledWith(archived);
+  });
+
+  it('does not dispatch after a failed save and retains the draft after lifecycle conflict', async () => {
+    state.note = { ...archivedNote, title: 'Preserved draft', archivedAt: null };
+    state.snapshot = {
+      ...state.snapshot,
+      draft: { title: 'Preserved draft', content },
+      phase: 'failed',
+      persisted: { id: 6, version: 2 },
+      hasUnsavedChanges: true,
+    };
+    const failedEditor = renderEditor('6');
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    expect(state.prepareLifecycleMutation).not.toHaveBeenCalled();
+    expect(state.lifecycleRun).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'Note title' })).toHaveValue('Preserved draft');
+    failedEditor.unmount();
+
+    state.snapshot = { ...state.snapshot, phase: 'saved', hasUnsavedChanges: false };
+    state.prepareLifecycleMutation.mockResolvedValueOnce({ id: 6, version: 2 });
+    state.lifecycleRun.mockResolvedValueOnce(null);
+    const rendered = renderEditor('6');
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await waitFor(() => expect(state.cancelLifecycleMutation).toHaveBeenCalled());
+    expect(screen.getByRole('textbox', { name: 'Note title' })).toHaveValue('Preserved draft');
+    expect(state.onBack).not.toHaveBeenCalled();
+    rendered.unmount();
+  });
+
+  it('navigates back only after a confirmed Trash receipt', async () => {
+    state.note = { ...archivedNote, title: 'Trash me' };
+    state.snapshot = { ...state.snapshot, persisted: { id: 6, version: 2 } };
+    renderEditor('6');
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for Trash me' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('contents remain recoverable');
+    expect(state.onBack).not.toHaveBeenCalled();
+    state.prepareLifecycleMutation.mockResolvedValueOnce({ id: 6, version: 2 });
+    state.lifecycleRun.mockResolvedValueOnce({ kind: 'deleted' });
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Trash' }));
+    await waitFor(() => expect(state.onBack).toHaveBeenCalledOnce());
+    expect(state.completeLifecycleMutation).toHaveBeenCalledWith(null);
   });
 
   it('shows Tag validation feedback beside the Tag selector without losing the draft', () => {
