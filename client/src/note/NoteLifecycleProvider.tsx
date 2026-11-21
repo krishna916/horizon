@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { AxiosResponse } from 'axios';
-import { getCurrentOwnerRevision } from '@/user/session/sessionRuntime';
+import { getCurrentOwnerRevision, getCurrentSessionEpoch } from '@/user/session/sessionRuntime';
 import { noteApi } from './api';
 import { noteQueryKeys } from './queries';
 import type {
@@ -90,7 +90,9 @@ export function NoteLifecycleProvider({
   const [states, setStates] = useState<Map<string, LifecycleState>>(() => new Map());
   const noticesRef = useRef(notices);
   const statesRef = useRef(states);
-  const pendingRef = useRef(new Set<string>());
+  const pendingRef = useRef(
+    new Map<string, { token: symbol; ownerRevision: number; sessionEpoch: number }>()
+  );
   const retryIntentsRef = useRef(new Map<string, RetryIntent>());
   const mountedRef = useRef(true);
   const ownerIdRef = useRef(ownerId);
@@ -100,7 +102,6 @@ export function NoteLifecycleProvider({
       ownerIdRef.current = ownerId;
       noticesRef.current = [];
       statesRef.current = new Map();
-      pendingRef.current.clear();
       retryIntentsRef.current.clear();
       setNotices([]);
       setStates(new Map());
@@ -119,12 +120,32 @@ export function NoteLifecycleProvider({
   }, []);
 
   const isCurrent = useCallback(
-    (expectedOwner: number, expectedRevision: number) =>
+    (expectedOwner: number, expectedRevision: number, expectedEpoch: number) =>
       mountedRef.current &&
       ownerIdRef.current === expectedOwner &&
-      getCurrentOwnerRevision() === expectedRevision,
+      getCurrentOwnerRevision() === expectedRevision &&
+      getCurrentSessionEpoch() === expectedEpoch,
     []
   );
+
+  const acquire = useCallback(
+    (key: string, expectedOwner: number) => {
+      const ownerRevision = getCurrentOwnerRevision();
+      const sessionEpoch = getCurrentSessionEpoch();
+      if (!isCurrent(expectedOwner, ownerRevision, sessionEpoch)) return null;
+      const current = pendingRef.current.get(key);
+      if (current?.ownerRevision === ownerRevision && current.sessionEpoch === sessionEpoch)
+        return null;
+      const token = Symbol(key);
+      pendingRef.current.set(key, { token, ownerRevision, sessionEpoch });
+      return { token, ownerRevision, sessionEpoch };
+    },
+    [isCurrent]
+  );
+
+  const release = useCallback((key: string, token: symbol) => {
+    if (pendingRef.current.get(key)?.token === token) pendingRef.current.delete(key);
+  }, []);
 
   const publishNotices = useCallback(
     (update: (current: NoteLifecycleNotice[]) => NoteLifecycleNotice[]) => {
@@ -147,6 +168,7 @@ export function NoteLifecycleProvider({
     async (
       expectedOwner: number,
       expectedRevision: number,
+      expectedEpoch: number,
       note: NoteDetail | null,
       noteId: number
     ) => {
@@ -156,7 +178,7 @@ export function NoteLifecycleProvider({
         queryClient.cancelQueries({ queryKey: listKey }),
         queryClient.cancelQueries({ queryKey: detailKey, exact: true }),
       ]);
-      if (!isCurrent(expectedOwner, expectedRevision)) return;
+      if (!isCurrent(expectedOwner, expectedRevision, expectedEpoch)) return;
 
       for (const query of queryClient.getQueryCache().findAll({ queryKey: listKey })) {
         queryClient.setQueryData<InfiniteData<AxiosResponse<NoteListResponse>>>(
@@ -194,10 +216,10 @@ export function NoteLifecycleProvider({
       operation: NoteLifecycleOperation
     ): Promise<NoteLifecycleResult | null> => {
       const key = operationKey(requestedOwnerId, target.id);
-      if (requestedOwnerId !== ownerId || pendingRef.current.has(key)) return null;
-      const ownerRevision = getCurrentOwnerRevision();
-      if (!isCurrent(requestedOwnerId, ownerRevision)) return null;
-      pendingRef.current.add(key);
+      if (requestedOwnerId !== ownerId) return null;
+      const lock = acquire(key, requestedOwnerId);
+      if (!lock) return null;
+      const { token, ownerRevision, sessionEpoch } = lock;
       retryIntentsRef.current.set(key, { target, operation });
       publishState(key, { pending: true, error: null });
       publishNotices((current) => current.filter((notice) => notice.noteId !== target.id));
@@ -205,12 +227,12 @@ export function NoteLifecycleProvider({
       try {
         if (operation === 'delete') {
           const response = await noteApi.softDelete(target.id, target.version);
-          if (!isCurrent(requestedOwnerId, ownerRevision)) return null;
+          if (!isCurrent(requestedOwnerId, ownerRevision, sessionEpoch)) return null;
           const receipt = response.data;
           if (receipt.id !== target.id || !Number.isInteger(receipt.version))
             throw new Error('Invalid Note deletion receipt');
-          await reconcile(requestedOwnerId, ownerRevision, null, target.id);
-          if (!isCurrent(requestedOwnerId, ownerRevision)) return null;
+          await reconcile(requestedOwnerId, ownerRevision, sessionEpoch, null, target.id);
+          if (!isCurrent(requestedOwnerId, ownerRevision, sessionEpoch)) return null;
           publishNotices((current) => [
             ...current,
             {
@@ -233,9 +255,9 @@ export function NoteLifecycleProvider({
           operation === 'archive'
             ? await noteApi.archive(target.id, target.version)
             : await noteApi.restoreArchived(target.id, target.version);
-        if (!isCurrent(requestedOwnerId, ownerRevision)) return null;
-        await reconcile(requestedOwnerId, ownerRevision, null, target.id);
-        if (!isCurrent(requestedOwnerId, ownerRevision)) return null;
+        if (!isCurrent(requestedOwnerId, ownerRevision, sessionEpoch)) return null;
+        await reconcile(requestedOwnerId, ownerRevision, sessionEpoch, null, target.id);
+        if (!isCurrent(requestedOwnerId, ownerRevision, sessionEpoch)) return null;
         queryClient.setQueryData(noteQueryKeys.detail(requestedOwnerId, target.id), response);
         publishState(operationKey(requestedOwnerId, target.id), {
           pending: false,
@@ -261,7 +283,7 @@ export function NoteLifecycleProvider({
         retryIntentsRef.current.delete(key);
         return { kind: 'note', note: response.data };
       } catch {
-        if (!isCurrent(requestedOwnerId, ownerRevision)) return null;
+        if (!isCurrent(requestedOwnerId, ownerRevision, sessionEpoch)) return null;
         publishState(key, { pending: false, error: responseError(operation) });
         if (operation === 'delete') {
           publishNotices((current) => {
@@ -291,8 +313,8 @@ export function NoteLifecycleProvider({
         }
         return null;
       } finally {
-        pendingRef.current.delete(key);
-        if (isCurrent(requestedOwnerId, ownerRevision))
+        release(key, token);
+        if (isCurrent(requestedOwnerId, ownerRevision, sessionEpoch))
           publishState(key, {
             ...statesRef.current.get(key),
             pending: false,
@@ -300,7 +322,7 @@ export function NoteLifecycleProvider({
           });
       }
     },
-    [isCurrent, ownerId, publishNotices, publishState, queryClient, reconcile]
+    [acquire, isCurrent, ownerId, publishNotices, publishState, queryClient, reconcile, release]
   );
 
   const undo = useCallback(
@@ -308,9 +330,11 @@ export function NoteLifecycleProvider({
       const notice = noticesRef.current.find(
         (item) => item.id === noticeId && item.ownerId === ownerId
       );
-      if (!notice || notice.kind !== 'undo' || notice.version === null) return false;
-      const ownerRevision = getCurrentOwnerRevision();
-      if (!isCurrent(ownerId, ownerRevision)) return false;
+      if (!notice || notice.kind !== 'undo' || notice.version === null || notice.pending) return false;
+      const key = operationKey(ownerId, notice.noteId);
+      const lock = acquire(key, ownerId);
+      if (!lock) return false;
+      const { token, ownerRevision, sessionEpoch } = lock;
       publishNotices((current) =>
         current.map((item) =>
           item.id === noticeId ? { ...item, pending: true, error: null } : item
@@ -321,9 +345,9 @@ export function NoteLifecycleProvider({
           notice.operation === 'delete'
             ? await noteApi.restoreDeleted(notice.noteId, notice.version)
             : await noteApi.restoreArchived(notice.noteId, notice.version);
-        if (!isCurrent(ownerId, ownerRevision)) return false;
-        await reconcile(ownerId, ownerRevision, response.data, notice.noteId);
-        if (!isCurrent(ownerId, ownerRevision)) return false;
+        if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
+        await reconcile(ownerId, ownerRevision, sessionEpoch, response.data, notice.noteId);
+        if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
         publishState(operationKey(ownerId, notice.noteId), {
           pending: false,
           error: null,
@@ -332,16 +356,20 @@ export function NoteLifecycleProvider({
         publishNotices((current) => current.filter((item) => item.id !== noticeId));
         return true;
       } catch {
-        if (!isCurrent(ownerId, ownerRevision)) return false;
+        if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
         publishNotices((current) =>
           current.map((item) =>
             item.id === noticeId ? { ...item, pending: false, error: responseError('undo') } : item
           )
         );
         return false;
+      } finally {
+        release(key, token);
+        if (isCurrent(ownerId, ownerRevision, sessionEpoch))
+          publishState(key, { pending: false });
       }
     },
-    [isCurrent, ownerId, publishNotices, publishState, reconcile]
+    [acquire, isCurrent, ownerId, publishNotices, publishState, reconcile, release]
   );
 
   const retryDelete = useCallback(

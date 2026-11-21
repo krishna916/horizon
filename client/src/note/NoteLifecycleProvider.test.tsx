@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { AxiosResponse } from 'axios';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NoteLifecycleProvider, useNoteLifecycle } from './NoteLifecycleProvider';
 import { noteApi } from './api';
 import { noteQueryKeys } from './queries';
 import type { NoteDetail, NoteListResponse, NoteSummary } from './types';
+import { setCurrentOwnerRevision, setCurrentSessionEpoch } from '@/user/session/sessionRuntime';
 
 const summary: NoteSummary = {
   id: 7,
@@ -77,6 +78,10 @@ function setup() {
             <button onClick={() => void lifecycle.retryDelete(notice.id)}>Retry delete</button>
           </div>
         ))}
+        <button onClick={() => {
+          const notice = lifecycle.notices.find((item) => item.kind === 'undo');
+          if (notice) void lifecycle.undo(notice.id);
+        }}>Undo again</button>
       </>
     );
   }
@@ -90,7 +95,18 @@ function setup() {
   return { queryClient };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  setCurrentOwnerRevision(0);
+  setCurrentSessionEpoch(0);
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
 
 describe('NoteLifecycleProvider', () => {
   it('uses the server returned version for archive Undo and removes the old list row', async () => {
@@ -158,5 +174,66 @@ describe('NoteLifecycleProvider', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(await screen.findByText('delete')).toBeInTheDocument();
     expect(screen.queryByText('archive')).not.toBeInTheDocument();
+  });
+
+  it('serializes Undo and another lifecycle command for the same Note', async () => {
+    const restoreDeferred = deferred<never>();
+    const restore = vi.spyOn(noteApi, 'restoreArchived').mockReturnValue(restoreDeferred.promise);
+    const archive = vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(10, '2026-11-21T12:00:00Z') } as never);
+    const remove = vi.spyOn(noteApi, 'softDelete').mockResolvedValue({ data: { id: 7, version: 11 } } as never);
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(restore).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(remove).not.toHaveBeenCalled();
+    await act(async () => restoreDeferred.resolve({ data: detail(9, null) } as never));
+    await waitFor(() => expect(screen.queryByText('undo')).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(7, 4));
+    expect(archive).toHaveBeenCalledWith(7, 4);
+  });
+
+  it('dispatches only one request for a double Undo', async () => {
+    const restoreDeferred = deferred<never>();
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: detail(8, '2026-11-21T11:00:00Z'),
+    } as never);
+    const restore = vi.spyOn(noteApi, 'restoreArchived').mockReturnValue(restoreDeferred.promise);
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo again' }));
+    await waitFor(() => expect(restore).toHaveBeenCalledTimes(1));
+    await act(async () => restoreDeferred.resolve({ data: detail(9, null) } as never));
+  });
+
+  it('keeps a newer session lock when an old Undo settles late', async () => {
+    const oldUndo = deferred<never>();
+    const currentArchive = deferred<never>();
+    const remove = vi.spyOn(noteApi, 'softDelete');
+    const restore = vi.spyOn(noteApi, 'restoreArchived').mockReturnValue(oldUndo.promise);
+    const archive = vi.spyOn(noteApi, 'archive')
+      .mockResolvedValueOnce({ data: detail(8, '2026-11-21T11:00:00Z') } as never)
+      .mockReturnValueOnce(currentArchive.promise);
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(restore).toHaveBeenCalledTimes(1));
+    setCurrentOwnerRevision(12);
+    setCurrentSessionEpoch(12);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await waitFor(() => expect(archive).toHaveBeenCalledTimes(2));
+    await act(async () => oldUndo.resolve({ data: detail(9, null) } as never));
+    await Promise.resolve();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(remove).not.toHaveBeenCalled();
+    currentArchive.resolve({ data: detail(10, '2026-11-21T12:00:00Z') } as never);
+    await waitFor(() => expect(screen.getByText('undo')).toBeInTheDocument());
+    setCurrentOwnerRevision(0);
+    setCurrentSessionEpoch(0);
   });
 });
