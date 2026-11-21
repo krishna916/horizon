@@ -38,6 +38,13 @@ interface LifecycleState {
   pending: boolean;
   error: string | null;
   note?: NoteDetail;
+  outcomeUnknown?: boolean;
+}
+
+export interface NoteEditorUndoGateway {
+  prepare: () => Promise<{ id: number; version: number } | null>;
+  complete: (note: NoteDetail | null) => void;
+  cancel: () => void;
 }
 
 interface RetryIntent {
@@ -53,6 +60,7 @@ interface NoteLifecycleContextValue {
     operation: NoteLifecycleOperation
   ) => Promise<NoteLifecycleResult | null>;
   undo: (noticeId: string) => Promise<boolean>;
+  registerEditor: (noteId: number, gateway: NoteEditorUndoGateway) => () => void;
   retryDelete: (noticeId: string) => Promise<boolean>;
   dismiss: (noticeId: string) => void;
   notices: readonly NoteLifecycleNotice[];
@@ -63,6 +71,7 @@ interface NoteLifecycleContextValue {
     pending: boolean;
     error: string | null;
     note: NoteDetail | undefined;
+    outcomeUnknown: boolean;
     retry: () => void;
   };
 }
@@ -111,6 +120,9 @@ export function NoteLifecycleProvider({
     new Map<string, { token: symbol; ownerRevision: number; sessionEpoch: number }>()
   );
   const retryIntentsRef = useRef(new Map<string, RetryIntent>());
+  const editorGatewaysRef = useRef(
+    new Map<string, { gateway: NoteEditorUndoGateway; ownerRevision: number; sessionEpoch: number }>()
+  );
   const mountedRef = useRef(true);
   const ownerIdRef = useRef(ownerId);
 
@@ -162,6 +174,19 @@ export function NoteLifecycleProvider({
 
   const release = useCallback((key: string, token: symbol) => {
     if (pendingRef.current.get(key)?.token === token) pendingRef.current.delete(key);
+  }, []);
+
+  const registerEditor = useCallback((noteId: number, gateway: NoteEditorUndoGateway) => {
+    const key = operationKey(ownerIdRef.current, noteId);
+    const record = {
+      gateway,
+      ownerRevision: getCurrentOwnerRevision(),
+      sessionEpoch: getCurrentSessionEpoch(),
+    };
+    editorGatewaysRef.current.set(key, record);
+    return () => {
+      if (editorGatewaysRef.current.get(key) === record) editorGatewaysRef.current.delete(key);
+    };
   }, []);
 
   const publishNotices = useCallback(
@@ -303,7 +328,11 @@ export function NoteLifecycleProvider({
         if (!isCurrent(requestedOwnerId, ownerRevision, sessionEpoch)) return null;
         const errorKind = classifyLifecycleError(error);
         const message = errorKind === 'conflict' ? conflictError : responseError(operation);
-        publishState(key, { pending: false, error: message });
+        publishState(key, {
+          pending: false,
+          error: message,
+          outcomeUnknown: operation === 'delete' && errorKind === 'unknown',
+        });
         if (operation !== 'delete' || errorKind !== 'unknown') retryIntentsRef.current.delete(key);
         if (operation === 'delete' && errorKind === 'unknown') {
           publishNotices((current) => {
@@ -355,12 +384,30 @@ export function NoteLifecycleProvider({
       const lock = acquire(key, ownerId);
       if (!lock) return false;
       const { token, ownerRevision, sessionEpoch } = lock;
+      const registered = editorGatewaysRef.current.get(key);
+      const editor = registered && registered.ownerRevision === ownerRevision &&
+          registered.sessionEpoch === sessionEpoch
+        ? registered.gateway
+        : null;
+      let editorPrepared = false;
       publishNotices((current) =>
         current.map((item) =>
           item.id === noticeId ? { ...item, pending: true, error: null } : item
         )
       );
       try {
+        if (editor) {
+          const prepared = await editor.prepare();
+          if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
+          if (!prepared || prepared.id !== notice.noteId || prepared.version !== notice.version) {
+            editor.cancel();
+            publishNotices((current) => current.map((item) => item.id === noticeId
+              ? { ...item, pending: false, error: conflictError }
+              : item));
+            return false;
+          }
+          editorPrepared = true;
+        }
         const response =
           notice.operation === 'delete'
             ? await noteApi.restoreDeleted(notice.noteId, notice.version)
@@ -373,6 +420,7 @@ export function NoteLifecycleProvider({
           error: null,
           note: response.data,
         });
+        if (editorPrepared) editor?.complete(response.data);
         publishNotices((current) => current.filter((item) => item.id !== noticeId));
         return true;
       } catch (error) {
@@ -388,9 +436,12 @@ export function NoteLifecycleProvider({
               await reconcile(ownerId, ownerRevision, sessionEpoch, response.data, notice.noteId);
               if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
               publishState(key, { pending: false, error: null, note: response.data });
+              if (editorPrepared) editor?.complete(response.data);
               publishNotices((current) => current.filter((item) => item.id !== noticeId));
               return true;
             }
+            if (editorPrepared) editor?.complete(response.data);
+            editorPrepared = false;
           } catch {
             if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
           }
@@ -402,11 +453,18 @@ export function NoteLifecycleProvider({
           )
         );
         publishState(key, { pending: false, error: message });
+        if (editorPrepared && errorKind === 'other') editor?.cancel();
         return false;
       } finally {
+        if (editorPrepared && !isCurrent(ownerId, ownerRevision, sessionEpoch)) {
+          // Keep the coordinator held across session transitions; its own session guard pauses writes.
+        }
         release(key, token);
         if (isCurrent(ownerId, ownerRevision, sessionEpoch))
-          publishState(key, { pending: false });
+          publishState(key, {
+            pending: false,
+            error: statesRef.current.get(key)?.error ?? null,
+          });
       }
     },
     [acquire, isCurrent, ownerId, publishNotices, publishState, reconcile, release]
@@ -421,6 +479,11 @@ export function NoteLifecycleProvider({
       const intent = retryIntentsRef.current.get(operationKey(ownerId, notice.noteId));
       if (!intent || intent.operation !== 'delete') return false;
       const result = await run(ownerId, intent.target, 'delete');
+      if (result?.kind === 'deleted') {
+        const registered = editorGatewaysRef.current.get(operationKey(ownerId, notice.noteId));
+        if (registered?.ownerRevision === getCurrentOwnerRevision() &&
+            registered.sessionEpoch === getCurrentSessionEpoch()) registered.gateway.complete(null);
+      }
       return result?.kind === 'deleted';
     },
     [ownerId, run]
@@ -439,23 +502,24 @@ export function NoteLifecycleProvider({
   const stateFor = useCallback(
     (requestedOwnerId: number, noteId: number) => {
       const key = operationKey(requestedOwnerId, noteId);
-      const state = states.get(key);
+      const state = statesRef.current.get(key);
       return {
         pending: state?.pending ?? false,
         error: state?.error ?? null,
         note: state?.note,
+        outcomeUnknown: state?.outcomeUnknown ?? false,
         retry: () => {
           const intent = retryIntentsRef.current.get(key);
           if (intent) void run(requestedOwnerId, intent.target, intent.operation);
         },
       };
     },
-    [run, states]
+    [run]
   );
 
   return (
     <LifecycleContext.Provider
-      value={{ ownerId, run, undo, retryDelete, dismiss, notices, stateFor }}
+      value={{ ownerId, run, undo, registerEditor, retryDelete, dismiss, notices, stateFor }}
     >
       {children}
     </LifecycleContext.Provider>

@@ -207,7 +207,6 @@ function ActiveNoteEditor({
     flush,
     prepareLifecycleMutation,
     completeLifecycleMutation,
-    adoptLifecycleVersion,
     cancelLifecycleMutation,
     retry,
     resolveConflict,
@@ -229,6 +228,7 @@ function ActiveNoteEditor({
     },
   });
   const lifecycle = useNoteLifecycle();
+  const registerEditor = lifecycle.registerEditor;
   const lifecycleState = lifecycle.stateFor(
     ownerId,
     localLifecycleNote?.id ?? initialNote?.id ?? -1
@@ -244,8 +244,25 @@ function ActiveNoteEditor({
   const lifecycleBusy = snapshot.lifecycleBusy || actionPending;
 
   useEffect(() => {
-    if (lifecycleState.note) adoptLifecycleVersion(lifecycleState.note);
-  }, [adoptLifecycleVersion, lifecycleState.note]);
+    const noteId = lifecycleNote?.id;
+    if (noteId === undefined) return;
+    return registerEditor(noteId, {
+      prepare: prepareLifecycleMutation,
+      complete: (note) => {
+        completeLifecycleMutation(note);
+        if (note) setLocalLifecycleNote(note);
+        else onBack();
+      },
+      cancel: cancelLifecycleMutation,
+    });
+  }, [
+    cancelLifecycleMutation,
+    completeLifecycleMutation,
+    lifecycleNote?.id,
+    onBack,
+    prepareLifecycleMutation,
+    registerEditor,
+  ]);
 
   async function runLifecycleAction(operation: NoteLifecycleOperation) {
     if (!snapshot.persisted || lifecycleBusy) return;
@@ -271,7 +288,8 @@ function ActiveNoteEditor({
         completeLifecycleMutation(null);
         onBack();
       } else {
-        cancelLifecycleMutation();
+        const outcomeUnknown = lifecycle.stateFor(ownerId, preparedTarget.id).outcomeUnknown;
+        if (!outcomeUnknown) cancelLifecycleMutation();
       }
     } catch {
       if (prepared) cancelLifecycleMutation();

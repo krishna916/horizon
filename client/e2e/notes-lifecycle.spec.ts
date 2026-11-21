@@ -115,7 +115,10 @@ async function installApi(page: Page) {
       });
       return;
     }
-    const expectedVersion = route.request().headers()['x-expected-version'] ?? null;
+    const expectedVersion = route.request().headers()['x-expected-version'] ??
+      (method === 'PATCH'
+        ? String((route.request().postDataJSON() as { expectedVersion?: number }).expectedVersion)
+        : null);
     mutations.push({ method, path, expectedVersion });
     if (path.endsWith('/archive') && conflictNextArchive) {
       conflictNextArchive = false;
@@ -213,14 +216,40 @@ test('updates the editor lifecycle controls when archive Undo restores the Note'
   await expect(page.getByRole('button', { name: 'Archive', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Restore from Archive' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'More actions for Lifecycle active note' }).click();
+  await page.getByRole('textbox', { name: 'Note title' }).fill('Lifecycle note edited after Undo');
+  await expect.poll(() => api.mutations.at(-1)).toEqual({
+    method: 'PATCH',
+    path: '/api/v1/notes/1',
+    expectedVersion: '6',
+  });
+
+  await page.getByRole('button', { name: 'More actions for Lifecycle note edited after Undo' }).click();
   await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
   await expect(page).toHaveURL(/\/notes$/);
   expect(api.mutations).toEqual([
     { method: 'POST', path: '/api/v1/notes/1/archive', expectedVersion: '4' },
     { method: 'POST', path: '/api/v1/notes/1/restore', expectedVersion: '5' },
-    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '6' },
+    { method: 'PATCH', path: '/api/v1/notes/1', expectedVersion: '6' },
+    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '7' },
+  ]);
+});
+
+test('keeps editor autosave held after an uncertain Delete until the receipt retry completes', async ({ page }) => {
+  const api = await installApi(page);
+  api.failNextDelete();
+  await page.goto('/notes/1');
+  await page.getByRole('button', { name: 'More actions for Lifecycle active note' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
+
+  await expect(page.getByRole('button', { name: 'Retry delete for Note 1' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Note title' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Retry delete for Note 1' }).click();
+  await expect(page).toHaveURL(/\/notes$/);
+  expect(api.mutations.filter((mutation) => mutation.method === 'DELETE')).toEqual([
+    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
+    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
   ]);
 });
 
@@ -314,7 +343,7 @@ test('waits for delayed editor autosave and uses the acknowledged version to Arc
   expect(api.mutations[0]).toEqual({
     method: 'PATCH',
     path: '/api/v1/notes/1',
-    expectedVersion: null,
+    expectedVersion: '4',
   });
 
   releaseSave();
@@ -339,7 +368,7 @@ test('does not dispatch Archive when the editor save fails', async ({ page }) =>
   await expect(title).toHaveValue('Unsaved title stays in the editor');
   await expect.poll(() => api.mutations.length).toBe(1);
   expect(api.mutations).toEqual([
-    { method: 'PATCH', path: '/api/v1/notes/1', expectedVersion: null },
+    { method: 'PATCH', path: '/api/v1/notes/1', expectedVersion: '4' },
   ]);
   await expect(page).toHaveURL(/\/notes\/1$/);
 });

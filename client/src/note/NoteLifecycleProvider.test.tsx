@@ -4,9 +4,11 @@ import type { AxiosResponse } from 'axios';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NoteLifecycleProvider, useNoteLifecycle } from './NoteLifecycleProvider';
+import type { NoteEditorUndoGateway } from './NoteLifecycleProvider';
 import { noteApi } from './api';
 import { noteQueryKeys } from './queries';
 import type { NoteDetail, NoteListResponse, NoteSummary } from './types';
+import { useEffect } from 'react';
 import { setCurrentOwnerRevision, setCurrentSessionEpoch } from '@/user/session/sessionRuntime';
 
 const summary: NoteSummary = {
@@ -28,7 +30,7 @@ const detail = (version: number, archivedAt: string | null): NoteDetail => ({
   content: null,
 });
 
-function setup() {
+function setup(gateway?: NoteEditorUndoGateway) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -51,6 +53,8 @@ function setup() {
   );
   function Harness() {
     const lifecycle = useNoteLifecycle();
+    const registerEditor = lifecycle.registerEditor;
+    useEffect(() => gateway ? registerEditor(7, gateway) : undefined, [registerEditor]);
     return (
       <>
         <button onClick={() => void lifecycle.run(1, summary, 'archive')}>Archive</button>
@@ -290,5 +294,41 @@ describe('NoteLifecycleProvider', () => {
     await screen.findAllByText(/changed elsewhere/);
     expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith(7);
+  });
+
+  it('prepares the mounted editor at the notice version before dispatching Undo', async () => {
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    const restored = detail(9, null);
+    const restore = vi.spyOn(noteApi, 'restoreArchived').mockResolvedValue({ data: restored } as never);
+    const gateway: NoteEditorUndoGateway = {
+      prepare: vi.fn().mockResolvedValue({ id: 7, version: 8 }),
+      complete: vi.fn(),
+      cancel: vi.fn(),
+    };
+    setup(gateway);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(restore).toHaveBeenCalledWith(7, 8));
+    await waitFor(() => expect(gateway.complete).toHaveBeenCalledWith(restored));
+    expect(gateway.prepare).toHaveBeenCalledTimes(1);
+    expect(gateway.cancel).not.toHaveBeenCalled();
+  });
+
+  it('does not restore from a stale Undo notice when the editor prepared a newer version', async () => {
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    const restore = vi.spyOn(noteApi, 'restoreArchived');
+    const gateway: NoteEditorUndoGateway = {
+      prepare: vi.fn().mockResolvedValue({ id: 7, version: 9 }),
+      complete: vi.fn(),
+      cancel: vi.fn(),
+    };
+    setup(gateway);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await screen.findAllByText(/changed elsewhere/);
+    expect(restore).not.toHaveBeenCalled();
+    expect(gateway.cancel).toHaveBeenCalledTimes(1);
   });
 });

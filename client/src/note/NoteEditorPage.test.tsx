@@ -72,7 +72,8 @@ vi.mock('./NoteLifecycleProvider', () => ({
   useNoteLifecycle: () => ({
     ownerId: 12,
     run: state.lifecycleRun,
-    stateFor: () => ({ pending: false, error: null, retry: vi.fn() }),
+    registerEditor: () => () => {},
+    stateFor: () => ({ pending: false, error: null, note: undefined, outcomeUnknown: false, retry: vi.fn() }),
   }),
 }));
 vi.mock('./NoteDraftRecoveryProvider', () => ({
