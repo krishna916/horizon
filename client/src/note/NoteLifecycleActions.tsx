@@ -205,7 +205,11 @@ export function NoteLifecycleActions({
               type="button"
               variant="outline"
               size="sm"
-              disabled={state.pending || localPending || (disabledByCaller && !canRetryUnconfirmedEditorDelete)}
+              disabled={
+                state.pending ||
+                localPending ||
+                (disabledByCaller && !canRetryUnconfirmedEditorDelete)
+              }
               onClick={() => {
                 const retryOperation = state.retryOperation;
                 if (
