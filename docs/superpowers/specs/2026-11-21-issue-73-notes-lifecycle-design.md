@@ -1,6 +1,6 @@
 # Horizon #73 — Notes Lifecycle Design
 
-**Status:** Approved product direction on 2026-11-21; implementation plan subject to final owner review. **Issue:** [#73](https://github.com/krishna916/horizon/issues/73). **Design gate:** [#68](https://github.com/krishna916/horizon/issues/68) and [Notes DESIGN-SPEC](../../design/notes-workspace/DESIGN-SPEC.md). **Implementation plan:** [2026-11-21-issue-73-notes-lifecycle.md](../plans/2026-11-21-issue-73-notes-lifecycle.md). **No production code changes authorized by this document.**
+**Status:** Product direction, detailed implementation plan, and HTTP contract approved by owner on 2026-11-21. **Issue:** [#73](https://github.com/krishna916/horizon/issues/73). **Design gate:** [#68](https://github.com/krishna916/horizon/issues/68) and [Notes DESIGN-SPEC](../../design/notes-workspace/DESIGN-SPEC.md). **Implementation plan:** [2026-11-21-issue-73-notes-lifecycle.md](../plans/2026-11-21-issue-73-notes-lifecycle.md). **Luna may implement under the approved plan on the feature branch; merge and issue closure still require owner review.**
 
 ## Purpose and boundaries
 
@@ -60,9 +60,9 @@ Read the local `Agents.md`, `client/AGENTS.md`, `server/AGENTS.md`, and `docs/ai
 - Network timeout/unknown deletion outcome is **not confirmed success**. Retry with the same expected version, or reconcile through a server-confirmed lifecycle response. Never display successful Undo with a guessed post-delete version. Deletion success includes the server's new version for safe restore.
 - 409 from another tab is visible, keeps the editor/draft untouched, and requires human refresh/review; no automatic retry with a newly fetched version.
 
-## Proposed engineering HTTP contract for owner review
+## Owner-approved engineering HTTP contract (2026-11-21)
 
-The decision that commands are version-aware is approved; the precise wire transport and response shape below are **implementation-level proposals fixed for Luna only after owner review of the plan**, rather than previously approved product facts.
+The owner approved the version-aware commands and the exact wire transport and response shape below on 2026-11-21, including `X-Expected-Version` and the `200` DELETE receipt for version-safe Undo.
 
 | Method | Path | Version input | Success |
 | --- | --- | --- | --- |
