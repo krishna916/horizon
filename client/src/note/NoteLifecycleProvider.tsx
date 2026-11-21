@@ -276,7 +276,7 @@ export function NoteLifecycleProvider({
       operation: NoteLifecycleOperation
     ): Promise<NoteLifecycleResult | null> => {
       const key = operationKey(requestedOwnerId, target.id);
-      if (requestedOwnerId !== ownerId) return null;
+      if (requestedOwnerId !== ownerId || statesRef.current.get(key)?.recoveryRequired) return null;
       const lock = acquire(key, requestedOwnerId);
       if (!lock) return null;
       const { token, ownerRevision, sessionEpoch } = lock;

@@ -339,8 +339,11 @@ test('keeps autosave paused when reconciliation GET fails and offers a status-on
   expect(api.mutations.filter((mutation) => mutation.method === 'DELETE')).toHaveLength(2);
 
   await page.getByRole('button', { name: 'Back to Notes' }).click();
+  const cardActions = page.getByRole('button', { name: 'More actions for Lifecycle active note' });
+  await expect(cardActions).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Check note status' })).toBeVisible();
   await page.getByRole('button', { name: 'Check note status' }).click();
+  await expect(cardActions).toBeEnabled();
   const noteLink = page.getByRole('link', { name: 'Lifecycle active note' });
   await expect(noteLink).toBeVisible();
   await noteLink.click();

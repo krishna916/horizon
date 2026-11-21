@@ -38,7 +38,7 @@ export function NoteLifecycleActions({
   const state = lifecycle.stateFor(ownerId, target.id);
   const archived = target.archivedAt !== null;
   const operation = archived ? 'restore' : 'archive';
-  const disabled = state.pending || localPending || disabledByCaller;
+  const disabled = state.pending || state.recoveryRequired || localPending || disabledByCaller;
   const canRetryUnconfirmedEditorDelete =
     placement === 'editor' && state.outcomeUnknown && state.retryOperation === 'delete';
 
@@ -200,17 +200,6 @@ export function NoteLifecycleActions({
       {state.error && (
         <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
           <p>{state.error}</p>
-          {state.recoveryRequired && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={state.pending || localPending}
-              onClick={() => state.checkStatus()}
-            >
-              Check note status
-            </Button>
-          )}
           {state.retryOperation && (
             <Button
               type="button"
@@ -218,6 +207,7 @@ export function NoteLifecycleActions({
               size="sm"
               disabled={
                 state.pending ||
+                state.recoveryRequired ||
                 localPending ||
                 (disabledByCaller && !canRetryUnconfirmedEditorDelete)
               }
@@ -239,6 +229,17 @@ export function NoteLifecycleActions({
             </Button>
           )}
         </div>
+      )}
+      {state.recoveryRequired && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={state.pending || localPending}
+          onClick={() => state.checkStatus()}
+        >
+          Check note status
+        </Button>
       )}
 
       <Dialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>

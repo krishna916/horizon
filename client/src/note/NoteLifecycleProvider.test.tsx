@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NoteLifecycleProvider, useNoteLifecycle } from './NoteLifecycleProvider';
 import type { NoteEditorUndoGateway } from './NoteLifecycleProvider';
 import { noteApi } from './api';
+import { NoteLifecycleActions } from './NoteLifecycleActions';
 import { noteQueryKeys } from './queries';
 import type { NoteDetail, NoteListResponse, NoteSummary } from './types';
 import { useEffect } from 'react';
@@ -30,7 +31,7 @@ const detail = (version: number, archivedAt: string | null): NoteDetail => ({
   content: null,
 });
 
-function setup(gateway?: NoteEditorUndoGateway) {
+function setup(gateway?: NoteEditorUndoGateway, showActions = false) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -59,6 +60,22 @@ function setup(gateway?: NoteEditorUndoGateway) {
       <>
         <button onClick={() => void lifecycle.run(1, summary, 'archive')}>Archive</button>
         <button onClick={() => void lifecycle.run(1, summary, 'delete')}>Delete</button>
+        <button onClick={() => void lifecycle.run(1, summary, 'archive')}>
+          Run archive for Note 7
+        </button>
+        <button
+          onClick={() =>
+            void lifecycle.run(1, { ...summary, archivedAt: '2026-11-20T10:00:00Z' }, 'restore')
+          }
+        >
+          Run restore for Note 7
+        </button>
+        <button onClick={() => void lifecycle.run(1, { ...summary }, 'delete')}>
+          Run delete for Note 7
+        </button>
+        <button onClick={() => void lifecycle.run(1, { ...summary, id: 8 }, 'archive')}>
+          Archive other note
+        </button>
         <button onClick={() => void lifecycle.run(1, { ...summary, id: 8 }, 'delete')}>
           Delete other note
         </button>
@@ -102,6 +119,13 @@ function setup(gateway?: NoteEditorUndoGateway) {
         <span>{lifecycle.stateFor(1, 8).error}</span>
         <button onClick={() => lifecycle.stateFor(1, 7).retry()}>Retry state 7</button>
         <button onClick={() => lifecycle.stateFor(1, 7).checkStatus()}>Check note status</button>
+        {showActions && (
+          <>
+            <NoteLifecycleActions target={summary} placement="card" label="Planning card" />
+            <NoteLifecycleActions target={summary} placement="list" label="Planning list" />
+            <NoteLifecycleActions target={summary} placement="editor" label="Planning editor" />
+          </>
+        )}
       </>
     );
   }
@@ -221,6 +245,115 @@ describe('NoteLifecycleProvider', () => {
       expect(screen.getByRole('button', { name: 'Check note status' })).toBeInTheDocument();
     }
   );
+
+  it('blocks lifecycle mutations while uncertain-delete recovery is required and re-enables after a safe status check', async () => {
+    const current = detail(4, null);
+    const remove = vi
+      .spyOn(noteApi, 'softDelete')
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockRejectedValueOnce(httpError(409));
+    const archive = vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: detail(5, '2026-11-21T11:00:00Z'),
+    } as never);
+    const restore = vi.spyOn(noteApi, 'restoreArchived').mockResolvedValue({
+      data: detail(5, null),
+    } as never);
+    const get = vi
+      .spyOn(noteApi, 'get')
+      .mockRejectedValueOnce(httpError(503))
+      .mockRejectedValueOnce(httpError(500));
+    const recover = vi.fn().mockReturnValue(true);
+    setup({ prepare: vi.fn(), complete: vi.fn(), cancel: vi.fn(), recover }, true);
+
+    fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }));
+    await screen.findByText('delete-unconfirmed');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry delete' }));
+    await screen.findAllByText(/Editing remains paused/);
+
+    const cardMenu = screen.getByRole('button', { name: 'More actions for Planning card' });
+    const listMenu = screen.getByRole('button', { name: 'More actions for Planning list' });
+    const editorArchive = screen.getAllByRole('button', { name: /^Archive$/ })[1]!;
+    expect(cardMenu).toBeDisabled();
+    expect(listMenu).toBeDisabled();
+    expect(editorArchive).toBeDisabled();
+    const editorRetry = screen.queryByRole('button', { name: 'Retry' });
+    if (editorRetry) expect(editorRetry).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Check note status' })).toHaveLength(4);
+    expect(
+      screen
+        .getAllByRole('button', { name: 'Check note status' })
+        .every((button) => !button.hasAttribute('disabled'))
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run archive for Note 7' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run restore for Note 7' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run delete for Note 7' }));
+    expect(archive).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByText(/Editing remains paused/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive other note' }));
+    await waitFor(() => expect(archive).toHaveBeenCalledWith(8, 4));
+    expect(screen.getAllByText(/Editing remains paused/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Check note status' })[0]!);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await screen.findAllByText(/Editing remains paused/);
+    expect(cardMenu).toBeDisabled();
+    expect(listMenu).toBeDisabled();
+    expect(remove).toHaveBeenCalledTimes(2);
+
+    const pendingGet = deferred<{ data: NoteDetail }>();
+    get.mockReturnValueOnce(pendingGet.promise as never);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Check note status' })[0]!);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    expect(
+      screen
+        .getAllByRole('button', { name: 'Check note status' })
+        .slice(1)
+        .every((button) => button.hasAttribute('disabled'))
+    ).toBe(true);
+    await act(async () => pendingGet.resolve({ data: current }));
+
+    await waitFor(() => expect(recover).toHaveBeenCalledWith(current));
+    expect(screen.queryByText(/Editing remains paused/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More actions for Planning card' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'More actions for Planning list' })).toBeEnabled();
+    expect(screen.getAllByRole('button', { name: /^Archive$/ })[1]!).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run archive for Note 7' }));
+    await waitFor(() => expect(archive).toHaveBeenCalledWith(7, 4));
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not apply a recovery status result after the session changes', async () => {
+    const current = detail(4, null);
+    const remove = vi
+      .spyOn(noteApi, 'softDelete')
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockRejectedValueOnce(httpError(409));
+    const get = vi.spyOn(noteApi, 'get').mockRejectedValueOnce(httpError(503));
+    const recover = vi.fn();
+    setup({ prepare: vi.fn(), complete: vi.fn(), cancel: vi.fn(), recover });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }));
+    await screen.findByText('delete-unconfirmed');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry delete' }));
+    await screen.findByText(/Editing remains paused/);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+
+    const staleStatus = deferred<{ data: NoteDetail }>();
+    get.mockReturnValueOnce(staleStatus.promise as never);
+    fireEvent.click(screen.getByRole('button', { name: 'Check note status' }));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    setCurrentOwnerRevision(12);
+    setCurrentSessionEpoch(12);
+    await act(async () => staleStatus.resolve({ data: current }));
+
+    expect(recover).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
 
   it('uses the confirmed delete version to Undo an archived Note and preserves its archived placement', async () => {
     const remove = vi
