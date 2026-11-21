@@ -116,7 +116,7 @@ export function NotesRoute() {
             routeNoteId={routeNoteId}
             ownerId={owner.userId}
             identityKey={editorIdentity}
-            onBack={() => {
+            onBack={async (options) => {
               const routeNoteId = getEditorRouteNoteId(pathname);
               const noteId = routeNoteId === null ? undefined : parseNoteId(routeNoteId);
               const trustedOrigin =
@@ -124,10 +124,18 @@ export function NotesRoute() {
                   ? isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation)
                   : noteId !== null &&
                     isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation, noteId);
-              if (trustedOrigin) {
+              if (options?.focusCollection) {
+                await navigate({ to: '/notes', replace: true });
+                await new Promise<void>((resolve) => {
+                  requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+                });
+                document
+                  .querySelector<HTMLElement>('[data-note-collection-controls] button')
+                  ?.focus();
+              } else if (trustedOrigin) {
                 router.history.back();
               } else {
-                void navigate({ to: '/notes', replace: true });
+                await navigate({ to: '/notes', replace: true });
               }
             }}
             onCreated={(note: NoteDetail) => {

@@ -33,6 +33,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class NoteCommandServiceIntegrationTest {
 
     @Autowired private NoteCommandService commandService;
+    @Autowired private NoteQueryService queryService;
     @Autowired private NoteRepository noteRepository;
     @Autowired private UserCommandService userCommandService;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -287,16 +288,30 @@ class NoteCommandServiceIntegrationTest {
     }
 
     @Test
-    void deleteCanBeRetriedAfterLostResponseButOlderStaleDeleteIsRejected() {
+    void olderNonnegativeDeleteVersionConflictsButExactRetryDoesNotAdvanceVersion() {
         Long owner = createUserId();
         Note note = noteRepository.saveAndFlush(Note.create(owner, "Title", body("Body")));
         setCurrentUser(owner);
 
-        Note deleted = commandService.softDelete(note.getId(), 0L);
-        assertThat(deleted.getVersion()).isEqualTo(1L);
-        assertThat(commandService.softDelete(note.getId(), 0L).getVersion()).isEqualTo(1L);
-        assertThatThrownBy(() -> commandService.softDelete(note.getId(), -1L))
+        Note archived = commandService.archive(note.getId(), 0L);
+        assertThat(archived.getVersion()).isEqualTo(1L);
+        OffsetDateTime archivedAt = archived.getArchivedAt();
+
+        Note deleted = commandService.softDelete(note.getId(), 1L);
+        assertThat(deleted.getVersion()).isEqualTo(2L);
+        assertThat(commandService.softDelete(note.getId(), 1L).getVersion()).isEqualTo(2L);
+        assertThatThrownBy(() -> commandService.softDelete(note.getId(), 0L))
                 .isInstanceOf(NoteVersionConflictException.class);
+
+        Note persisted = noteRepository.findByIdAndUserId(note.getId(), owner).orElseThrow();
+        assertThat(persisted.getVersion()).isEqualTo(2L);
+        assertThat(persisted.getArchivedAt().truncatedTo(ChronoUnit.MICROS))
+                .isEqualTo(archivedAt.truncatedTo(ChronoUnit.MICROS));
+        assertThat(persisted.getDeletedAt()).isNotNull();
+        assertThat(queryService.list(NoteCollection.ACTIVE, NoteSort.UPDATED_DESC, 0, 20).items())
+                .noneMatch(item -> item.getId().equals(note.getId()));
+        assertThat(queryService.list(NoteCollection.ARCHIVED, NoteSort.UPDATED_DESC, 0, 20).items())
+                .noneMatch(item -> item.getId().equals(note.getId()));
     }
 
     @Test

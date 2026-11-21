@@ -70,7 +70,7 @@ export function NoteEditorPage({
   readonly routeNoteId: string | null;
   readonly ownerId?: number;
   readonly identityKey?: string;
-  readonly onBack: () => void;
+  readonly onBack: (options?: { focusCollection?: boolean }) => void | Promise<void>;
   readonly onCreated: (note: NoteDetail) => void;
 }) {
   const { phase, verifiedUserId, verifySession } = useAuthSession();
@@ -106,7 +106,11 @@ export function NoteEditorPage({
   if (phase !== 'verified' || userId === undefined) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8" aria-label="Note editor">
-        <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
+        <button
+          type="button"
+          onClick={() => void onBack()}
+          className="text-sm font-medium hover:underline"
+        >
           Back to Notes
         </button>
         {phase === 'retryable-error' ? (
@@ -128,7 +132,11 @@ export function NoteEditorPage({
   if (isUnavailableNote(routeNoteId, id, query)) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8">
-        <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
+        <button
+          type="button"
+          onClick={() => void onBack()}
+          className="text-sm font-medium hover:underline"
+        >
           Back to Notes
         </button>
         <h1 className="mt-8 text-2xl font-medium">Note unavailable</h1>
@@ -140,7 +148,11 @@ export function NoteEditorPage({
   if (isLoadingExistingNote(routeNoteId, query)) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8">
-        <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
+        <button
+          type="button"
+          onClick={() => void onBack()}
+          className="text-sm font-medium hover:underline"
+        >
           Back to Notes
         </button>
         <output
@@ -156,7 +168,11 @@ export function NoteEditorPage({
   if (hasExistingNoteLoadError(routeNoteId, query)) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8">
-        <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
+        <button
+          type="button"
+          onClick={() => void onBack()}
+          className="text-sm font-medium hover:underline"
+        >
           Back to Notes
         </button>
         <div role="alert" className="mt-8 flex items-center gap-3 text-sm">
@@ -195,7 +211,7 @@ function ActiveNoteEditor({
   readonly routeNoteId: string | null;
   readonly initialNote: NoteDetail | null;
   readonly recovery: NoteDraftRecoveryEntry | null;
-  readonly onBack: () => void;
+  readonly onBack: (options?: { focusCollection?: boolean }) => void | Promise<void>;
   readonly onCreated: (note: NoteDetail) => void;
 }) {
   const [conflictChoice, setConflictChoice] = useState<'keep-local' | 'load-server' | null>(null);
@@ -280,7 +296,8 @@ function ActiveNoteEditor({
       if (!preparedTarget) return;
       prepared = true;
       if (
-        isRetry && retryTarget &&
+        isRetry &&
+        retryTarget &&
         (preparedTarget.id !== retryTarget.id || preparedTarget.version !== retryTarget.version)
       ) {
         prepared = false;
@@ -304,7 +321,7 @@ function ActiveNoteEditor({
         completeLifecycleMutation(result.note);
       } else if (result?.kind === 'deleted') {
         completeLifecycleMutation(null);
-        onBack();
+        await onBack({ focusCollection: true });
       } else {
         const outcomeUnknown = lifecycle.stateFor(ownerId, preparedTarget.id).outcomeUnknown;
         if (!outcomeUnknown) cancelLifecycleMutation();
@@ -345,7 +362,7 @@ function ActiveNoteEditor({
         <div className="sticky top-0 z-10 -mx-5 mb-8 flex min-h-12 items-center justify-between gap-4 border-b border-border/70 bg-background/95 px-5 py-2 backdrop-blur sm:-mx-8 sm:px-8">
           <button
             type="button"
-            onClick={onBack}
+            onClick={() => void onBack()}
             className="inline-flex min-h-9 items-center rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Back to Notes
@@ -381,7 +398,11 @@ function ActiveNoteEditor({
                 onRetry={(operation, target) => runLifecycleAction(operation, target, true)}
               />
             )}
-            {lifecycleRetryError && <p role="alert" className="text-sm text-destructive">{lifecycleRetryError}</p>}
+            {lifecycleRetryError && (
+              <p role="alert" className="text-sm text-destructive">
+                {lifecycleRetryError}
+              </p>
+            )}
           </div>
         </div>
 

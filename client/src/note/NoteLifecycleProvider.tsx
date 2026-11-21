@@ -96,8 +96,12 @@ type LifecycleErrorKind = 'conflict' | 'unavailable' | 'unknown' | 'other';
 function classifyLifecycleError(error: unknown): LifecycleErrorKind {
   if (error instanceof Error && error.message === 'Invalid Note deletion receipt') return 'other';
   const status =
-    typeof error === 'object' && error !== null && 'response' in error &&
-    typeof error.response === 'object' && error.response !== null && 'status' in error.response
+    typeof error === 'object' &&
+    error !== null &&
+    'response' in error &&
+    typeof error.response === 'object' &&
+    error.response !== null &&
+    'status' in error.response
       ? Number(error.response.status)
       : null;
   if (status === 409) return 'conflict';
@@ -125,7 +129,10 @@ export function NoteLifecycleProvider({
   );
   const retryIntentsRef = useRef(new Map<string, RetryIntent>());
   const editorGatewaysRef = useRef(
-    new Map<string, { gateway: NoteEditorUndoGateway; ownerRevision: number; sessionEpoch: number }>()
+    new Map<
+      string,
+      { gateway: NoteEditorUndoGateway; ownerRevision: number; sessionEpoch: number }
+    >()
   );
   const mountedRef = useRef(true);
   const ownerIdRef = useRef(ownerId);
@@ -398,16 +405,19 @@ export function NoteLifecycleProvider({
       const notice = noticesRef.current.find(
         (item) => item.id === noticeId && item.ownerId === ownerId
       );
-      if (!notice || notice.kind !== 'undo' || notice.version === null || notice.pending) return false;
+      if (!notice || notice.kind !== 'undo' || notice.version === null || notice.pending)
+        return false;
       const key = operationKey(ownerId, notice.noteId);
       const lock = acquire(key, ownerId);
       if (!lock) return false;
       const { token, ownerRevision, sessionEpoch } = lock;
       const registered = editorGatewaysRef.current.get(key);
-      const editor = registered && registered.ownerRevision === ownerRevision &&
-          registered.sessionEpoch === sessionEpoch
-        ? registered.gateway
-        : null;
+      const editor =
+        registered &&
+        registered.ownerRevision === ownerRevision &&
+        registered.sessionEpoch === sessionEpoch
+          ? registered.gateway
+          : null;
       let editorPrepared = false;
       publishNotices((current) =>
         current.map((item) =>
@@ -420,9 +430,11 @@ export function NoteLifecycleProvider({
           if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
           if (!prepared || prepared.id !== notice.noteId || prepared.version !== notice.version) {
             editor.cancel();
-            publishNotices((current) => current.map((item) => item.id === noticeId
-              ? { ...item, pending: false, error: conflictError }
-              : item));
+            publishNotices((current) =>
+              current.map((item) =>
+                item.id === noticeId ? { ...item, pending: false, error: conflictError } : item
+              )
+            );
             return false;
           }
           editorPrepared = true;
@@ -452,8 +464,7 @@ export function NoteLifecycleProvider({
           try {
             const response = await noteApi.get(notice.noteId);
             if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
-            const verified =
-              notice.operation === 'delete' || response.data.archivedAt === null;
+            const verified = notice.operation === 'delete' || response.data.archivedAt === null;
             if (verified) {
               await reconcile(ownerId, ownerRevision, sessionEpoch, response.data, notice.noteId);
               if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
@@ -503,8 +514,11 @@ export function NoteLifecycleProvider({
       const result = await run(ownerId, intent.target, 'delete');
       if (result?.kind === 'deleted') {
         const registered = editorGatewaysRef.current.get(operationKey(ownerId, notice.noteId));
-        if (registered?.ownerRevision === getCurrentOwnerRevision() &&
-            registered.sessionEpoch === getCurrentSessionEpoch()) registered.gateway.complete(null);
+        if (
+          registered?.ownerRevision === getCurrentOwnerRevision() &&
+          registered.sessionEpoch === getCurrentSessionEpoch()
+        )
+          registered.gateway.complete(null);
       }
       return result?.kind === 'deleted';
     },
@@ -525,7 +539,8 @@ export function NoteLifecycleProvider({
         );
         const intent = retryIntentsRef.current.get(key);
         const editor = editorGatewaysRef.current.get(key);
-        const editorIsCurrent = editor?.ownerRevision === getCurrentOwnerRevision() &&
+        const editorIsCurrent =
+          editor?.ownerRevision === getCurrentOwnerRevision() &&
           editor.sessionEpoch === getCurrentSessionEpoch();
         if (!remainingForNote && intent?.operation === 'delete' && !editorIsCurrent) {
           retryIntentsRef.current.delete(key);
@@ -551,9 +566,11 @@ export function NoteLifecycleProvider({
           const intent = retryIntentsRef.current.get(key);
           if (!intent) return;
           if (intent.operation === 'delete') {
-            const notice = noticesRef.current.find((item) =>
-              item.ownerId === requestedOwnerId && item.noteId === noteId &&
-              item.kind === 'delete-unconfirmed'
+            const notice = noticesRef.current.find(
+              (item) =>
+                item.ownerId === requestedOwnerId &&
+                item.noteId === noteId &&
+                item.kind === 'delete-unconfirmed'
             );
             if (notice) {
               void retryDelete(notice.id);
@@ -561,8 +578,11 @@ export function NoteLifecycleProvider({
               void run(requestedOwnerId, intent.target, 'delete').then((result) => {
                 if (result?.kind !== 'deleted') return;
                 const editor = editorGatewaysRef.current.get(key);
-                if (editor?.ownerRevision === getCurrentOwnerRevision() &&
-                    editor.sessionEpoch === getCurrentSessionEpoch()) editor.gateway.complete(null);
+                if (
+                  editor?.ownerRevision === getCurrentOwnerRevision() &&
+                  editor.sessionEpoch === getCurrentSessionEpoch()
+                )
+                  editor.gateway.complete(null);
               });
             }
             return;

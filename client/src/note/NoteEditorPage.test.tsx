@@ -37,7 +37,8 @@ const state = vi.hoisted(() => ({
     note: undefined as NoteDetail | undefined,
     outcomeUnknown: false,
     retryOperation: undefined as 'archive' | 'restore' | 'delete' | undefined,
-    retryTarget: undefined as { id: number; version: number; archivedAt: string | null } | undefined,
+    retryTarget: undefined as
+      { id: number; version: number; archivedAt: string | null } | undefined,
     retry: vi.fn(),
   },
   onBack: vi.fn(),
@@ -175,8 +176,13 @@ describe('NoteEditorPage', () => {
     state.prepareLifecycleMutation.mockReset().mockResolvedValue(null);
     state.lifecycleRun.mockReset().mockResolvedValue(null);
     state.lifecycleState = {
-      pending: false, error: null, note: undefined, outcomeUnknown: false,
-      retryOperation: undefined, retryTarget: undefined, retry: vi.fn(),
+      pending: false,
+      error: null,
+      note: undefined,
+      outcomeUnknown: false,
+      retryOperation: undefined,
+      retryTarget: undefined,
+      retry: vi.fn(),
     };
     vi.clearAllMocks();
   });
@@ -340,11 +346,13 @@ describe('NoteEditorPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
-    await waitFor(() => expect(state.lifecycleRun).toHaveBeenCalledWith(
-      12,
-      { id: archivedNote.id, version: 4, archivedAt: null },
-      'archive'
-    ));
+    await waitFor(() =>
+      expect(state.lifecycleRun).toHaveBeenCalledWith(
+        12,
+        { id: archivedNote.id, version: 4, archivedAt: null },
+        'archive'
+      )
+    );
     expect(state.completeLifecycleMutation).toHaveBeenCalledWith(archived);
     expect(state.lifecycleState.retry).not.toHaveBeenCalled();
   });

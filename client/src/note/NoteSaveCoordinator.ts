@@ -379,7 +379,11 @@ export class NoteSaveCoordinator {
       return;
     }
     if (this.disposed || this.paused || generation !== this.generation) return;
-    if (this.persisted && this.persisted.id === latest.id && this.persisted.version > latest.version) {
+    if (
+      this.persisted &&
+      this.persisted.id === latest.id &&
+      this.persisted.version > latest.version
+    ) {
       this.publish();
       return;
     }

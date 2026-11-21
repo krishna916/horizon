@@ -54,6 +54,7 @@ async function installApi(page: Page) {
   ]);
   const mutations: Array<{ method: string; path: string; expectedVersion: string | null }> = [];
   let failNextDelete = false;
+  let conflictNextDelete = false;
   let conflictNextArchive = false;
   let conflictNextUpdate = false;
   let failNextUpdate = false;
@@ -116,7 +117,8 @@ async function installApi(page: Page) {
       });
       return;
     }
-    const expectedVersion = route.request().headers()['x-expected-version'] ??
+    const expectedVersion =
+      route.request().headers()['x-expected-version'] ??
       (method === 'PATCH'
         ? String((route.request().postDataJSON() as { expectedVersion?: number }).expectedVersion)
         : null);
@@ -129,6 +131,11 @@ async function installApi(page: Page) {
     if (method === 'DELETE' && failNextDelete) {
       failNextDelete = false;
       await route.abort('timedout');
+      return;
+    }
+    if (method === 'DELETE' && conflictNextDelete) {
+      conflictNextDelete = false;
+      await route.fulfill({ status: 409, contentType: 'application/problem+json', body: '{}' });
       return;
     }
 
@@ -178,6 +185,7 @@ async function installApi(page: Page) {
   return {
     mutations,
     failNextDelete: () => (failNextDelete = true),
+    conflictNextDelete: () => (conflictNextDelete = true),
     conflictNextArchive: () => (conflictNextArchive = true),
     conflictNextUpdate: () => (conflictNextUpdate = true),
     failNextUpdate: () => (failNextUpdate = true),
@@ -226,13 +234,17 @@ test('updates the editor lifecycle controls when archive Undo restores the Note'
   await expect(page.getByRole('button', { name: 'Restore from Archive' })).toHaveCount(0);
 
   await page.getByRole('textbox', { name: 'Note title' }).fill('Lifecycle note edited after Undo');
-  await expect.poll(() => api.mutations.at(-1)).toEqual({
-    method: 'PATCH',
-    path: '/api/v1/notes/1',
-    expectedVersion: '6',
-  });
+  await expect
+    .poll(() => api.mutations.at(-1))
+    .toEqual({
+      method: 'PATCH',
+      path: '/api/v1/notes/1',
+      expectedVersion: '6',
+    });
 
-  await page.getByRole('button', { name: 'More actions for Lifecycle note edited after Undo' }).click();
+  await page
+    .getByRole('button', { name: 'More actions for Lifecycle note edited after Undo' })
+    .click();
   await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
   await expect(page).toHaveURL(/\/notes$/);
@@ -244,7 +256,9 @@ test('updates the editor lifecycle controls when archive Undo restores the Note'
   ]);
 });
 
-test('keeps editor autosave held after an uncertain Delete until the receipt retry completes', async ({ page }) => {
+test('keeps editor autosave held after an uncertain Delete until the receipt retry completes', async ({
+  page,
+}) => {
   const api = await installApi(page);
   api.failNextDelete();
   await page.goto('/notes/1');
@@ -256,6 +270,9 @@ test('keeps editor autosave held after an uncertain Delete until the receipt ret
   await expect(page.getByRole('textbox', { name: 'Note title' })).toBeDisabled();
   await page.getByRole('button', { name: 'Retry delete for Note 1' }).click();
   await expect(page).toHaveURL(/\/notes$/);
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.textContent ?? ''))
+    .toContain('Active');
   expect(api.mutations.filter((mutation) => mutation.method === 'DELETE')).toEqual([
     { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
     { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
@@ -283,6 +300,9 @@ test('requires Trash confirmation, returns to the workspace, then restores by re
   await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
   await expect(page).toHaveURL(/\/notes$/);
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.textContent ?? ''))
+    .toContain('Active');
   await expect(page.getByRole('status')).toContainText('Note 1 moved to Trash');
   expect(api.mutations).toEqual([
     { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
@@ -331,7 +351,7 @@ test('surfaces version conflicts for review without rebasing the lifecycle reque
   await page.getByRole('button', { name: 'More actions for Lifecycle active note' }).click();
   await page.getByRole('menuitem', { name: 'Archive' }).click();
 
-  await expect(page.getByRole('alert')).toContainText("Couldn't archive this note");
+  await expect(page.getByRole('alert')).toContainText('This note changed elsewhere');
   expect(api.mutations).toEqual([
     { method: 'POST', path: '/api/v1/notes/1/archive', expectedVersion: '4' },
   ]);
@@ -339,7 +359,29 @@ test('surfaces version conflicts for review without rebasing the lifecycle reque
   await expect(page.getByRole('region', { name: 'Note updates' })).toHaveCount(0);
 });
 
-test('Load latest conflict recovery updates archived metadata without remounting the editor', async ({ page }) => {
+test('a DELETE 409 stays a visible conflict and never becomes an unconfirmed-delete notice', async ({
+  page,
+}) => {
+  const api = await installApi(page);
+  api.conflictNextDelete();
+  await page.goto('/notes');
+  await page.getByRole('button', { name: 'More actions for Lifecycle active note' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Move Lifecycle active note to Trash?' });
+  await dialog.getByRole('button', { name: 'Move to Trash' }).click();
+
+  await expect(dialog).toContainText('changed elsewhere');
+  await expect(page.getByRole('region', { name: 'Note updates' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Undo Note 1 delete' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Retry delete for Note 1' })).toHaveCount(0);
+  expect(api.mutations).toEqual([
+    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
+  ]);
+});
+
+test('Load latest conflict recovery updates archived metadata without remounting the editor', async ({
+  page,
+}) => {
   const api = await installApi(page);
   api.conflictNextUpdate();
   await page.goto('/notes/1');

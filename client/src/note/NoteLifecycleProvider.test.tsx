@@ -54,12 +54,14 @@ function setup(gateway?: NoteEditorUndoGateway) {
   function Harness() {
     const lifecycle = useNoteLifecycle();
     const registerEditor = lifecycle.registerEditor;
-    useEffect(() => gateway ? registerEditor(7, gateway) : undefined, [registerEditor]);
+    useEffect(() => (gateway ? registerEditor(7, gateway) : undefined), [registerEditor]);
     return (
       <>
         <button onClick={() => void lifecycle.run(1, summary, 'archive')}>Archive</button>
         <button onClick={() => void lifecycle.run(1, summary, 'delete')}>Delete</button>
-        <button onClick={() => void lifecycle.run(1, { ...summary, id: 8 }, 'delete')}>Delete other note</button>
+        <button onClick={() => void lifecycle.run(1, { ...summary, id: 8 }, 'delete')}>
+          Delete other note
+        </button>
         <button
           onClick={() =>
             void lifecycle.run(1, { ...summary, archivedAt: '2026-11-20T10:00:00Z' }, 'delete')
@@ -84,10 +86,14 @@ function setup(gateway?: NoteEditorUndoGateway) {
             <button onClick={() => lifecycle.dismiss(notice.id)}>Dismiss</button>
           </div>
         ))}
-        <button onClick={() => {
-          const notice = lifecycle.notices.find((item) => item.kind === 'undo');
-          if (notice) void lifecycle.undo(notice.id);
-        }}>Undo again</button>
+        <button
+          onClick={() => {
+            const notice = lifecycle.notices.find((item) => item.kind === 'undo');
+            if (notice) void lifecycle.undo(notice.id);
+          }}
+        >
+          Undo again
+        </button>
         <span>{lifecycle.stateFor(1, 7).error}</span>
         <span>{lifecycle.stateFor(1, 8).error}</span>
         <button onClick={() => lifecycle.stateFor(1, 7).retry()}>Retry state 7</button>
@@ -113,11 +119,15 @@ afterEach(() => {
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
   return { promise, resolve, reject };
 }
 
-const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { response: { status } });
+const httpError = (status: number) =>
+  Object.assign(new Error(`HTTP ${status}`), { response: { status } });
 
 describe('NoteLifecycleProvider', () => {
   it('uses the server returned version for archive Undo and removes the old list row', async () => {
@@ -190,8 +200,12 @@ describe('NoteLifecycleProvider', () => {
   it('serializes Undo and another lifecycle command for the same Note', async () => {
     const restoreDeferred = deferred<never>();
     const restore = vi.spyOn(noteApi, 'restoreArchived').mockReturnValue(restoreDeferred.promise);
-    const archive = vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(10, '2026-11-21T12:00:00Z') } as never);
-    const remove = vi.spyOn(noteApi, 'softDelete').mockResolvedValue({ data: { id: 7, version: 11 } } as never);
+    const archive = vi
+      .spyOn(noteApi, 'archive')
+      .mockResolvedValue({ data: detail(10, '2026-11-21T12:00:00Z') } as never);
+    const remove = vi
+      .spyOn(noteApi, 'softDelete')
+      .mockResolvedValue({ data: { id: 7, version: 11 } } as never);
     setup();
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
     await screen.findByText('undo');
@@ -226,7 +240,8 @@ describe('NoteLifecycleProvider', () => {
     const currentArchive = deferred<never>();
     const remove = vi.spyOn(noteApi, 'softDelete');
     const restore = vi.spyOn(noteApi, 'restoreArchived').mockReturnValue(oldUndo.promise);
-    const archive = vi.spyOn(noteApi, 'archive')
+    const archive = vi
+      .spyOn(noteApi, 'archive')
       .mockResolvedValueOnce({ data: detail(8, '2026-11-21T11:00:00Z') } as never)
       .mockReturnValueOnce(currentArchive.promise);
     setup();
@@ -259,7 +274,9 @@ describe('NoteLifecycleProvider', () => {
   });
 
   it('reconciles a lost Undo response only when the scoped GET confirms restoration', async () => {
-    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: detail(8, '2026-11-21T11:00:00Z'),
+    } as never);
     const restore = vi.spyOn(noteApi, 'restoreArchived').mockRejectedValue(httpError(409));
     const get = vi.spyOn(noteApi, 'get').mockResolvedValue({ data: detail(9, null) } as never);
     setup();
@@ -273,9 +290,13 @@ describe('NoteLifecycleProvider', () => {
   });
 
   it('keeps Undo visible when GET does not confirm the inverse and never auto-rebases', async () => {
-    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: detail(8, '2026-11-21T11:00:00Z'),
+    } as never);
     const restore = vi.spyOn(noteApi, 'restoreArchived').mockRejectedValue(httpError(409));
-    const get = vi.spyOn(noteApi, 'get').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    const get = vi
+      .spyOn(noteApi, 'get')
+      .mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
     setup();
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
     await screen.findByText('undo');
@@ -288,7 +309,9 @@ describe('NoteLifecycleProvider', () => {
   });
 
   it('keeps recovery visible when Undo verification GET returns 404', async () => {
-    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: detail(8, '2026-11-21T11:00:00Z'),
+    } as never);
     vi.spyOn(noteApi, 'restoreArchived').mockRejectedValue(httpError(409));
     const get = vi.spyOn(noteApi, 'get').mockRejectedValue(httpError(404));
     setup();
@@ -301,9 +324,13 @@ describe('NoteLifecycleProvider', () => {
   });
 
   it('prepares the mounted editor at the notice version before dispatching Undo', async () => {
-    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: detail(8, '2026-11-21T11:00:00Z'),
+    } as never);
     const restored = detail(9, null);
-    const restore = vi.spyOn(noteApi, 'restoreArchived').mockResolvedValue({ data: restored } as never);
+    const restore = vi
+      .spyOn(noteApi, 'restoreArchived')
+      .mockResolvedValue({ data: restored } as never);
     const gateway: NoteEditorUndoGateway = {
       prepare: vi.fn().mockResolvedValue({ id: 7, version: 8 }),
       complete: vi.fn(),
@@ -320,7 +347,9 @@ describe('NoteLifecycleProvider', () => {
   });
 
   it('does not restore from a stale Undo notice when the editor prepared a newer version', async () => {
-    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: detail(8, '2026-11-21T11:00:00Z'),
+    } as never);
     const restore = vi.spyOn(noteApi, 'restoreArchived');
     const gateway: NoteEditorUndoGateway = {
       prepare: vi.fn().mockResolvedValue({ id: 7, version: 9 }),
@@ -343,7 +372,9 @@ describe('NoteLifecycleProvider', () => {
     await screen.findByText('delete-unconfirmed');
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByText('delete-unconfirmed')).not.toBeInTheDocument();
-    expect(screen.queryByText("Couldn't move this note to Trash. Try again.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Couldn't move this note to Trash. Try again.")
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry state 7' }));
     await Promise.resolve();
     expect(remove).toHaveBeenCalledTimes(1);
@@ -363,7 +394,9 @@ describe('NoteLifecycleProvider', () => {
   });
 
   it('ignores dismissal while an Undo mutation is pending', async () => {
-    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: detail(8, '2026-11-21T11:00:00Z'),
+    } as never);
     const restoreDeferred = deferred<never>();
     vi.spyOn(noteApi, 'restoreArchived').mockReturnValue(restoreDeferred.promise);
     setup();

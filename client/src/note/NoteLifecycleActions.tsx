@@ -52,12 +52,19 @@ export function NoteLifecycleActions({
   }
 
   function focusAfterRemoval(destination: HTMLElement | null) {
-    requestAnimationFrame(() => {
+    let framesRemaining = 30;
+    const focus = () => {
       const target = destination?.isConnected
         ? destination
         : document.querySelector<HTMLElement>('[data-note-collection-controls] button');
-      target?.focus();
-    });
+      if (target) {
+        target.focus();
+      } else if (framesRemaining > 0) {
+        framesRemaining -= 1;
+        requestAnimationFrame(focus);
+      }
+    };
+    requestAnimationFrame(focus);
   }
 
   async function execute(action: NoteLifecycleOperation) {
@@ -80,6 +87,7 @@ export function NoteLifecycleActions({
         await onExecute('delete', target);
         deleteSucceededRef.current = placement === 'editor' && !triggerRef.current?.isConnected;
         setDeleteOpen(false);
+        if (deleteSucceededRef.current) focusAfterRemoval(focusDestinationRef.current);
       } else if (await lifecycle.run(ownerId, target, 'delete')) {
         deleteSucceededRef.current = true;
         setDeleteOpen(false);
@@ -198,7 +206,12 @@ export function NoteLifecycleActions({
               disabled={disabled}
               onClick={() => {
                 const retryOperation = state.retryOperation;
-                if (placement === 'editor' && onRetry && retryOperation && retryOperation !== 'delete') {
+                if (
+                  placement === 'editor' &&
+                  onRetry &&
+                  retryOperation &&
+                  retryOperation !== 'delete'
+                ) {
                   void onRetry(retryOperation, state.retryTarget ?? target);
                 } else {
                   state.retry();

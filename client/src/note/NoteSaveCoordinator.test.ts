@@ -540,7 +540,10 @@ describe('NoteSaveCoordinator', () => {
   it('publishes the acknowledged archived Note after Load latest conflict resolution', async () => {
     const initial = { title: 'Stale local', content: null, tags: [] };
     const original = { ...detail(7, 1, initial), archivedAt: null };
-    const latest = { ...detail(7, 2, { title: 'Remote', content: null, tags: [] }), archivedAt: '2026-11-21T11:00:00Z' };
+    const latest = {
+      ...detail(7, 2, { title: 'Remote', content: null, tags: [] }),
+      archivedAt: '2026-11-21T11:00:00Z',
+    };
     const onServerReconciled = vi.fn();
     const coordinator = new NoteSaveCoordinator({
       initialDraft: { title: 'Old draft', content: null },
@@ -560,8 +563,14 @@ describe('NoteSaveCoordinator', () => {
 
   it('publishes the confirmed server archive fact after Keep my version without replacing the draft', async () => {
     const initial = { title: 'Keep my title', content: null, tags: [] };
-    const original = { ...detail(7, 1, { title: 'Original', content: null, tags: [] }), archivedAt: null };
-    const latest = { ...detail(7, 2, { title: 'Remote', content: null, tags: [] }), archivedAt: '2026-11-21T11:00:00Z' };
+    const original = {
+      ...detail(7, 1, { title: 'Original', content: null, tags: [] }),
+      archivedAt: null,
+    };
+    const latest = {
+      ...detail(7, 2, { title: 'Remote', content: null, tags: [] }),
+      archivedAt: '2026-11-21T11:00:00Z',
+    };
     const local = initial;
     const updated = { ...detail(7, 3, local), archivedAt: latest.archivedAt };
     const onServerReconciled = vi.fn();
@@ -578,7 +587,10 @@ describe('NoteSaveCoordinator', () => {
     await coordinator.resolveConflict('keep-local');
 
     expect(onServerReconciled).toHaveBeenCalledWith(latest);
-    expect(coordinator.snapshot()).toMatchObject({ phase: 'saved', draft: { title: 'Keep my title' } });
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'saved',
+      draft: { title: 'Keep my title' },
+    });
     expect(update).toHaveBeenCalledWith(7, expect.objectContaining({ expectedVersion: 2 }));
     coordinator.dispose();
   });
@@ -1410,7 +1422,8 @@ describe('NoteSaveCoordinator', () => {
         update,
         get: vi
           .fn()
-          .mockResolvedValue({ ...detail(92, 3, server), tags: [{ id: 2, name: 'Remote' }] }),
+          .mockResolvedValueOnce({ ...detail(92, 3, server), tags: [{ id: 2, name: 'Remote' }] })
+          .mockResolvedValueOnce({ ...detail(92, 4, server), tags: [{ id: 2, name: 'Remote' }] }),
       },
       onChange: vi.fn(),
     });

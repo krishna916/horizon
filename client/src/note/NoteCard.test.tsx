@@ -167,15 +167,25 @@ describe('NoteCard', () => {
         setNotes((current) => current.filter((note) => note.id !== 7));
         return { kind: 'deleted' } as never;
       });
-      return <div>{notes.map((note) => <NoteCard key={note.id} note={note} />)}</div>;
+      return (
+        <div>
+          {notes.map((note) => (
+            <NoteCard key={note.id} note={note} />
+          ))}
+        </div>
+      );
     }
     render(<Cards />);
     const next = screen.getByRole('link', { name: /Next note/ });
-    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for Trip notes' }), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for Trip notes' }), {
+      key: 'Enter',
+    });
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
 
-    await waitFor(() => expect(screen.queryByRole('link', { name: /Trip notes/ })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole('link', { name: /Trip notes/ })).not.toBeInTheDocument()
+    );
     await waitFor(() => expect(document.activeElement).toBe(next));
   });
 
