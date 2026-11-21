@@ -263,7 +263,12 @@ class NoteCommandServiceIntegrationTest {
         Note archived = commandService.archive(note.getId(), 0L);
         assertThat(archived.getVersion()).isEqualTo(1L);
         assertThat(archived.getArchivedAt()).isNotNull();
-        OffsetDateTime updatedAt = archived.getUpdatedAt();
+        entityManager.clear();
+        OffsetDateTime updatedAt =
+                noteRepository
+                        .findByIdAndUserIdAndDeletedAtIsNull(note.getId(), owner)
+                        .orElseThrow()
+                        .getUpdatedAt();
 
         Note repeated = commandService.archive(note.getId(), 1L);
         assertThat(repeated.getVersion()).isEqualTo(1L);
