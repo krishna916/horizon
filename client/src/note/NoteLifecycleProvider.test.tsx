@@ -82,6 +82,7 @@ function setup() {
           const notice = lifecycle.notices.find((item) => item.kind === 'undo');
           if (notice) void lifecycle.undo(notice.id);
         }}>Undo again</button>
+        <span>{lifecycle.stateFor(1, 7).error}</span>
       </>
     );
   }
@@ -107,6 +108,8 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
   return { promise, resolve, reject };
 }
+
+const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { response: { status } });
 
 describe('NoteLifecycleProvider', () => {
   it('uses the server returned version for archive Undo and removes the old list row', async () => {
@@ -235,5 +238,57 @@ describe('NoteLifecycleProvider', () => {
     await waitFor(() => expect(screen.getByText('undo')).toBeInTheDocument());
     setCurrentOwnerRevision(0);
     setCurrentSessionEpoch(0);
+  });
+
+  it('treats a DELETE 409 as a conflict, not an unconfirmed deletion', async () => {
+    const remove = vi.spyOn(noteApi, 'softDelete').mockRejectedValue(httpError(409));
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText(/changed elsewhere/)).toBeInTheDocument();
+    expect(screen.queryByText('delete-unconfirmed')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles a lost Undo response only when the scoped GET confirms restoration', async () => {
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    const restore = vi.spyOn(noteApi, 'restoreArchived').mockRejectedValue(httpError(409));
+    const get = vi.spyOn(noteApi, 'get').mockResolvedValue({ data: detail(9, null) } as never);
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith(7));
+    await waitFor(() => expect(screen.queryByText('undo')).not.toBeInTheDocument());
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Undo visible when GET does not confirm the inverse and never auto-rebases', async () => {
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    const restore = vi.spyOn(noteApi, 'restoreArchived').mockRejectedValue(httpError(409));
+    const get = vi.spyOn(noteApi, 'get').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await screen.findAllByText(/changed elsewhere/);
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledWith(7, 8);
+    expect(get).toHaveBeenCalledWith(7);
+  });
+
+  it('keeps recovery visible when Undo verification GET returns 404', async () => {
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'restoreArchived').mockRejectedValue(httpError(409));
+    const get = vi.spyOn(noteApi, 'get').mockRejectedValue(httpError(404));
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await screen.findAllByText(/changed elsewhere/);
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith(7);
   });
 });

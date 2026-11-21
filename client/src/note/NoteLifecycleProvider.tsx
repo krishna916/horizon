@@ -78,6 +78,23 @@ function responseError(operation: NoteLifecycleOperation | 'undo') {
   return `Couldn't ${operation === 'delete' ? 'move this note to Trash' : `${operation} this note`}. Try again.`;
 }
 
+type LifecycleErrorKind = 'conflict' | 'unavailable' | 'unknown' | 'other';
+
+function classifyLifecycleError(error: unknown): LifecycleErrorKind {
+  if (error instanceof Error && error.message === 'Invalid Note deletion receipt') return 'other';
+  const status =
+    typeof error === 'object' && error !== null && 'response' in error &&
+    typeof error.response === 'object' && error.response !== null && 'status' in error.response
+      ? Number(error.response.status)
+      : null;
+  if (status === 409) return 'conflict';
+  if (status === 401 || status === 403 || status === 404) return 'unavailable';
+  if (status !== null) return status >= 500 ? 'unknown' : 'other';
+  return 'unknown';
+}
+
+const conflictError = 'This note changed elsewhere. Review the latest version before trying again.';
+
 export function NoteLifecycleProvider({
   ownerId,
   children,
@@ -282,10 +299,13 @@ export function NoteLifecycleProvider({
         }
         retryIntentsRef.current.delete(key);
         return { kind: 'note', note: response.data };
-      } catch {
+      } catch (error) {
         if (!isCurrent(requestedOwnerId, ownerRevision, sessionEpoch)) return null;
-        publishState(key, { pending: false, error: responseError(operation) });
-        if (operation === 'delete') {
+        const errorKind = classifyLifecycleError(error);
+        const message = errorKind === 'conflict' ? conflictError : responseError(operation);
+        publishState(key, { pending: false, error: message });
+        if (operation !== 'delete' || errorKind !== 'unknown') retryIntentsRef.current.delete(key);
+        if (operation === 'delete' && errorKind === 'unknown') {
           publishNotices((current) => {
             const existing = current.find((notice) => notice.noteId === target.id);
             if (existing?.kind === 'delete-unconfirmed') {
@@ -355,13 +375,33 @@ export function NoteLifecycleProvider({
         });
         publishNotices((current) => current.filter((item) => item.id !== noticeId));
         return true;
-      } catch {
+      } catch (error) {
         if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
+        const errorKind = classifyLifecycleError(error);
+        if (errorKind === 'conflict' || errorKind === 'unknown') {
+          try {
+            const response = await noteApi.get(notice.noteId);
+            if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
+            const verified =
+              notice.operation === 'delete' || response.data.archivedAt === null;
+            if (verified) {
+              await reconcile(ownerId, ownerRevision, sessionEpoch, response.data, notice.noteId);
+              if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
+              publishState(key, { pending: false, error: null, note: response.data });
+              publishNotices((current) => current.filter((item) => item.id !== noticeId));
+              return true;
+            }
+          } catch {
+            if (!isCurrent(ownerId, ownerRevision, sessionEpoch)) return false;
+          }
+        }
+        const message = errorKind === 'conflict' ? conflictError : responseError('undo');
         publishNotices((current) =>
           current.map((item) =>
-            item.id === noticeId ? { ...item, pending: false, error: responseError('undo') } : item
+            item.id === noticeId ? { ...item, pending: false, error: message } : item
           )
         );
+        publishState(key, { pending: false, error: message });
         return false;
       } finally {
         release(key, token);
