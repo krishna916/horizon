@@ -39,6 +39,8 @@ export function NoteLifecycleActions({
   const archived = target.archivedAt !== null;
   const operation = archived ? 'restore' : 'archive';
   const disabled = state.pending || localPending || disabledByCaller;
+  const canRetryUnconfirmedEditorDelete =
+    placement === 'editor' && state.outcomeUnknown && state.retryOperation === 'delete';
 
   function captureFocusDestination() {
     const nearestRow = triggerRef.current?.closest<HTMLElement>('[data-note-row]');
@@ -203,7 +205,7 @@ export function NoteLifecycleActions({
               type="button"
               variant="outline"
               size="sm"
-              disabled={disabled}
+              disabled={state.pending || localPending || (disabledByCaller && !canRetryUnconfirmedEditorDelete)}
               onClick={() => {
                 const retryOperation = state.retryOperation;
                 if (

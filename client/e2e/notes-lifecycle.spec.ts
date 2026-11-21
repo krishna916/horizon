@@ -279,6 +279,33 @@ test('keeps editor autosave held after an uncertain Delete until the receipt ret
   ]);
 });
 
+test('keeps an exact-version editor receipt retry available after dismissing uncertain Delete notice', async ({
+  page,
+}) => {
+  const api = await installApi(page);
+  api.failNextDelete();
+  await page.goto('/notes/1');
+  await page.getByRole('button', { name: 'More actions for Lifecycle active note' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
+
+  const notice = page.getByRole('region', { name: 'Note updates' });
+  await expect(notice).toContainText("Couldn't confirm moving Note 1 to Trash");
+  await page.getByRole('button', { name: 'Dismiss Note 1 notice' }).click();
+  await expect(notice).toHaveCount(0);
+  const title = page.getByRole('textbox', { name: 'Note title' });
+  await expect(title).toBeDisabled();
+  const retry = page.getByRole('button', { name: 'Retry' });
+  await expect(retry).toBeEnabled();
+
+  await retry.click();
+  await expect(page).toHaveURL(/\/notes$/);
+  expect(api.mutations.filter((mutation) => mutation.method === 'DELETE')).toEqual([
+    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
+    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
+  ]);
+});
+
 test('requires Trash confirmation, returns to the workspace, then restores by receipt version', async ({
   page,
 }) => {
