@@ -1,6 +1,6 @@
 # Issue #73 — Notes Lifecycle Implementation Plan
 
-> **For Luna / agentic workers:** REQUIRED SUB-SKILL: `superpowers:executing-plans`, inline/native **without subagents**, task by task. Follow `superpowers:test-driven-development` and `superpowers:verification-before-completion`. Read this plan, the linked design, and the repository agent guides before touching code. **Owner review of this plan is required before Task 1.** Do not merge without approval.
+> **For Luna / agentic workers:** REQUIRED SUB-SKILL: `superpowers:executing-plans`, inline/native **without subagents**, task by task. Follow `superpowers:test-driven-development` and `superpowers:verification-before-completion`. Read this plan, the linked design, and the repository agent guides before touching code. **Owner approved this implementation plan and its HTTP contract on 2026-11-21. Luna may begin Task 1.** Do not merge without separate approval.
 
 **Goal:** Deliver version-aware Note archive, unarchive, soft-delete and deleted-restoration with Card/List/full-page actions, safe autosave coordination, persistent Undo, owner isolation and accurate workspace visibility.
 
@@ -13,7 +13,7 @@
 ## Global constraints
 
 - Owner-approved on 2026-11-21: quick lifecycle actions on Cards/List **and** full-page; all lifecycle mutations version-aware; flush pending saves before editor lifecycle; persistent Undo and Trash confirmation. These are not optional implementation suggestions.
-- Exact HTTP transport is an **engineering proposal for owner review of this plan**, not an additional previously approved product decision: require `X-Expected-Version` as a nonnegative decimal header on all four commands. `POST /api/v1/notes/{id}/archive`, `POST /api/v1/notes/{id}/restore`, `POST /api/v1/notes/{id}/restore-deleted` return `200 NoteDetailResponse`; `DELETE /api/v1/notes/{id}` returns `200 NoteDeletionReceipt {id,version}`. The DELETE body is omitted; receipt supplies the confirmed version for Undo. Keep `PATCH expectedVersion` unchanged and return `409` on stale commands.
+- **Owner-approved HTTP contract (2026-11-21):** require `X-Expected-Version` as a nonnegative decimal header on all four commands. `POST /api/v1/notes/{id}/archive`, `POST /api/v1/notes/{id}/restore`, `POST /api/v1/notes/{id}/restore-deleted` return `200 NoteDetailResponse`; `DELETE /api/v1/notes/{id}` returns `200 NoteDeletionReceipt {id,version}`. The DELETE body is omitted; receipt supplies the confirmed version for Undo. Keep `PATCH expectedVersion` unchanged and return `409` on stale commands.
 - Use current Notes #68 navigation: Cards/List → **full-page**, no Note side panel. Approved separate Active/Archived controls and per-user/device Card/List preference remain. Older PRD-005/PRD-000/Constitution panel-first/required-title wording must **not** be silently applied.
 - Facts not states: existing `archived_at`, `deleted_at`, `inbox` and JPA `version`. No status enum, schema migration, tag mutation, new global store or new dependency. Archive/restore/soft-delete/Trash restoration change only intended fact plus `updated_at` and JPA version on a real state change. Archive, delete and restore preserve Tags, title, content and Inbox fact.
 - Archived Notes remain editable; deleted Notes disappear from ordinary GET, PATCH, list/count and future Search. Foreign/missing/inaccessible resources have indistinguishable `404`; authentication `401`; malformed version `400`; optimistic conflict `409` with RFC 9457 Problem Details.
@@ -213,5 +213,5 @@
 
 1. Use `feature/73-notes-lifecycle` and read both this plan and the linked design. Run repo `align-context`, test and design skills. Use worktree isolation if needed. **Execute natively/inline; no subagents.**
 2. Work Tasks 1→8. For each: failing tests → verify failure → minimal implementation → run tests → self-review → commit. Stop if a new product/ownership/API conflict requires owner judgment.
-3. **Owner approval of this detailed plan is required before Task 1**, especially the proposed `X-Expected-Version` header and `DELETE 200` receipt. These are explicit engineering contracts in the plan, not silently assumed earlier approvals.
+3. **Approved 2026-11-21:** the detailed implementation plan, `X-Expected-Version` header, and `DELETE 200` receipt are confirmed. Luna may proceed with Task 1 now; escalate any *new* material product/API decisions rather than silently altering this agreement.
 4. Report exact changed files, commits, actual test evidence, deferred integrations, and request PR review; do not auto-merge or mark #73 complete.
