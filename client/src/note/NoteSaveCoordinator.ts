@@ -58,6 +58,7 @@ interface NoteSaveCoordinatorOptions {
   onChange: (snapshot: NoteSaveSnapshot) => void;
   onCreated?: (note: NoteDetail) => void;
   onUpdated?: (note: NoteDetail) => void;
+  onServerReconciled?: (note: NoteDetail) => void;
   canDispatch?: () => boolean;
   debounceMs?: number;
   recovery?: {
@@ -148,6 +149,7 @@ export class NoteSaveCoordinator {
   private readonly onChange: (snapshot: NoteSaveSnapshot) => void;
   private readonly onCreated?: (note: NoteDetail) => void;
   private readonly onUpdated?: (note: NoteDetail) => void;
+  private readonly onServerReconciled?: (note: NoteDetail) => void;
   private readonly canDispatch?: () => boolean;
   private readonly debounceMs: number;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -177,6 +179,7 @@ export class NoteSaveCoordinator {
     this.onChange = options.onChange;
     this.onCreated = options.onCreated;
     this.onUpdated = options.onUpdated;
+    this.onServerReconciled = options.onServerReconciled;
     this.canDispatch = options.canDispatch;
     this.debounceMs = options.debounceMs ?? 900;
     this.restorePendingCreate(options);
@@ -376,6 +379,10 @@ export class NoteSaveCoordinator {
       return;
     }
     if (this.disposed || this.paused || generation !== this.generation) return;
+    if (this.persisted && this.persisted.id === latest.id && this.persisted.version > latest.version) {
+      this.publish();
+      return;
+    }
     this.knownTags = [...latest.tags];
 
     if (choice === 'load-server') {
@@ -393,6 +400,7 @@ export class NoteSaveCoordinator {
       this.confirmedRevision = this.localRevision;
       this.replacementRevision += 1;
       this.phase = 'saved';
+      this.onServerReconciled?.(latest);
       this.publish();
       return;
     }
@@ -407,6 +415,7 @@ export class NoteSaveCoordinator {
       this.localRevision += 1;
       this.confirmedRevision = this.localRevision;
       this.phase = 'saved';
+      this.onServerReconciled?.(latest);
       this.publish();
       return;
     }
@@ -426,6 +435,7 @@ export class NoteSaveCoordinator {
     };
     this.phase = 'dirty';
     this.debounceElapsed = true;
+    this.onServerReconciled?.(latest);
     this.publish();
     await this.flush();
   }

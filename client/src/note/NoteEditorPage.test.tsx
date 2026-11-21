@@ -31,6 +31,15 @@ const state = vi.hoisted(() => ({
   lifecycleRun: vi.fn(
     async () => null as { kind: 'note'; note: NoteDetail } | { kind: 'deleted' } | null
   ),
+  lifecycleState: {
+    pending: false,
+    error: null as string | null,
+    note: undefined as NoteDetail | undefined,
+    outcomeUnknown: false,
+    retryOperation: undefined as 'archive' | 'restore' | 'delete' | undefined,
+    retryTarget: undefined as { id: number; version: number; archivedAt: string | null } | undefined,
+    retry: vi.fn(),
+  },
   onBack: vi.fn(),
   edit: vi.fn(),
   retry: vi.fn(),
@@ -73,7 +82,7 @@ vi.mock('./NoteLifecycleProvider', () => ({
     ownerId: 12,
     run: state.lifecycleRun,
     registerEditor: () => () => {},
-    stateFor: () => ({ pending: false, error: null, note: undefined, outcomeUnknown: false, retry: vi.fn() }),
+    stateFor: () => state.lifecycleState,
   }),
 }));
 vi.mock('./NoteDraftRecoveryProvider', () => ({
@@ -165,6 +174,10 @@ describe('NoteEditorPage', () => {
     state.onBack.mockReset();
     state.prepareLifecycleMutation.mockReset().mockResolvedValue(null);
     state.lifecycleRun.mockReset().mockResolvedValue(null);
+    state.lifecycleState = {
+      pending: false, error: null, note: undefined, outcomeUnknown: false,
+      retryOperation: undefined, retryTarget: undefined, retry: vi.fn(),
+    };
     vi.clearAllMocks();
   });
 
@@ -301,6 +314,72 @@ describe('NoteEditorPage', () => {
     );
     expect(state.prepareLifecycleMutation).toHaveBeenCalledOnce();
     expect(state.completeLifecycleMutation).toHaveBeenCalledWith(restored);
+  });
+
+  it('retries the actual failed editor lifecycle operation through the prepared version', async () => {
+    state.note = { ...archivedNote, archivedAt: null };
+    state.snapshot = { ...state.snapshot, persisted: { id: archivedNote.id, version: 4 } };
+    state.lifecycleState = {
+      pending: false,
+      error: 'Request timed out.',
+      note: undefined,
+      outcomeUnknown: false,
+      retryOperation: 'archive',
+      retryTarget: { id: archivedNote.id, version: 4, archivedAt: null },
+      retry: vi.fn(),
+    };
+    state.prepareLifecycleMutation.mockResolvedValueOnce({ id: archivedNote.id, version: 4 });
+    const archived = { ...archivedNote, version: 5, archivedAt: '2026-11-21T11:00:00Z' };
+    state.lifecycleRun.mockResolvedValueOnce({ kind: 'note', note: archived });
+    renderEditor(String(archivedNote.id));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => expect(state.lifecycleRun).toHaveBeenCalledWith(
+      12,
+      { id: archivedNote.id, version: 4, archivedAt: null },
+      'archive'
+    ));
+    expect(state.completeLifecycleMutation).toHaveBeenCalledWith(archived);
+    expect(state.lifecycleState.retry).not.toHaveBeenCalled();
+  });
+
+  it('keeps unknown Delete retry on the provider receipt path, never archive or restore', () => {
+    state.note = { ...archivedNote, archivedAt: null };
+    state.snapshot = { ...state.snapshot, persisted: { id: archivedNote.id, version: 4 } };
+    state.lifecycleState = {
+      pending: false,
+      error: 'Could not confirm delete.',
+      note: undefined,
+      outcomeUnknown: true,
+      retryOperation: 'delete',
+      retryTarget: { id: archivedNote.id, version: 4, archivedAt: null },
+      retry: vi.fn(),
+    };
+    renderEditor(String(archivedNote.id));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(state.lifecycleState.retry).toHaveBeenCalledOnce();
+    expect(state.lifecycleRun).not.toHaveBeenCalled();
+  });
+
+  it('disables lifecycle Retry while the editor is saving', () => {
+    state.note = { ...archivedNote, archivedAt: null };
+    state.snapshot = {
+      ...state.snapshot,
+      phase: 'saving',
+      writeInFlight: true,
+      persisted: { id: archivedNote.id, version: 4 },
+    };
+    state.lifecycleState = {
+      ...state.lifecycleState,
+      error: 'Request timed out.',
+      retryOperation: 'archive',
+      retryTarget: { id: archivedNote.id, version: 4, archivedAt: null },
+    };
+    renderEditor(String(archivedNote.id));
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
   });
 
   it('disables title, Tags, and content while the lifecycle preparation is pending', async () => {

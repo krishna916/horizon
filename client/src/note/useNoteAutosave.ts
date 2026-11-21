@@ -19,6 +19,7 @@ interface UseNoteAutosaveOptions {
   editorRoute: string;
   recovery?: NoteDraftRecoveryEntry | null;
   onCreated: (note: NoteDetail) => void;
+  onServerReconciled?: (note: NoteDetail) => void;
 }
 
 function requestResponse(note: NoteDetail): AxiosResponse<NoteDetail> {
@@ -32,6 +33,7 @@ export function useNoteAutosave({
   editorRoute,
   recovery,
   onCreated,
+  onServerReconciled,
 }: UseNoteAutosaveOptions) {
   const queryClient = useQueryClient();
   const session = useAuthSession();
@@ -42,6 +44,7 @@ export function useNoteAutosave({
   const ownerIdRef = useRef(ownerId);
   const editorRouteRef = useRef(editorRoute);
   const onCreatedRef = useRef(onCreated);
+  const onServerReconciledRef = useRef(onServerReconciled);
   const lifecycleRef = useRef(0);
   const discardedRef = useRef(false);
   const [snapshotState, setSnapshotState] = useState<NoteSaveSnapshot | null>(null);
@@ -55,7 +58,7 @@ export function useNoteAutosave({
         currentSession.epoch !== getCurrentSessionEpoch() ||
         currentSession.ownerRevision !== getCurrentOwnerRevision()
       ) {
-        return;
+        return false;
       }
       queryClient.setQueryData(
         noteQueryKeys.detail(ownerIdRef.current, note.id),
@@ -68,6 +71,7 @@ export function useNoteAutosave({
         queryKey: ['tags', 'suggestions', ownerIdRef.current],
       });
       if (created) onCreatedRef.current(note);
+      return true;
     },
     [queryClient]
   );
@@ -132,6 +136,9 @@ export function useNoteAutosave({
       },
       onCreated: (note) => publishSavedNote(note, true),
       onUpdated: (note) => publishSavedNote(note, false),
+      onServerReconciled: (note) => {
+        if (publishSavedNote(note, false)) onServerReconciledRef.current?.(note);
+      },
     });
   });
 
@@ -166,7 +173,8 @@ export function useNoteAutosave({
     ownerIdRef.current = ownerId;
     editorRouteRef.current = editorRoute;
     onCreatedRef.current = onCreated;
-  }, [editorRoute, onCreated, ownerId, recoveryContext, session]);
+    onServerReconciledRef.current = onServerReconciled;
+  }, [editorRoute, onCreated, onServerReconciled, ownerId, recoveryContext, session]);
 
   useEffect(() => {
     if (session.phase === 'verified' && session.verifiedUserId === ownerId) {

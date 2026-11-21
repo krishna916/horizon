@@ -537,6 +537,52 @@ describe('NoteSaveCoordinator', () => {
     coordinator.dispose();
   });
 
+  it('publishes the acknowledged archived Note after Load latest conflict resolution', async () => {
+    const initial = { title: 'Stale local', content: null, tags: [] };
+    const original = { ...detail(7, 1, initial), archivedAt: null };
+    const latest = { ...detail(7, 2, { title: 'Remote', content: null, tags: [] }), archivedAt: '2026-11-21T11:00:00Z' };
+    const onServerReconciled = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: { title: 'Old draft', content: null },
+      initialNote: original,
+      recovery: { persistedVersion: { id: 7, version: 0 } },
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn().mockResolvedValue(latest) },
+      onChange: vi.fn(),
+      onServerReconciled,
+    });
+
+    await coordinator.resolveConflict('load-server');
+
+    expect(onServerReconciled).toHaveBeenCalledWith(latest);
+    expect(coordinator.snapshot()).toMatchObject({ phase: 'saved', draft: { title: 'Remote' } });
+    coordinator.dispose();
+  });
+
+  it('publishes the confirmed server archive fact after Keep my version without replacing the draft', async () => {
+    const initial = { title: 'Keep my title', content: null, tags: [] };
+    const original = { ...detail(7, 1, { title: 'Original', content: null, tags: [] }), archivedAt: null };
+    const latest = { ...detail(7, 2, { title: 'Remote', content: null, tags: [] }), archivedAt: '2026-11-21T11:00:00Z' };
+    const local = initial;
+    const updated = { ...detail(7, 3, local), archivedAt: latest.archivedAt };
+    const onServerReconciled = vi.fn();
+    const update = vi.fn().mockResolvedValue(updated);
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: { title: 'Old draft', content: null },
+      initialNote: original,
+      recovery: { persistedVersion: { id: 7, version: 0 } },
+      transport: { create: vi.fn(), update, get: vi.fn().mockResolvedValue(latest) },
+      onChange: vi.fn(),
+      onServerReconciled,
+    });
+    coordinator.edit(local);
+    await coordinator.resolveConflict('keep-local');
+
+    expect(onServerReconciled).toHaveBeenCalledWith(latest);
+    expect(coordinator.snapshot()).toMatchObject({ phase: 'saved', draft: { title: 'Keep my title' } });
+    expect(update).toHaveBeenCalledWith(7, expect.objectContaining({ expectedVersion: 2 }));
+    coordinator.dispose();
+  });
+
   it('serializes edits made during creation into one versioned update without replacing the draft', async () => {
     vi.useFakeTimers();
     const createRequest = deferred<NoteDetail>();

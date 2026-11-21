@@ -11,7 +11,7 @@ import { useNoteAutosave } from './useNoteAutosave';
 import { useNoteModal } from './useNoteModal';
 import { useNoteLifecycle } from './NoteLifecycleProvider';
 import { NoteLifecycleActions } from './NoteLifecycleActions';
-import type { NoteLifecycleOperation } from './types';
+import type { NoteLifecycleOperation, NoteLifecycleTarget } from './types';
 import type { NoteDetail } from './types';
 import type { NoteDraft } from './noteDraft';
 import type { NoteDraftRecoveryEntry } from './NoteDraftRecoveryProvider';
@@ -200,6 +200,7 @@ function ActiveNoteEditor({
 }) {
   const [conflictChoice, setConflictChoice] = useState<'keep-local' | 'load-server' | null>(null);
   const [actionPending, setActionPending] = useState(false);
+  const [lifecycleRetryError, setLifecycleRetryError] = useState<string | null>(null);
   const [localLifecycleNote, setLocalLifecycleNote] = useState(initialNote);
   const {
     snapshot,
@@ -226,6 +227,7 @@ function ActiveNoteEditor({
       setLocalLifecycleNote(note);
       onCreated(note);
     },
+    onServerReconciled: setLocalLifecycleNote,
   });
   const lifecycle = useNoteLifecycle();
   const registerEditor = lifecycle.registerEditor;
@@ -264,14 +266,30 @@ function ActiveNoteEditor({
     registerEditor,
   ]);
 
-  async function runLifecycleAction(operation: NoteLifecycleOperation) {
+  async function runLifecycleAction(
+    operation: NoteLifecycleOperation,
+    retryTarget?: NoteLifecycleTarget,
+    isRetry = false
+  ) {
     if (!snapshot.persisted || lifecycleBusy) return;
+    setLifecycleRetryError(null);
     setActionPending(true);
     let prepared = false;
     try {
       const preparedTarget = await prepareLifecycleMutation();
       if (!preparedTarget) return;
       prepared = true;
+      if (
+        isRetry && retryTarget &&
+        (preparedTarget.id !== retryTarget.id || preparedTarget.version !== retryTarget.version)
+      ) {
+        prepared = false;
+        cancelLifecycleMutation();
+        setLifecycleRetryError(
+          'This note changed elsewhere. Review the latest version before trying again.'
+        );
+        return;
+      }
       const result = await lifecycle.run(
         ownerId,
         {
@@ -354,13 +372,16 @@ function ActiveNoteEditor({
                 placement="editor"
                 disabled={
                   lifecycleBusy ||
+                  snapshot.phase === 'saving' ||
                   snapshot.phase === 'failed' ||
                   snapshot.phase === 'conflict' ||
                   snapshot.outcomeUncertain
                 }
                 onExecute={runLifecycleAction}
+                onRetry={(operation, target) => runLifecycleAction(operation, target, true)}
               />
             )}
+            {lifecycleRetryError && <p role="alert" className="text-sm text-destructive">{lifecycleRetryError}</p>}
           </div>
         </div>
 

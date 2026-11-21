@@ -14,6 +14,10 @@ interface NoteLifecycleActionsProps {
     operation: NoteLifecycleOperation,
     target: NoteLifecycleTarget
   ) => Promise<void>;
+  readonly onRetry?: (
+    operation: NoteLifecycleOperation,
+    target: NoteLifecycleTarget
+  ) => Promise<void>;
 }
 
 export function NoteLifecycleActions({
@@ -22,6 +26,7 @@ export function NoteLifecycleActions({
   label,
   disabled: disabledByCaller = false,
   onExecute,
+  onRetry,
 }: NoteLifecycleActionsProps) {
   const lifecycle = useNoteLifecycle();
   const { ownerId } = lifecycle;
@@ -168,9 +173,24 @@ export function NoteLifecycleActions({
       {state.error && (
         <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
           <p>{state.error}</p>
-          <Button type="button" variant="outline" size="sm" onClick={state.retry}>
-            Retry
-          </Button>
+          {state.retryOperation && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={disabled}
+              onClick={() => {
+                const retryOperation = state.retryOperation;
+                if (placement === 'editor' && onRetry && retryOperation && retryOperation !== 'delete') {
+                  void onRetry(retryOperation, state.retryTarget ?? target);
+                } else {
+                  state.retry();
+                }
+              }}
+            >
+              Retry
+            </Button>
+          )}
         </div>
       )}
 

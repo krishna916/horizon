@@ -39,6 +39,8 @@ interface LifecycleState {
   error: string | null;
   note?: NoteDetail;
   outcomeUnknown?: boolean;
+  retryOperation?: NoteLifecycleOperation;
+  retryTarget?: NoteLifecycleTarget;
 }
 
 export interface NoteEditorUndoGateway {
@@ -72,6 +74,8 @@ interface NoteLifecycleContextValue {
     error: string | null;
     note: NoteDetail | undefined;
     outcomeUnknown: boolean;
+    retryOperation: NoteLifecycleOperation | undefined;
+    retryTarget: NoteLifecycleTarget | undefined;
     retry: () => void;
   };
 }
@@ -263,7 +267,10 @@ export function NoteLifecycleProvider({
       if (!lock) return null;
       const { token, ownerRevision, sessionEpoch } = lock;
       retryIntentsRef.current.set(key, { target, operation });
-      publishState(key, { pending: true, error: null });
+      publishState(key, {
+        pending: true,
+        error: null,
+      });
       publishNotices((current) => current.filter((notice) => notice.noteId !== target.id));
 
       try {
@@ -275,6 +282,13 @@ export function NoteLifecycleProvider({
             throw new Error('Invalid Note deletion receipt');
           await reconcile(requestedOwnerId, ownerRevision, sessionEpoch, null, target.id);
           if (!isCurrent(requestedOwnerId, ownerRevision, sessionEpoch)) return null;
+          publishState(key, {
+            pending: false,
+            error: null,
+            outcomeUnknown: false,
+            retryOperation: undefined,
+            retryTarget: undefined,
+          });
           publishNotices((current) => [
             ...current,
             {
@@ -305,6 +319,9 @@ export function NoteLifecycleProvider({
           pending: false,
           error: null,
           note: response.data,
+          outcomeUnknown: false,
+          retryOperation: undefined,
+          retryTarget: undefined,
         });
         if (operation === 'archive') {
           publishNotices((current) => [
@@ -332,8 +349,10 @@ export function NoteLifecycleProvider({
           pending: false,
           error: message,
           outcomeUnknown: operation === 'delete' && errorKind === 'unknown',
+          retryOperation: errorKind === 'unknown' ? operation : undefined,
+          retryTarget: errorKind === 'unknown' ? target : undefined,
         });
-        if (operation !== 'delete' || errorKind !== 'unknown') retryIntentsRef.current.delete(key);
+        if (errorKind !== 'unknown') retryIntentsRef.current.delete(key);
         if (operation === 'delete' && errorKind === 'unknown') {
           publishNotices((current) => {
             const existing = current.find((notice) => notice.noteId === target.id);
@@ -419,6 +438,9 @@ export function NoteLifecycleProvider({
           pending: false,
           error: null,
           note: response.data,
+          outcomeUnknown: false,
+          retryOperation: undefined,
+          retryTarget: undefined,
         });
         if (editorPrepared) editor?.complete(response.data);
         publishNotices((current) => current.filter((item) => item.id !== noticeId));
@@ -508,13 +530,24 @@ export function NoteLifecycleProvider({
         error: state?.error ?? null,
         note: state?.note,
         outcomeUnknown: state?.outcomeUnknown ?? false,
+        retryOperation: state?.retryOperation,
+        retryTarget: state?.retryTarget,
         retry: () => {
           const intent = retryIntentsRef.current.get(key);
-          if (intent) void run(requestedOwnerId, intent.target, intent.operation);
+          if (!intent) return;
+          if (intent.operation === 'delete') {
+            const notice = noticesRef.current.find((item) =>
+              item.ownerId === requestedOwnerId && item.noteId === noteId &&
+              item.kind === 'delete-unconfirmed'
+            );
+            if (notice) void retryDelete(notice.id);
+            return;
+          }
+          void run(requestedOwnerId, intent.target, intent.operation);
         },
       };
     },
-    [run]
+    [retryDelete, run]
   );
 
   return (

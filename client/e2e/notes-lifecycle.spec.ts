@@ -55,6 +55,7 @@ async function installApi(page: Page) {
   const mutations: Array<{ method: string; path: string; expectedVersion: string | null }> = [];
   let failNextDelete = false;
   let conflictNextArchive = false;
+  let conflictNextUpdate = false;
   let failNextUpdate = false;
   let pendingUpdate: { promise: Promise<void>; release: () => void } | null = null;
 
@@ -132,6 +133,13 @@ async function installApi(page: Page) {
     }
 
     if (method === 'PATCH') {
+      if (conflictNextUpdate) {
+        conflictNextUpdate = false;
+        current.archivedAt = '2026-11-21T10:02:00Z';
+        current.version += 1;
+        await route.fulfill({ status: 409, contentType: 'application/problem+json', body: '{}' });
+        return;
+      }
       if (failNextUpdate) {
         failNextUpdate = false;
         await route.fulfill({ status: 500, contentType: 'application/problem+json', body: '{}' });
@@ -171,6 +179,7 @@ async function installApi(page: Page) {
     mutations,
     failNextDelete: () => (failNextDelete = true),
     conflictNextArchive: () => (conflictNextArchive = true),
+    conflictNextUpdate: () => (conflictNextUpdate = true),
     failNextUpdate: () => (failNextUpdate = true),
     holdNextUpdate: () => {
       let release!: () => void;
@@ -328,6 +337,25 @@ test('surfaces version conflicts for review without rebasing the lifecycle reque
   ]);
   await expect(page.getByRole('heading', { name: 'Lifecycle active note' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Note updates' })).toHaveCount(0);
+});
+
+test('Load latest conflict recovery updates archived metadata without remounting the editor', async ({ page }) => {
+  const api = await installApi(page);
+  api.conflictNextUpdate();
+  await page.goto('/notes/1');
+  const title = page.getByRole('textbox', { name: 'Note title' });
+  await title.fill('Local draft to replace');
+  await expect(page.getByRole('region', { name: 'Version conflict' })).toBeVisible();
+  await page.getByRole('button', { name: 'Load latest version' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Confirm' }).click();
+
+  await expect(title).toHaveValue('Lifecycle active note');
+  await expect(page.getByRole('button', { name: 'Restore from Archive' })).toBeVisible();
+  await page.getByRole('button', { name: 'Restore from Archive' }).click();
+  expect(api.mutations).toEqual([
+    { method: 'PATCH', path: '/api/v1/notes/1', expectedVersion: '4' },
+    { method: 'POST', path: '/api/v1/notes/1/restore', expectedVersion: '5' },
+  ]);
 });
 
 test('waits for delayed editor autosave and uses the acknowledged version to Archive', async ({
