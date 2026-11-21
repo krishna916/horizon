@@ -1394,4 +1394,134 @@ describe('NoteSaveCoordinator', () => {
     });
     coordinator.dispose();
   });
+
+  it('flushes a debounced edit before preparing a lifecycle mutation', async () => {
+    const initial = { title: 'Existing', content: null, tags: [{ id: 42 }] };
+    const changed = {
+      ...initial,
+      content: textDocument('New text'),
+      tags: [{ id: 42 }, { name: 'Later' }],
+    };
+    const update = vi.fn().mockResolvedValue({
+      ...detail(9, 4, changed),
+      tags: [
+        { id: 42, name: 'Existing tag' },
+        { id: 43, name: 'Later' },
+      ],
+    });
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 3, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+      debounceMs: 10000,
+    });
+    coordinator.edit(changed);
+
+    const prepared = await coordinator.prepareLifecycleMutation();
+
+    expect(update).toHaveBeenCalledWith(9, {
+      expectedVersion: 3,
+      title: 'Existing',
+      content: changed.content,
+      tags: changed.tags,
+    });
+    expect(prepared).toEqual({ id: 9, version: 4 });
+    expect(coordinator.snapshot().lifecycleBusy).toBe(true);
+    coordinator.dispose();
+  });
+
+  it('waits for an in-flight PATCH and uses its acknowledged version', async () => {
+    const initial = { title: 'Existing', content: null };
+    const changed = { title: 'Existing', content: textDocument('Sent text') };
+    const pending = deferred<NoteDetail>();
+    const update = vi.fn().mockReturnValue(pending.promise);
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+    });
+    coordinator.edit(changed);
+    const preparing = coordinator.prepareLifecycleMutation();
+    await Promise.resolve();
+    expect(update).toHaveBeenCalledWith(9, expect.objectContaining({ expectedVersion: 2 }));
+
+    pending.resolve(detail(9, 3, changed));
+
+    await expect(preparing).resolves.toEqual({ id: 9, version: 3 });
+    coordinator.dispose();
+  });
+
+  it('blocks lifecycle mutation after a failed save or conflict', async () => {
+    const initial = { title: 'Existing', content: null };
+    const changed = { title: 'Existing', content: textDocument('Unsaved') };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: {
+        create: vi.fn(),
+        update: vi.fn().mockRejectedValue(conflictError()),
+        get: vi.fn(),
+      },
+      onChange: vi.fn(),
+    });
+    coordinator.edit(changed);
+
+    await expect(coordinator.prepareLifecycleMutation()).resolves.toBeNull();
+
+    expect(coordinator.snapshot()).toMatchObject({ phase: 'conflict', lifecycleBusy: false });
+    coordinator.dispose();
+  });
+
+  it('accepts lifecycle version without replacing the local draft and releases after cancellation', async () => {
+    const initial = { title: 'Existing', content: textDocument('Body') };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn() },
+      onChange: vi.fn(),
+    });
+    await expect(coordinator.prepareLifecycleMutation()).resolves.toEqual({ id: 9, version: 2 });
+    coordinator.completeLifecycleMutation({
+      ...detail(9, 3, initial),
+      archivedAt: '2026-11-21T10:00:00Z',
+    });
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: initial,
+      persisted: { id: 9, version: 3 },
+      phase: 'saved',
+      lifecycleBusy: false,
+    });
+
+    await expect(coordinator.prepareLifecycleMutation()).resolves.toEqual({ id: 9, version: 3 });
+    coordinator.cancelLifecycleMutation();
+    expect(coordinator.snapshot().lifecycleBusy).toBe(false);
+    coordinator.dispose();
+  });
+
+  it('prevents late writes after confirmed deletion and rejects untouched new drafts', async () => {
+    const initial = { title: 'Existing', content: null };
+    const update = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+    });
+    await coordinator.prepareLifecycleMutation();
+    coordinator.completeLifecycleMutation(null);
+    coordinator.edit({ title: 'Late edit', content: null });
+    await coordinator.flush();
+    expect(update).not.toHaveBeenCalled();
+
+    const untouched = new NoteSaveCoordinator({
+      initialDraft: emptyDraft,
+      initialNote: null,
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn() },
+      onChange: vi.fn(),
+    });
+    await expect(untouched.prepareLifecycleMutation()).resolves.toBeNull();
+    untouched.dispose();
+  });
 });

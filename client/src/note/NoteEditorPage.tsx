@@ -9,6 +9,8 @@ import { NoteEditorNavigationGuard } from './NoteEditorNavigationGuard';
 import { useState } from 'react';
 import { useNoteAutosave } from './useNoteAutosave';
 import { useNoteModal } from './useNoteModal';
+import { useNoteLifecycle } from './NoteLifecycleProvider';
+import type { NoteLifecycleOperation } from './types';
 import type { NoteDetail } from './types';
 import type { NoteDraft } from './noteDraft';
 import type { NoteDraftRecoveryEntry } from './NoteDraftRecoveryProvider';
@@ -196,10 +198,16 @@ function ActiveNoteEditor({
   readonly onCreated: (note: NoteDetail) => void;
 }) {
   const [conflictChoice, setConflictChoice] = useState<'keep-local' | 'load-server' | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [actionPending, setActionPending] = useState(false);
+  const [lifecycleNote, setLifecycleNote] = useState(initialNote);
   const {
     snapshot,
     edit,
     flush,
+    prepareLifecycleMutation,
+    completeLifecycleMutation,
+    cancelLifecycleMutation,
     retry,
     resolveConflict,
     discardDraft,
@@ -216,6 +224,42 @@ function ActiveNoteEditor({
     recovery,
     onCreated,
   });
+  const lifecycle = useNoteLifecycle();
+  const lifecycleBusy = snapshot.lifecycleBusy || actionPending;
+  const deleteDialogRef = useNoteModal(confirmDelete, () => setConfirmDelete(false));
+
+  async function runLifecycleAction(operation: NoteLifecycleOperation) {
+    if (!snapshot.persisted || lifecycleBusy) return;
+    setActionPending(true);
+    let prepared = false;
+    try {
+      const target = await prepareLifecycleMutation();
+      if (!target) return;
+      prepared = true;
+      const result = await lifecycle.run(
+        ownerId,
+        {
+          id: target.id,
+          version: target.version,
+          archivedAt: lifecycleNote?.archivedAt ?? null,
+        },
+        operation
+      );
+      if (result?.kind === 'note') {
+        setLifecycleNote(result.note);
+        completeLifecycleMutation(result.note);
+      } else if (result?.kind === 'deleted') {
+        completeLifecycleMutation(null);
+        onBack();
+      } else {
+        cancelLifecycleMutation();
+      }
+    } catch {
+      if (prepared) cancelLifecycleMutation();
+    } finally {
+      setActionPending(false);
+    }
+  }
 
   function updateTitle(title: string) {
     edit({ ...snapshot.draft, title });
@@ -262,6 +306,38 @@ function ActiveNoteEditor({
                 Retry
               </button>
             )}
+            {snapshot.persisted && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={
+                    lifecycleBusy ||
+                    snapshot.phase === 'failed' ||
+                    snapshot.phase === 'conflict' ||
+                    snapshot.outcomeUncertain
+                  }
+                  onClick={() =>
+                    void runLifecycleAction(lifecycleNote?.archivedAt ? 'restore' : 'archive')
+                  }
+                  className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                >
+                  {lifecycleNote?.archivedAt ? 'Restore from Archive' : 'Archive'}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    lifecycleBusy ||
+                    snapshot.phase === 'failed' ||
+                    snapshot.phase === 'conflict' ||
+                    snapshot.outcomeUncertain
+                  }
+                  onClick={() => setConfirmDelete(true)}
+                  className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-destructive hover:bg-muted disabled:opacity-50"
+                >
+                  Move to Trash
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -272,16 +348,17 @@ function ActiveNoteEditor({
             onChange={(event) => updateTitle(event.target.value)}
             placeholder="Untitled note"
             maxLength={255}
+            disabled={lifecycleBusy}
             className="w-full border-0 bg-transparent p-0 text-3xl font-medium leading-tight tracking-tight text-foreground outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0 sm:text-4xl"
           />
           <div
             className="mb-6 mt-3 min-h-5 text-xs text-muted-foreground"
             aria-label="Note details"
           >
-            {initialNote ? (
+            {lifecycleNote ? (
               <span>
-                {initialNote.archivedAt ? 'Archived' : 'Note'} · Updated{' '}
-                {new Date(initialNote.updatedAt).toLocaleDateString()}
+                {lifecycleNote.archivedAt ? 'Archived' : 'Note'} · Updated{' '}
+                {new Date(lifecycleNote.updatedAt).toLocaleDateString()}
               </span>
             ) : (
               <span>Private note</span>
@@ -294,6 +371,7 @@ function ActiveNoteEditor({
               onChange={(tags) => edit({ ...snapshot.draft, tags })}
               userId={ownerId}
               knownTags={snapshot.knownTags}
+              disabled={lifecycleBusy}
               createLabel="add"
             />
             {snapshot.tagValidationError && (
@@ -335,9 +413,48 @@ function ActiveNoteEditor({
             value={snapshot.draft.content}
             onChange={updateContent}
             ariaLabel="Note content"
+            disabled={lifecycleBusy}
             externalReplacementKey={snapshot.replacementRevision}
           />
         </div>
+
+        {confirmDelete && (
+          <div className="fixed inset-0 z-30 grid place-items-center bg-black/30 p-4">
+            <dialog
+              ref={deleteDialogRef}
+              aria-modal="true"
+              aria-labelledby="note-delete-confirm-title"
+              className="relative m-0 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-xl"
+            >
+              <h2 id="note-delete-confirm-title" className="text-lg font-medium">
+                Move this note to Trash?
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                You can restore it from Trash later.
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded-md px-3 py-2 text-sm hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={lifecycleBusy}
+                  onClick={() => {
+                    setConfirmDelete(false);
+                    void runLifecycleAction('delete');
+                  }}
+                  className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground disabled:opacity-50"
+                >
+                  Move to Trash
+                </button>
+              </div>
+            </dialog>
+          </div>
+        )}
 
         {conflictChoice && (
           <div className="fixed inset-0 z-30 grid place-items-center bg-black/30 p-4">

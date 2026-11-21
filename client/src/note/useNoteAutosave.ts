@@ -150,6 +150,7 @@ export function useNoteAutosave({
           phase: 'paused' as const,
           hasUnsavedChanges: false,
           hasTagOnlyDraft: false,
+          lifecycleBusy: false,
         };
   const snapshot =
     !isVerifiedOwner && availableSnapshot.hasTagOnlyDraft
@@ -200,6 +201,18 @@ export function useNoteAutosave({
 
   const edit = useCallback((draft: NoteDraft) => coordinator.edit(draft), [coordinator]);
   const flush = useCallback(() => coordinator.flush(), [coordinator]);
+  const prepareLifecycleMutation = useCallback(
+    () => coordinator.prepareLifecycleMutation(),
+    [coordinator]
+  );
+  const completeLifecycleMutation = useCallback(
+    (note: NoteDetail | null) => coordinator.completeLifecycleMutation(note),
+    [coordinator]
+  );
+  const cancelLifecycleMutation = useCallback(
+    () => coordinator.cancelLifecycleMutation(),
+    [coordinator]
+  );
   const retry = useCallback(() => coordinator.retry(), [coordinator]);
   const resolveConflict = useCallback(
     (choice: 'keep-local' | 'load-server') => coordinator.resolveConflict(choice),
@@ -241,6 +254,9 @@ export function useNoteAutosave({
     snapshot,
     edit,
     flush,
+    prepareLifecycleMutation,
+    completeLifecycleMutation,
+    cancelLifecycleMutation,
     retry,
     resolveConflict,
     discardDraft,

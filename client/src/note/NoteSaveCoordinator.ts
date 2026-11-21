@@ -25,6 +25,7 @@ export interface NoteSaveSnapshot {
   writeInFlight: boolean;
   outcomeUncertain: boolean;
   resolvingConflict: boolean;
+  lifecycleBusy: boolean;
   replacementRevision: number;
   frozenCreateRequest?: { body: ReturnType<typeof normalizeNoteDraft>; key: string };
   frozenUpdateRequest?: FrozenNoteUpdate;
@@ -161,6 +162,9 @@ export class NoteSaveCoordinator {
   private paused = false;
   private navigationHeld = false;
   private disposed = false;
+  private lifecyclePreparing = false;
+  private lifecycleHeld = false;
+  private lifecycleDeleted = false;
   private generation = 0;
 
   constructor(options: NoteSaveCoordinatorOptions) {
@@ -182,7 +186,13 @@ export class NoteSaveCoordinator {
   }
 
   edit(draft: NoteDraft): void {
-    if (this.disposed || noteDraftsEqual(this.draft, draft)) return;
+    if (
+      this.disposed ||
+      this.lifecycleHeld ||
+      this.lifecycleDeleted ||
+      noteDraftsEqual(this.draft, draft)
+    )
+      return;
     this.draft = { ...draft };
     this.localRevision += 1;
     this.debounceElapsed = false;
@@ -205,6 +215,8 @@ export class NoteSaveCoordinator {
       this.disposed ||
       this.paused ||
       this.navigationHeld ||
+      this.lifecycleHeld ||
+      this.lifecycleDeleted ||
       this.phase === 'conflict' ||
       this.phase === 'failed'
     )
@@ -232,6 +244,88 @@ export class NoteSaveCoordinator {
       this.publish();
     }
     if (this.shouldContinue()) await this.flush();
+  }
+
+  async prepareLifecycleMutation(): Promise<{ id: number; version: number } | null> {
+    if (
+      this.disposed ||
+      this.lifecyclePreparing ||
+      this.lifecycleHeld ||
+      this.lifecycleDeleted ||
+      this.paused ||
+      this.navigationHeld ||
+      this.phase === 'failed' ||
+      this.phase === 'conflict' ||
+      this.outcomeUncertain
+    )
+      return null;
+
+    if (!this.persisted && !this.hasWork() && !this.inFlight) return null;
+
+    this.lifecyclePreparing = true;
+    this.clearTimer();
+    this.publish();
+    try {
+      while (!this.lifecyclePreparationBlocked()) {
+        if (this.inFlight) await this.inFlight;
+        if (this.lifecyclePreparationBlocked()) break;
+        if (this.hasWork()) {
+          const revisionBeforeFlush = this.localRevision;
+          const versionBeforeFlush = this.persisted?.version ?? null;
+          await this.flush();
+          if (
+            !this.inFlight &&
+            this.hasWork() &&
+            this.localRevision === revisionBeforeFlush &&
+            this.persisted?.version === versionBeforeFlush
+          )
+            return null;
+          continue;
+        }
+        if (this.inFlight) continue;
+        if (!this.hasWork()) {
+          this.lifecycleHeld = true;
+          return this.persisted ? { ...this.persisted } : null;
+        }
+      }
+      return null;
+    } finally {
+      this.lifecyclePreparing = false;
+      if (!this.lifecycleHeld) {
+        if (this.phase === 'dirty' && this.hasWork() && !this.paused) this.scheduleSave();
+      }
+      this.publish();
+    }
+  }
+
+  completeLifecycleMutation(note: NoteDetail | null): void {
+    if (this.disposed || !this.lifecycleHeld) return;
+    this.clearTimer();
+    this.pendingCreate = null;
+    this.pendingUpdate = null;
+    this.outcomeUncertain = false;
+    this.tagValidationError = null;
+    this.lifecycleHeld = false;
+    this.lifecyclePreparing = false;
+    if (note) {
+      this.persisted = { id: note.id, version: note.version };
+      this.knownTags = [...note.tags];
+      this.baseline = { ...this.draft, tags: [...(this.draft.tags ?? [])] };
+      this.confirmedRevision = this.localRevision;
+      this.phase = 'saved';
+    } else {
+      this.lifecycleDeleted = true;
+      this.phase = 'saved';
+    }
+    this.publish();
+  }
+
+  cancelLifecycleMutation(): void {
+    if (this.disposed || (!this.lifecycleHeld && !this.lifecyclePreparing)) return;
+    this.lifecycleHeld = false;
+    this.lifecyclePreparing = false;
+    if (this.phase === 'dirty' && this.hasWork() && !this.paused) this.scheduleSave();
+    this.publish();
   }
 
   async retry(): Promise<void> {
@@ -386,6 +480,7 @@ export class NoteSaveCoordinator {
       writeInFlight: this.inFlight !== null,
       outcomeUncertain: this.outcomeUncertain,
       resolvingConflict: this.resolvingConflict,
+      lifecycleBusy: this.lifecyclePreparing || this.lifecycleHeld,
       ...(this.pendingCreate
         ? {
             frozenCreateRequest: {
@@ -656,6 +751,16 @@ export class NoteSaveCoordinator {
     this.onUpdated?.(updated);
   }
 
+  private lifecyclePreparationBlocked(): boolean {
+    return (
+      this.disposed ||
+      this.paused ||
+      this.phase === 'failed' ||
+      this.phase === 'conflict' ||
+      this.outcomeUncertain
+    );
+  }
+
   private hasWork(): boolean {
     if (this.pendingCreate || this.pendingUpdate) return true;
     if (!this.persisted) return hasMeaningfulNoteDraft(this.draft);
@@ -668,13 +773,22 @@ export class NoteSaveCoordinator {
       this.hasWork() &&
       !this.paused &&
       !this.navigationHeld &&
+      !this.lifecycleHeld &&
+      !this.lifecycleDeleted &&
       this.phase !== 'failed' &&
       this.phase !== 'conflict'
     );
   }
 
   private scheduleSave(): void {
-    if (this.disposed || this.navigationHeld || this.paused) return;
+    if (
+      this.disposed ||
+      this.navigationHeld ||
+      this.lifecycleHeld ||
+      this.lifecycleDeleted ||
+      this.paused
+    )
+      return;
     this.clearTimer();
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;

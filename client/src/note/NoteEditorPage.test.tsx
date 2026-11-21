@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NoteEditorPage } from './NoteEditorPage';
 import type { NoteDraft } from './noteDraft';
@@ -23,7 +23,12 @@ const state = vi.hoisted(() => ({
     writeInFlight: false,
     outcomeUncertain: false,
     resolvingConflict: false,
+    lifecycleBusy: false,
   },
+  prepareLifecycleMutation: vi.fn(async () => null as { id: number; version: number } | null),
+  completeLifecycleMutation: vi.fn(),
+  cancelLifecycleMutation: vi.fn(),
+  lifecycleRun: vi.fn(async () => null as { kind: 'note'; note: NoteDetail } | null),
   edit: vi.fn(),
   retry: vi.fn(),
   resolveConflict: vi.fn(),
@@ -55,7 +60,13 @@ vi.mock('./useNoteAutosave', () => ({
     canLeave: true,
     canLeaveNow: state.canLeaveNow,
     persistedNoteIdNow: state.persistedNoteIdNow,
+    prepareLifecycleMutation: state.prepareLifecycleMutation,
+    completeLifecycleMutation: state.completeLifecycleMutation,
+    cancelLifecycleMutation: state.cancelLifecycleMutation,
   }),
+}));
+vi.mock('./NoteLifecycleProvider', () => ({
+  useNoteLifecycle: () => ({ run: state.lifecycleRun }),
 }));
 vi.mock('./NoteDraftRecoveryProvider', () => ({
   useNoteDraftRecovery: () => ({ peekForVerifiedOwner: () => null }),
@@ -132,6 +143,7 @@ describe('NoteEditorPage', () => {
       writeInFlight: false,
       outcomeUncertain: false,
       resolvingConflict: false,
+      lifecycleBusy: false,
     };
     vi.clearAllMocks();
   });
@@ -203,6 +215,7 @@ describe('NoteEditorPage', () => {
       writeInFlight: false,
       outcomeUncertain: false,
       resolvingConflict: false,
+      lifecycleBusy: false,
     };
     renderEditor('6');
 
@@ -211,6 +224,34 @@ describe('NoteEditorPage', () => {
     expect(screen.getByText('Save failed')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(state.retry).toHaveBeenCalledOnce();
+  });
+
+  it('flushes before restoring an archived note and uses the prepared server version', async () => {
+    state.note = archivedNote;
+    state.snapshot = {
+      ...state.snapshot,
+      persisted: { id: archivedNote.id, version: archivedNote.version },
+    };
+    state.prepareLifecycleMutation.mockResolvedValueOnce({ id: archivedNote.id, version: 7 });
+    const restored = { ...archivedNote, version: 8, archivedAt: null };
+    state.lifecycleRun.mockResolvedValueOnce({ kind: 'note', note: restored });
+    renderEditor(String(archivedNote.id));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restore from Archive' }));
+
+    await waitFor(() =>
+      expect(state.lifecycleRun).toHaveBeenCalledWith(
+        12,
+        {
+          id: archivedNote.id,
+          version: 7,
+          archivedAt: archivedNote.archivedAt,
+        },
+        'restore'
+      )
+    );
+    expect(state.prepareLifecycleMutation).toHaveBeenCalledOnce();
+    expect(state.completeLifecycleMutation).toHaveBeenCalledWith(restored);
   });
 
   it('shows Tag validation feedback beside the Tag selector without losing the draft', () => {
@@ -253,6 +294,7 @@ describe('NoteEditorPage', () => {
       writeInFlight: false,
       outcomeUncertain: false,
       resolvingConflict: false,
+      lifecycleBusy: false,
     };
     renderEditor('6');
 
