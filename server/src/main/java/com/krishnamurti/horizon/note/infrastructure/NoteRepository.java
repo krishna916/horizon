@@ -20,4 +20,9 @@ public interface NoteRepository extends JpaRepository<Note, Long> {
             "select note from Note note where note.id = :noteId and note.userId = :userId"
                     + " and note.deletedAt is null")
     Optional<Note> lockOwnedForTagWrite(@Param("noteId") Long noteId, @Param("userId") Long userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select note from Note note where note.id = :noteId and note.userId = :userId")
+    Optional<Note> lockOwnedIncludingDeleted(
+            @Param("noteId") Long noteId, @Param("userId") Long userId);
 }

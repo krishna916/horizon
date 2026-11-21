@@ -140,7 +140,7 @@ function CollectionControls({
   readonly setCollection: (collection: NoteCollection) => void;
 }) {
   return (
-    <fieldset className="inline-flex flex-wrap gap-2">
+    <fieldset data-note-collection-controls className="inline-flex flex-wrap gap-2">
       <legend className="sr-only">Note collection</legend>
       <button
         type="button"
@@ -269,7 +269,7 @@ function NoteItems({
       className="grid auto-rows-min grid-cols-1 items-start gap-5 min-[601px]:grid-cols-2 min-[1221px]:grid-cols-3 min-[1600px]:grid-cols-4"
     >
       {notes.map((note) => (
-        <li key={note.id} className="min-w-0 self-start">
+        <li key={note.id} data-note-row className="min-w-0 self-start">
           <NoteCard note={note} />
         </li>
       ))}

@@ -1,9 +1,14 @@
 package com.krishnamurti.horizon.note.application;
 
+import com.krishnamurti.horizon.note.api.NoteRecoveryApi;
+import com.krishnamurti.horizon.note.api.NoteRecoverySnapshot;
 import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.shared.security.CurrentUserProvider;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import jakarta.persistence.OptimisticLockException;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -14,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** Transactional Note mutation use cases. */
 @Service
-public class NoteCommandService {
+public class NoteCommandService implements NoteRecoveryApi {
 
     private final NoteRepository noteRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -42,6 +47,100 @@ public class NoteCommandService {
     public Note create(
             String title, Map<String, Object> content, java.util.List<NoteTagSelection> tags) {
         return doCreate(title, content, tags);
+    }
+
+    @Transactional
+    public Note archive(Long noteId, long expectedVersion) {
+        return changeLifecycle(noteId, expectedVersion, false, LifecycleAction.ARCHIVE);
+    }
+
+    @Transactional
+    public Note restoreArchived(Long noteId, long expectedVersion) {
+        return changeLifecycle(noteId, expectedVersion, false, LifecycleAction.RESTORE_ARCHIVED);
+    }
+
+    @Transactional
+    public Note softDelete(Long noteId, long expectedVersion) {
+        return changeLifecycle(noteId, expectedVersion, true, LifecycleAction.DELETE);
+    }
+
+    @Transactional
+    public Note restoreDeleted(Long noteId, long expectedVersion) {
+        return changeLifecycle(noteId, expectedVersion, true, LifecycleAction.RESTORE_DELETED);
+    }
+
+    @Override
+    @Transactional
+    public NoteRecoverySnapshot restoreDeletedNote(Long noteId, long expectedVersion) {
+        Note note = restoreDeleted(noteId, expectedVersion);
+        return new NoteRecoverySnapshot(
+                note.getId(), note.getVersion(), note.getArchivedAt() != null);
+    }
+
+    private Note changeLifecycle(
+            Long noteId, long expectedVersion, boolean includeDeleted, LifecycleAction action) {
+        Long userId =
+                currentUserProvider
+                        .getCurrentUserId()
+                        .orElseThrow(
+                                () ->
+                                        new InsufficientAuthenticationException(
+                                                "User is not authenticated"));
+        Note note =
+                (includeDeleted
+                                ? noteRepository.lockOwnedIncludingDeleted(noteId, userId)
+                                : noteRepository.lockOwnedForTagWrite(noteId, userId))
+                        .orElseThrow(() -> new NoteNotFoundException(noteId));
+
+        if (note.getVersion() != expectedVersion) {
+            if (action == LifecycleAction.DELETE
+                    && note.getDeletedAt() != null
+                    && expectedVersion >= 0
+                    && expectedVersion < Long.MAX_VALUE
+                    && note.getVersion() == expectedVersion + 1) {
+                return note;
+            }
+            throw new NoteVersionConflictException();
+        }
+
+        boolean changed =
+                switch (action) {
+                    case ARCHIVE -> {
+                        boolean wasArchived = note.getArchivedAt() != null;
+                        note.archive(OffsetDateTime.now(ZoneOffset.UTC));
+                        yield !wasArchived;
+                    }
+                    case RESTORE_ARCHIVED -> {
+                        boolean wasArchived = note.getArchivedAt() != null;
+                        note.restoreArchived();
+                        yield wasArchived;
+                    }
+                    case DELETE -> {
+                        boolean wasDeleted = note.getDeletedAt() != null;
+                        note.softDelete(OffsetDateTime.now(ZoneOffset.UTC));
+                        yield !wasDeleted;
+                    }
+                    case RESTORE_DELETED -> {
+                        boolean wasDeleted = note.getDeletedAt() != null;
+                        note.restoreDeleted();
+                        yield wasDeleted;
+                    }
+                };
+        if (!changed) return note;
+
+        note.touchMetadata();
+        try {
+            return noteRepository.saveAndFlush(note);
+        } catch (ObjectOptimisticLockingFailureException | OptimisticLockException exception) {
+            throw new NoteVersionConflictException();
+        }
+    }
+
+    private enum LifecycleAction {
+        ARCHIVE,
+        RESTORE_ARCHIVED,
+        DELETE,
+        RESTORE_DELETED
     }
 
     private Note doCreate(String title, Map<String, Object> content, List<NoteTagSelection> tags) {

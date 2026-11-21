@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useNotesBrowse } from '@/note/NotesBrowseContext';
 import { NotesRoute } from './NotesRoute';
@@ -15,6 +16,7 @@ const route = vi.hoisted(() => ({
   locationKey: 'workspace',
   locationState: {} as Record<string, unknown>,
   navigate: vi.fn(),
+  back: vi.fn(),
 }));
 
 vi.mock('@/user/session/AuthSessionProvider', () => ({
@@ -31,21 +33,34 @@ vi.mock('@tanstack/react-router', () => ({
   }) => select({ location: { pathname: route.pathname, key: route.locationKey } }),
   useRouter: () => ({
     state: { location: { state: route.locationState } },
-    history: { back: vi.fn() },
+    history: { back: route.back },
   }),
   useNavigate: () => route.navigate,
+}));
+
+vi.mock('./NoteLifecycleProvider', () => ({
+  NoteLifecycleProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+vi.mock('./NoteLifecycleNoticeList', () => ({
+  NoteLifecycleNoticeList: () => null,
 }));
 
 vi.mock('./NoteEditorPage', () => ({
   NoteEditorPage: ({
     identityKey,
     onCreated,
+    onBack,
   }: {
     identityKey: string;
     onCreated: (note: { id: number }) => void;
+    onBack: () => void;
   }) => (
     <>
       <output data-testid="editor-identity">{identityKey}</output>
+      <button type="button" onClick={onBack}>
+        Back to Notes
+      </button>
       <button type="button" onClick={() => onCreated({ id: 501 } as never)}>
         Create done
       </button>
@@ -72,6 +87,7 @@ describe('NotesRoute session ownership', () => {
     route.locationKey = 'workspace';
     route.locationState = {};
     route.navigate.mockReset();
+    route.back.mockReset();
   });
 
   it('gates an initially unverified Notes route until an owner is available', () => {
@@ -148,6 +164,22 @@ describe('NotesRoute session ownership', () => {
         state: { horizonNoteNavigation: { kind: 'from-workspace', noteId: 501 } },
       })
     );
+  });
+
+  it('uses browser Back only for a trusted Note workspace origin', () => {
+    route.pathname = '/notes/501';
+    route.locationState = { horizonNoteNavigation: { kind: 'from-workspace', noteId: 501 } };
+    const trusted = render(<NotesRoute />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Notes' }));
+    expect(route.back).toHaveBeenCalledOnce();
+    expect(route.navigate).not.toHaveBeenCalled();
+    trusted.unmount();
+
+    route.pathname = '/notes/501';
+    route.locationState = {};
+    render(<NotesRoute />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Notes' }));
+    expect(route.navigate).toHaveBeenCalledWith({ to: '/notes', replace: true });
   });
 
   it('uses a fresh editor identity for a second new Note after create-to-ID promotion', () => {

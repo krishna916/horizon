@@ -4,6 +4,7 @@ import type {
   NoteCollection,
   NoteDetail,
   NoteListResponse,
+  NoteDeletionReceipt,
   NoteSort,
   UpdateNoteRequest,
 } from './types';
@@ -30,4 +31,20 @@ export const noteApi = {
     }),
   update: (id: number, body: UpdateNoteRequest) =>
     apiClient.patch<NoteDetail>(`/notes/${id}`, body),
+  archive: (id: number, version: number) =>
+    apiClient.post<NoteDetail>(`/notes/${id}/archive`, undefined, {
+      headers: { 'X-Expected-Version': String(version) },
+    }),
+  restoreArchived: (id: number, version: number) =>
+    apiClient.post<NoteDetail>(`/notes/${id}/restore`, undefined, {
+      headers: { 'X-Expected-Version': String(version) },
+    }),
+  softDelete: (id: number, version: number) =>
+    apiClient.delete<NoteDeletionReceipt>(`/notes/${id}`, {
+      headers: { 'X-Expected-Version': String(version) },
+    }),
+  restoreDeleted: (id: number, version: number) =>
+    apiClient.post<NoteDetail>(`/notes/${id}/restore-deleted`, undefined, {
+      headers: { 'X-Expected-Version': String(version) },
+    }),
 };

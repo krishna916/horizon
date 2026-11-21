@@ -36,6 +36,77 @@ const conflictError = () =>
 afterEach(() => vi.useRealTimers());
 
 describe('NoteSaveCoordinator', () => {
+  it('reconciles a readable Note after uncertain delete without acknowledging a changed draft', async () => {
+    vi.useFakeTimers();
+    const initial = { title: 'Existing', content: null };
+    const current = detail(9, 3, initial);
+    const update = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+      debounceMs: 10,
+    });
+
+    expect(await coordinator.prepareLifecycleMutation()).toEqual({ id: 9, version: 2 });
+    coordinator.recoverLifecycleMutation(current);
+
+    expect(coordinator.snapshot()).toMatchObject({
+      persisted: { id: 9, version: 3 },
+      draft: initial,
+      phase: 'saved',
+      lifecycleBusy: false,
+      hasUnsavedChanges: false,
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(update).not.toHaveBeenCalled();
+    coordinator.dispose();
+  });
+
+  it('reconciles a readable Note after the editor remounts during recovery', async () => {
+    const initial = { title: 'Existing', content: null };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn() },
+      onChange: vi.fn(),
+    });
+
+    expect(coordinator.recoverLifecycleMutation(detail(9, 3, initial))).toBe(true);
+    expect(coordinator.snapshot()).toMatchObject({
+      persisted: { id: 9, version: 3 },
+      phase: 'saved',
+      lifecycleBusy: false,
+    });
+    coordinator.dispose();
+  });
+
+  it('keeps a local draft in conflict when the readable Note has changed remotely', async () => {
+    const initial = { title: 'Existing', content: null };
+    const local = { title: 'Local draft', content: null };
+    const remote = detail(9, 3, { title: 'Remote edit', content: null });
+    const update = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+    });
+
+    expect(await coordinator.prepareLifecycleMutation()).toEqual({ id: 9, version: 2 });
+    coordinator.edit(local);
+    coordinator.recoverLifecycleMutation(remote);
+
+    expect(coordinator.snapshot()).toMatchObject({
+      persisted: { id: 9, version: 3 },
+      draft: initial,
+      phase: 'conflict',
+      lifecycleBusy: false,
+    });
+    expect(update).not.toHaveBeenCalled();
+    coordinator.dispose();
+  });
   it('exposes Tag validation errors from create responses for a manual retry', async () => {
     const create = vi.fn().mockRejectedValue(
       Object.assign(new Error('invalid'), {
@@ -534,6 +605,64 @@ describe('NoteSaveCoordinator', () => {
       draft: { tags: [{ id: 42 }] },
       knownTags: [{ id: 42, name: 'Planning' }],
     });
+    coordinator.dispose();
+  });
+
+  it('publishes the acknowledged archived Note after Load latest conflict resolution', async () => {
+    const initial = { title: 'Stale local', content: null, tags: [] };
+    const original = { ...detail(7, 1, initial), archivedAt: null };
+    const latest = {
+      ...detail(7, 2, { title: 'Remote', content: null, tags: [] }),
+      archivedAt: '2026-11-21T11:00:00Z',
+    };
+    const onServerReconciled = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: { title: 'Old draft', content: null },
+      initialNote: original,
+      recovery: { persistedVersion: { id: 7, version: 0 } },
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn().mockResolvedValue(latest) },
+      onChange: vi.fn(),
+      onServerReconciled,
+    });
+
+    await coordinator.resolveConflict('load-server');
+
+    expect(onServerReconciled).toHaveBeenCalledWith(latest);
+    expect(coordinator.snapshot()).toMatchObject({ phase: 'saved', draft: { title: 'Remote' } });
+    coordinator.dispose();
+  });
+
+  it('publishes the confirmed server archive fact after Keep my version without replacing the draft', async () => {
+    const initial = { title: 'Keep my title', content: null, tags: [] };
+    const original = {
+      ...detail(7, 1, { title: 'Original', content: null, tags: [] }),
+      archivedAt: null,
+    };
+    const latest = {
+      ...detail(7, 2, { title: 'Remote', content: null, tags: [] }),
+      archivedAt: '2026-11-21T11:00:00Z',
+    };
+    const local = initial;
+    const updated = { ...detail(7, 3, local), archivedAt: latest.archivedAt };
+    const onServerReconciled = vi.fn();
+    const update = vi.fn().mockResolvedValue(updated);
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: { title: 'Old draft', content: null },
+      initialNote: original,
+      recovery: { persistedVersion: { id: 7, version: 0 } },
+      transport: { create: vi.fn(), update, get: vi.fn().mockResolvedValue(latest) },
+      onChange: vi.fn(),
+      onServerReconciled,
+    });
+    coordinator.edit(local);
+    await coordinator.resolveConflict('keep-local');
+
+    expect(onServerReconciled).toHaveBeenCalledWith(latest);
+    expect(coordinator.snapshot()).toMatchObject({
+      phase: 'saved',
+      draft: { title: 'Keep my title' },
+    });
+    expect(update).toHaveBeenCalledWith(7, expect.objectContaining({ expectedVersion: 2 }));
     coordinator.dispose();
   });
 
@@ -1364,7 +1493,8 @@ describe('NoteSaveCoordinator', () => {
         update,
         get: vi
           .fn()
-          .mockResolvedValue({ ...detail(92, 3, server), tags: [{ id: 2, name: 'Remote' }] }),
+          .mockResolvedValueOnce({ ...detail(92, 3, server), tags: [{ id: 2, name: 'Remote' }] })
+          .mockResolvedValueOnce({ ...detail(92, 4, server), tags: [{ id: 2, name: 'Remote' }] }),
       },
       onChange: vi.fn(),
     });
@@ -1393,5 +1523,135 @@ describe('NoteSaveCoordinator', () => {
       phase: 'saved',
     });
     coordinator.dispose();
+  });
+
+  it('flushes a debounced edit before preparing a lifecycle mutation', async () => {
+    const initial = { title: 'Existing', content: null, tags: [{ id: 42 }] };
+    const changed = {
+      ...initial,
+      content: textDocument('New text'),
+      tags: [{ id: 42 }, { name: 'Later' }],
+    };
+    const update = vi.fn().mockResolvedValue({
+      ...detail(9, 4, changed),
+      tags: [
+        { id: 42, name: 'Existing tag' },
+        { id: 43, name: 'Later' },
+      ],
+    });
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 3, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+      debounceMs: 10000,
+    });
+    coordinator.edit(changed);
+
+    const prepared = await coordinator.prepareLifecycleMutation();
+
+    expect(update).toHaveBeenCalledWith(9, {
+      expectedVersion: 3,
+      title: 'Existing',
+      content: changed.content,
+      tags: changed.tags,
+    });
+    expect(prepared).toEqual({ id: 9, version: 4 });
+    expect(coordinator.snapshot().lifecycleBusy).toBe(true);
+    coordinator.dispose();
+  });
+
+  it('waits for an in-flight PATCH and uses its acknowledged version', async () => {
+    const initial = { title: 'Existing', content: null };
+    const changed = { title: 'Existing', content: textDocument('Sent text') };
+    const pending = deferred<NoteDetail>();
+    const update = vi.fn().mockReturnValue(pending.promise);
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+    });
+    coordinator.edit(changed);
+    const preparing = coordinator.prepareLifecycleMutation();
+    await Promise.resolve();
+    expect(update).toHaveBeenCalledWith(9, expect.objectContaining({ expectedVersion: 2 }));
+
+    pending.resolve(detail(9, 3, changed));
+
+    await expect(preparing).resolves.toEqual({ id: 9, version: 3 });
+    coordinator.dispose();
+  });
+
+  it('blocks lifecycle mutation after a failed save or conflict', async () => {
+    const initial = { title: 'Existing', content: null };
+    const changed = { title: 'Existing', content: textDocument('Unsaved') };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: {
+        create: vi.fn(),
+        update: vi.fn().mockRejectedValue(conflictError()),
+        get: vi.fn(),
+      },
+      onChange: vi.fn(),
+    });
+    coordinator.edit(changed);
+
+    await expect(coordinator.prepareLifecycleMutation()).resolves.toBeNull();
+
+    expect(coordinator.snapshot()).toMatchObject({ phase: 'conflict', lifecycleBusy: false });
+    coordinator.dispose();
+  });
+
+  it('accepts lifecycle version without replacing the local draft and releases after cancellation', async () => {
+    const initial = { title: 'Existing', content: textDocument('Body') };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn() },
+      onChange: vi.fn(),
+    });
+    await expect(coordinator.prepareLifecycleMutation()).resolves.toEqual({ id: 9, version: 2 });
+    coordinator.completeLifecycleMutation({
+      ...detail(9, 3, initial),
+      archivedAt: '2026-11-21T10:00:00Z',
+    });
+    expect(coordinator.snapshot()).toMatchObject({
+      draft: initial,
+      persisted: { id: 9, version: 3 },
+      phase: 'saved',
+      lifecycleBusy: false,
+    });
+
+    await expect(coordinator.prepareLifecycleMutation()).resolves.toEqual({ id: 9, version: 3 });
+    coordinator.cancelLifecycleMutation();
+    expect(coordinator.snapshot().lifecycleBusy).toBe(false);
+    coordinator.dispose();
+  });
+
+  it('prevents late writes after confirmed deletion and rejects untouched new drafts', async () => {
+    const initial = { title: 'Existing', content: null };
+    const update = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+    });
+    await coordinator.prepareLifecycleMutation();
+    coordinator.completeLifecycleMutation(null);
+    coordinator.edit({ title: 'Late edit', content: null });
+    await coordinator.flush();
+    expect(update).not.toHaveBeenCalled();
+
+    const untouched = new NoteSaveCoordinator({
+      initialDraft: emptyDraft,
+      initialNote: null,
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn() },
+      onChange: vi.fn(),
+    });
+    await expect(untouched.prepareLifecycleMutation()).resolves.toBeNull();
+    untouched.dispose();
   });
 });

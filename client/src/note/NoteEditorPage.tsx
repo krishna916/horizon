@@ -6,9 +6,12 @@ import { useNoteDetail } from './queries';
 import { parseNoteId } from './noteNavigation';
 import { useNoteDraftRecovery } from './NoteDraftRecoveryProvider';
 import { NoteEditorNavigationGuard } from './NoteEditorNavigationGuard';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNoteAutosave } from './useNoteAutosave';
 import { useNoteModal } from './useNoteModal';
+import { useNoteLifecycle } from './NoteLifecycleProvider';
+import { NoteLifecycleActions } from './NoteLifecycleActions';
+import type { NoteLifecycleOperation, NoteLifecycleTarget } from './types';
 import type { NoteDetail } from './types';
 import type { NoteDraft } from './noteDraft';
 import type { NoteDraftRecoveryEntry } from './NoteDraftRecoveryProvider';
@@ -67,7 +70,7 @@ export function NoteEditorPage({
   readonly routeNoteId: string | null;
   readonly ownerId?: number;
   readonly identityKey?: string;
-  readonly onBack: () => void;
+  readonly onBack: (options?: { focusCollection?: boolean }) => void | Promise<void>;
   readonly onCreated: (note: NoteDetail) => void;
 }) {
   const { phase, verifiedUserId, verifySession } = useAuthSession();
@@ -103,7 +106,11 @@ export function NoteEditorPage({
   if (phase !== 'verified' || userId === undefined) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8" aria-label="Note editor">
-        <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
+        <button
+          type="button"
+          onClick={() => void onBack()}
+          className="text-sm font-medium hover:underline"
+        >
           Back to Notes
         </button>
         {phase === 'retryable-error' ? (
@@ -125,7 +132,11 @@ export function NoteEditorPage({
   if (isUnavailableNote(routeNoteId, id, query)) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8">
-        <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
+        <button
+          type="button"
+          onClick={() => void onBack()}
+          className="text-sm font-medium hover:underline"
+        >
           Back to Notes
         </button>
         <h1 className="mt-8 text-2xl font-medium">Note unavailable</h1>
@@ -137,7 +148,11 @@ export function NoteEditorPage({
   if (isLoadingExistingNote(routeNoteId, query)) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8">
-        <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
+        <button
+          type="button"
+          onClick={() => void onBack()}
+          className="text-sm font-medium hover:underline"
+        >
           Back to Notes
         </button>
         <output
@@ -153,7 +168,11 @@ export function NoteEditorPage({
   if (hasExistingNoteLoadError(routeNoteId, query)) {
     return (
       <section className="mx-auto w-full max-w-[808px] px-5 py-5 sm:px-8">
-        <button type="button" onClick={onBack} className="text-sm font-medium hover:underline">
+        <button
+          type="button"
+          onClick={() => void onBack()}
+          className="text-sm font-medium hover:underline"
+        >
           Back to Notes
         </button>
         <div role="alert" className="mt-8 flex items-center gap-3 text-sm">
@@ -192,14 +211,21 @@ function ActiveNoteEditor({
   readonly routeNoteId: string | null;
   readonly initialNote: NoteDetail | null;
   readonly recovery: NoteDraftRecoveryEntry | null;
-  readonly onBack: () => void;
+  readonly onBack: (options?: { focusCollection?: boolean }) => void | Promise<void>;
   readonly onCreated: (note: NoteDetail) => void;
 }) {
   const [conflictChoice, setConflictChoice] = useState<'keep-local' | 'load-server' | null>(null);
+  const [actionPending, setActionPending] = useState(false);
+  const [lifecycleRetryError, setLifecycleRetryError] = useState<string | null>(null);
+  const [localLifecycleNote, setLocalLifecycleNote] = useState(initialNote);
   const {
     snapshot,
     edit,
     flush,
+    prepareLifecycleMutation,
+    completeLifecycleMutation,
+    recoverLifecycleMutation,
+    cancelLifecycleMutation,
     retry,
     resolveConflict,
     discardDraft,
@@ -214,8 +240,105 @@ function ActiveNoteEditor({
     initialDraft: initialNote ? undefined : blankDraft,
     editorRoute: routeNoteId === null ? '/notes/new' : `/notes/${routeNoteId}`,
     recovery,
-    onCreated,
+    onCreated: (note) => {
+      setLocalLifecycleNote(note);
+      onCreated(note);
+    },
+    onServerReconciled: setLocalLifecycleNote,
   });
+  const lifecycle = useNoteLifecycle();
+  const registerEditor = lifecycle.registerEditor;
+  const lifecycleState = lifecycle.stateFor(
+    ownerId,
+    localLifecycleNote?.id ?? initialNote?.id ?? -1
+  );
+  const lifecycleNote = [
+    initialNote,
+    localLifecycleNote,
+    lifecycleState.note,
+  ].reduce<NoteDetail | null>(
+    (latest, note) => (!note || (latest && latest.version > note.version) ? latest : note),
+    null
+  );
+  const lifecycleBusy = snapshot.lifecycleBusy || actionPending || lifecycleState.recoveryRequired;
+
+  useEffect(() => {
+    const noteId = lifecycleNote?.id;
+    if (noteId === undefined) return;
+    return registerEditor(noteId, {
+      prepare: prepareLifecycleMutation,
+      complete: (note) => {
+        completeLifecycleMutation(note);
+        if (note) setLocalLifecycleNote(note);
+        else void onBack({ focusCollection: true });
+      },
+      recover: (note) => {
+        const recovered = recoverLifecycleMutation(note);
+        if (recovered) setLocalLifecycleNote(note);
+        return recovered;
+      },
+      cancel: cancelLifecycleMutation,
+    });
+  }, [
+    cancelLifecycleMutation,
+    completeLifecycleMutation,
+    recoverLifecycleMutation,
+    lifecycleNote?.id,
+    onBack,
+    prepareLifecycleMutation,
+    registerEditor,
+  ]);
+
+  async function runLifecycleAction(
+    operation: NoteLifecycleOperation,
+    retryTarget?: NoteLifecycleTarget,
+    isRetry = false
+  ) {
+    if (!snapshot.persisted || lifecycleBusy) return;
+    setLifecycleRetryError(null);
+    setActionPending(true);
+    let prepared = false;
+    try {
+      const preparedTarget = await prepareLifecycleMutation();
+      if (!preparedTarget) return;
+      prepared = true;
+      if (
+        isRetry &&
+        retryTarget &&
+        (preparedTarget.id !== retryTarget.id || preparedTarget.version !== retryTarget.version)
+      ) {
+        prepared = false;
+        cancelLifecycleMutation();
+        setLifecycleRetryError(
+          'This note changed elsewhere. Review the latest version before trying again.'
+        );
+        return;
+      }
+      const result = await lifecycle.run(
+        ownerId,
+        {
+          id: preparedTarget.id,
+          version: preparedTarget.version,
+          archivedAt: lifecycleNote?.archivedAt ?? null,
+        },
+        operation
+      );
+      if (result?.kind === 'note') {
+        setLocalLifecycleNote(result.note);
+        completeLifecycleMutation(result.note);
+      } else if (result?.kind === 'deleted') {
+        completeLifecycleMutation(null);
+        await onBack({ focusCollection: true });
+      } else {
+        const outcomeUnknown = lifecycle.stateFor(ownerId, preparedTarget.id).outcomeUnknown;
+        if (!outcomeUnknown) cancelLifecycleMutation();
+      }
+    } catch {
+      if (prepared) cancelLifecycleMutation();
+    } finally {
+      setActionPending(false);
+    }
+  }
 
   function updateTitle(title: string) {
     edit({ ...snapshot.draft, title });
@@ -246,7 +369,7 @@ function ActiveNoteEditor({
         <div className="sticky top-0 z-10 -mx-5 mb-8 flex min-h-12 items-center justify-between gap-4 border-b border-border/70 bg-background/95 px-5 py-2 backdrop-blur sm:-mx-8 sm:px-8">
           <button
             type="button"
-            onClick={onBack}
+            onClick={() => void onBack()}
             className="inline-flex min-h-9 items-center rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Back to Notes
@@ -262,6 +385,31 @@ function ActiveNoteEditor({
                 Retry
               </button>
             )}
+            {snapshot.persisted && lifecycleNote && (
+              <NoteLifecycleActions
+                target={{
+                  id: lifecycleNote.id,
+                  version: snapshot.persisted.version,
+                  archivedAt: lifecycleNote.archivedAt,
+                }}
+                label={lifecycleNote.title?.trim() || 'Untitled note'}
+                placement="editor"
+                disabled={
+                  lifecycleBusy ||
+                  snapshot.phase === 'saving' ||
+                  snapshot.phase === 'failed' ||
+                  snapshot.phase === 'conflict' ||
+                  snapshot.outcomeUncertain
+                }
+                onExecute={runLifecycleAction}
+                onRetry={(operation, target) => runLifecycleAction(operation, target, true)}
+              />
+            )}
+            {lifecycleRetryError && (
+              <p role="alert" className="text-sm text-destructive">
+                {lifecycleRetryError}
+              </p>
+            )}
           </div>
         </div>
 
@@ -272,16 +420,27 @@ function ActiveNoteEditor({
             onChange={(event) => updateTitle(event.target.value)}
             placeholder="Untitled note"
             maxLength={255}
+            disabled={lifecycleBusy}
             className="w-full border-0 bg-transparent p-0 text-3xl font-medium leading-tight tracking-tight text-foreground outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0 sm:text-4xl"
           />
           <div
             className="mb-6 mt-3 min-h-5 text-xs text-muted-foreground"
             aria-label="Note details"
           >
-            {initialNote ? (
+            {lifecycleNote ? (
               <span>
-                {initialNote.archivedAt ? 'Archived' : 'Note'} · Updated{' '}
-                {new Date(initialNote.updatedAt).toLocaleDateString()}
+                {lifecycleNote.archivedAt ? 'Archived' : 'Note'} · Updated{' '}
+                {new Date(lifecycleNote.updatedAt).toLocaleDateString()}
+                {lifecycleNote.archivedAt && snapshot.persisted && (
+                  <button
+                    type="button"
+                    disabled={lifecycleBusy}
+                    onClick={() => void runLifecycleAction('restore')}
+                    className="ml-2 underline disabled:opacity-50"
+                  >
+                    Restore
+                  </button>
+                )}
               </span>
             ) : (
               <span>Private note</span>
@@ -294,6 +453,7 @@ function ActiveNoteEditor({
               onChange={(tags) => edit({ ...snapshot.draft, tags })}
               userId={ownerId}
               knownTags={snapshot.knownTags}
+              disabled={lifecycleBusy}
               createLabel="add"
             />
             {snapshot.tagValidationError && (
@@ -335,6 +495,7 @@ function ActiveNoteEditor({
             value={snapshot.draft.content}
             onChange={updateContent}
             ariaLabel="Note content"
+            disabled={lifecycleBusy}
             externalReplacementKey={snapshot.replacementRevision}
           />
         </div>

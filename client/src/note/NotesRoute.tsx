@@ -2,6 +2,8 @@ import { Outlet, useNavigate, useRouter, useRouterState } from '@tanstack/react-
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import { NotesBrowseProvider } from './NotesBrowseContext';
+import { NoteLifecycleProvider } from './NoteLifecycleProvider';
+import { NoteLifecycleNoticeList } from './NoteLifecycleNoticeList';
 import { NoteEditorPage } from './NoteEditorPage';
 import { isTrustedNoteOrigin, parseNoteId } from './noteNavigation';
 import type { NoteDetail } from './types';
@@ -105,42 +107,55 @@ export function NotesRoute() {
 
   return (
     <NotesBrowseProvider key={`${owner.ownerRevision}:${owner.userId}`} userId={owner.userId}>
-      {isNoteEditorPath(pathname) ? (
-        <NoteEditorPage
-          routeNoteId={routeNoteId}
-          ownerId={owner.userId}
-          identityKey={editorIdentity}
-          onBack={() => {
-            const routeNoteId = getEditorRouteNoteId(pathname);
-            const noteId = routeNoteId === null ? undefined : parseNoteId(routeNoteId);
-            const trustedOrigin =
-              routeNoteId === null
-                ? isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation)
-                : noteId !== null &&
-                  isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation, noteId);
-            if (trustedOrigin) {
-              router.history.back();
-            } else {
-              void navigate({ to: '/notes', replace: true });
-            }
-          }}
-          onCreated={(note: NoteDetail) => {
-            setPromotedCreatedNote({ id: note.id, sourceIdentity: editorIdentity });
-            void navigate({
-              to: '/notes/$id',
-              params: { id: String(note.id) },
-              replace: true,
-              state: {
-                horizonNoteNavigation: trustedNewOrigin
-                  ? { kind: 'from-workspace', noteId: note.id }
-                  : undefined,
-              },
-            });
-          }}
-        />
-      ) : (
-        <Outlet />
-      )}
+      <NoteLifecycleProvider key={`${owner.ownerRevision}:${owner.userId}`} ownerId={owner.userId}>
+        <div className="mx-auto w-full max-w-[808px] px-5 pt-3 sm:px-8">
+          <NoteLifecycleNoticeList />
+        </div>
+        {isNoteEditorPath(pathname) ? (
+          <NoteEditorPage
+            routeNoteId={routeNoteId}
+            ownerId={owner.userId}
+            identityKey={editorIdentity}
+            onBack={async (options) => {
+              const routeNoteId = getEditorRouteNoteId(pathname);
+              const noteId = routeNoteId === null ? undefined : parseNoteId(routeNoteId);
+              const trustedOrigin =
+                routeNoteId === null
+                  ? isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation)
+                  : noteId !== null &&
+                    isTrustedNoteOrigin(router.state.location.state.horizonNoteNavigation, noteId);
+              if (options?.focusCollection) {
+                await navigate({ to: '/notes', replace: true });
+                await new Promise<void>((resolve) => {
+                  requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+                });
+                document
+                  .querySelector<HTMLElement>('[data-note-collection-controls] button')
+                  ?.focus();
+              } else if (trustedOrigin) {
+                router.history.back();
+              } else {
+                await navigate({ to: '/notes', replace: true });
+              }
+            }}
+            onCreated={(note: NoteDetail) => {
+              setPromotedCreatedNote({ id: note.id, sourceIdentity: editorIdentity });
+              void navigate({
+                to: '/notes/$id',
+                params: { id: String(note.id) },
+                replace: true,
+                state: {
+                  horizonNoteNavigation: trustedNewOrigin
+                    ? { kind: 'from-workspace', noteId: note.id }
+                    : undefined,
+                },
+              });
+            }}
+          />
+        ) : (
+          <Outlet />
+        )}
+      </NoteLifecycleProvider>
     </NotesBrowseProvider>
   );
 }

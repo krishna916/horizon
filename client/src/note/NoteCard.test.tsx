@@ -1,8 +1,19 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { NoteSummary } from './types';
 import { NoteCard } from './NoteCard';
+
+const lifecycle = vi.hoisted(() => ({
+  ownerId: 12,
+  run: vi.fn(async () => null),
+  stateFor: vi.fn(() => ({ pending: false, error: null, retry: vi.fn() })),
+}));
+
+vi.mock('./NoteLifecycleProvider', () => ({
+  useNoteLifecycle: () => lifecycle,
+}));
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -54,8 +65,12 @@ describe('NoteCard', () => {
 
     expect(screen.getByRole('heading', { name: 'Untitled note' })).toBeInTheDocument();
     expect(screen.getByRole('link')).toHaveAttribute('href', '/notes/7');
-    expect(container.querySelector('img, button')).toBeNull();
+    expect(container.querySelector('img')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'More actions for Untitled note' })
+    ).toBeInTheDocument();
     expect(screen.queryByText(/tag|file/i)).toBeNull();
+    expect(container.querySelector('article[data-note-row]')).toBeInTheDocument();
   });
 
   it('shows the first two Tags in stable order with an overflow count inside the linked card', () => {
@@ -81,6 +96,97 @@ describe('NoteCard', () => {
     expect(link).not.toHaveTextContent('Work');
     expect(link.querySelector('time')).toHaveTextContent(/Updated/);
     expect(link.className).toContain('max-h-[440px]');
+  });
+
+  it('keeps lifecycle actions outside the note link and archives without opening the note', async () => {
+    lifecycle.run.mockClear();
+    lifecycle.run.mockResolvedValueOnce({ kind: 'note' } as never);
+    render(
+      <ul>
+        <li data-note-row>
+          <NoteCard note={summary()} />
+        </li>
+        <li data-note-row>
+          <NoteCard note={summary({ id: 8, title: 'Next note' })} />
+        </li>
+      </ul>
+    );
+    const link = screen.getByRole('link', { name: /Trip notes/ });
+    const menu = screen.getByRole('button', { name: 'More actions for Trip notes' });
+    expect(link).not.toContainElement(menu);
+
+    fireEvent.keyDown(menu, { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Archive' }));
+
+    await waitFor(() =>
+      expect(lifecycle.run).toHaveBeenCalledWith(
+        12,
+        { id: 7, version: 1, archivedAt: null },
+        'archive'
+      )
+    );
+    await waitFor(() => expect(screen.getByRole('link', { name: /Next note/ })).toHaveFocus());
+  });
+
+  it('closes its menu with Escape and returns focus to the trigger', async () => {
+    lifecycle.run.mockClear();
+    render(<NoteCard note={summary()} />);
+    const trigger = screen.getByRole('button', { name: 'More actions for Trip notes' });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    const menu = await screen.findByRole('menu');
+    fireEvent.keyDown(menu, { key: 'Escape' });
+
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(lifecycle.run).not.toHaveBeenCalled();
+  });
+
+  it('restores Card focus after Cancel and Escape without calling the API', async () => {
+    lifecycle.run.mockClear();
+    render(<NoteCard note={summary()} />);
+    const trigger = screen.getByRole('button', { name: 'More actions for Trip notes' });
+    fireEvent.keyDown(trigger, {
+      key: 'Enter',
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+
+    expect(lifecycle.run).not.toHaveBeenCalled();
+  });
+
+  it('focuses the next connected Card after a confirmed removal', async () => {
+    function Cards() {
+      const [notes, setNotes] = useState([summary(), summary({ id: 8, title: 'Next note' })]);
+      lifecycle.run.mockImplementationOnce(async () => {
+        setNotes((current) => current.filter((note) => note.id !== 7));
+        return { kind: 'deleted' } as never;
+      });
+      return (
+        <div>
+          {notes.map((note) => (
+            <NoteCard key={note.id} note={note} />
+          ))}
+        </div>
+      );
+    }
+    render(<Cards />);
+    const next = screen.getByRole('link', { name: /Next note/ });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for Trip notes' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('link', { name: /Trip notes/ })).not.toBeInTheDocument()
+    );
+    await waitFor(() => expect(document.activeElement).toBe(next));
   });
 
   it('keeps safe rich-text links noninteractive inside the card navigation link', () => {

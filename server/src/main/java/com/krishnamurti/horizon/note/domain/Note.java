@@ -67,6 +67,26 @@ public class Note extends BaseEntity {
         this.content = NoteContentPolicy.validateAndCopy(content);
     }
 
+    public void archive(OffsetDateTime when) {
+        if (archivedAt == null) {
+            archivedAt = Objects.requireNonNull(when, "when must not be null");
+        }
+    }
+
+    public void restoreArchived() {
+        archivedAt = null;
+    }
+
+    public void softDelete(OffsetDateTime when) {
+        if (deletedAt == null) {
+            deletedAt = Objects.requireNonNull(when, "when must not be null");
+        }
+    }
+
+    public void restoreDeleted() {
+        deletedAt = null;
+    }
+
     public void touchMetadata() {
         setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
     }

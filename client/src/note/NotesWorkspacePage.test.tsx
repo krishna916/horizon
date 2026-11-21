@@ -7,6 +7,7 @@ import { noteApi } from './api';
 import type { NoteListResponse, NoteSummary } from './types';
 import { NotesBrowseProvider } from './NotesBrowseContext';
 import { NotesWorkspacePage } from './NotesWorkspacePage';
+import { NoteLifecycleProvider } from './NoteLifecycleProvider';
 
 const session = vi.hoisted(() => ({
   value: {
@@ -95,7 +96,9 @@ function renderWorkspace() {
     return (
       <QueryClientProvider client={queryClient}>
         <NotesBrowseProvider userId={1}>
-          <main className="overflow-y-auto">{children}</main>
+          <NoteLifecycleProvider ownerId={1}>
+            <main className="overflow-y-auto">{children}</main>
+          </NoteLifecycleProvider>
         </NotesBrowseProvider>
       </QueryClientProvider>
     );

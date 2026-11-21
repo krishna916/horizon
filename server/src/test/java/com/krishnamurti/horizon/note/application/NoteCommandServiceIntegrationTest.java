@@ -9,6 +9,7 @@ import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.user.application.UserCommandService;
 import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,6 +33,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class NoteCommandServiceIntegrationTest {
 
     @Autowired private NoteCommandService commandService;
+    @Autowired private NoteQueryService queryService;
     @Autowired private NoteRepository noteRepository;
     @Autowired private UserCommandService userCommandService;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -251,6 +253,118 @@ class NoteCommandServiceIntegrationTest {
             executor.shutdownNow();
             assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
         }
+    }
+
+    @Test
+    void lifecycleAdvancesVersionExactlyOnceAndMatchingVersionNoOpDoesNotAdvanceVersion() {
+        Long owner = createUserId();
+        Note note = noteRepository.saveAndFlush(Note.create(owner, "Title", body("Body")));
+        setCurrentUser(owner);
+
+        Note archived = commandService.archive(note.getId(), 0L);
+        assertThat(archived.getVersion()).isEqualTo(1L);
+        assertThat(archived.getArchivedAt()).isNotNull();
+        entityManager.clear();
+        OffsetDateTime updatedAt =
+                noteRepository
+                        .findByIdAndUserIdAndDeletedAtIsNull(note.getId(), owner)
+                        .orElseThrow()
+                        .getUpdatedAt();
+
+        Note repeated = commandService.archive(note.getId(), 1L);
+        assertThat(repeated.getVersion()).isEqualTo(1L);
+        assertThat(repeated.getUpdatedAt().truncatedTo(ChronoUnit.MICROS))
+                .isEqualTo(updatedAt.truncatedTo(ChronoUnit.MICROS));
+    }
+
+    @Test
+    void staleVersionConflictsForLifecycleCommands() {
+        Long owner = createUserId();
+        Note note = noteRepository.saveAndFlush(Note.create(owner, "Title", body("Body")));
+        setCurrentUser(owner);
+
+        assertThatThrownBy(() -> commandService.archive(note.getId(), 1L))
+                .isInstanceOf(NoteVersionConflictException.class);
+    }
+
+    @Test
+    void olderNonnegativeDeleteVersionConflictsButExactRetryDoesNotAdvanceVersion() {
+        Long owner = createUserId();
+        Note note = noteRepository.saveAndFlush(Note.create(owner, "Title", body("Body")));
+        setCurrentUser(owner);
+
+        Note archived = commandService.archive(note.getId(), 0L);
+        assertThat(archived.getVersion()).isEqualTo(1L);
+        OffsetDateTime archivedAt = archived.getArchivedAt();
+
+        Note deleted = commandService.softDelete(note.getId(), 1L);
+        assertThat(deleted.getVersion()).isEqualTo(2L);
+        assertThat(commandService.softDelete(note.getId(), 1L).getVersion()).isEqualTo(2L);
+        assertThatThrownBy(() -> commandService.softDelete(note.getId(), 0L))
+                .isInstanceOf(NoteVersionConflictException.class);
+
+        Note persisted = noteRepository.findByIdAndUserId(note.getId(), owner).orElseThrow();
+        assertThat(persisted.getVersion()).isEqualTo(2L);
+        assertThat(persisted.getArchivedAt().truncatedTo(ChronoUnit.MICROS))
+                .isEqualTo(archivedAt.truncatedTo(ChronoUnit.MICROS));
+        assertThat(persisted.getDeletedAt()).isNotNull();
+        assertThat(queryService.list(NoteCollection.ACTIVE, NoteSort.UPDATED_DESC, 0, 20).items())
+                .noneMatch(item -> item.getId().equals(note.getId()));
+        assertThat(queryService.list(NoteCollection.ARCHIVED, NoteSort.UPDATED_DESC, 0, 20).items())
+                .noneMatch(item -> item.getId().equals(note.getId()));
+    }
+
+    @Test
+    void deletedCannotBeArchivedOrPatched() {
+        Long owner = createUserId();
+        Note note = noteRepository.saveAndFlush(Note.create(owner, "Title", body("Body")));
+        setCurrentUser(owner);
+        Note deleted = commandService.softDelete(note.getId(), 0L);
+
+        assertThatThrownBy(() -> commandService.archive(note.getId(), deleted.getVersion()))
+                .isInstanceOf(NoteNotFoundException.class);
+        assertThatThrownBy(
+                        () ->
+                                commandService.update(
+                                        note.getId(),
+                                        new NotePatch(
+                                                deleted.getVersion(),
+                                                FieldUpdate.of("Changed"),
+                                                FieldUpdate.absent())))
+                .isInstanceOf(NoteNotFoundException.class);
+    }
+
+    @Test
+    void foreignAndMissingAreIndistinguishableForLifecycleCommands() {
+        Long owner = createUserId();
+        Long foreignOwner = createUserId();
+        Note foreign = noteRepository.saveAndFlush(Note.create(foreignOwner, "Foreign", null));
+        setCurrentUser(owner);
+
+        assertThatThrownBy(() -> commandService.archive(-1L, 0L))
+                .isInstanceOf(NoteNotFoundException.class);
+        assertThatThrownBy(() -> commandService.archive(foreign.getId(), 0L))
+                .isInstanceOf(NoteNotFoundException.class);
+    }
+
+    @Test
+    void softDeleteAndRestorePreservePreviousArchiveInboxAndContent() {
+        Long owner = createUserId();
+        Note note = noteRepository.saveAndFlush(Note.create(owner, "Title", body("Body")));
+        jdbcTemplate.update(
+                "UPDATE note SET archived_at = CURRENT_TIMESTAMP, inbox = true WHERE id = ?",
+                note.getId());
+        entityManager.clear();
+        setCurrentUser(owner);
+
+        Note deleted = commandService.softDelete(note.getId(), 0L);
+        Note restored = commandService.restoreDeleted(note.getId(), deleted.getVersion());
+
+        assertThat(restored.getVersion()).isEqualTo(2L);
+        assertThat(restored.getArchivedAt()).isNotNull();
+        assertThat(restored.getDeletedAt()).isNull();
+        assertThat(restored.isInbox()).isTrue();
+        assertThat(restored.getContent()).isEqualTo(body("Body"));
     }
 
     private NotePatch noOp(long version) {

@@ -169,7 +169,7 @@ test('blocks workspace navigation while the note draft is dirty and lets the use
   await page.getByRole('textbox', { name: 'Note title' }).fill('Pending title');
   await page.getByRole('link', { name: 'Notes' }).click();
   await expect(page.getByRole('dialog')).toContainText('unsaved changes');
-  await page.getByRole('button', { name: 'Stay' }).click();
+  await page.getByRole('button', { name: 'Stay', exact: true }).click();
   await expect(page).toHaveURL(/\/notes\/new$/);
   await expect(page.getByRole('textbox', { name: 'Note title' })).toHaveValue('Pending title');
 });
@@ -364,7 +364,7 @@ test('holds a saved Note debounce during sign out and resumes it after Stay', as
   expect(logoutCount).toBe(0);
   await expect(page).not.toHaveURL(/\/login$/);
 
-  await page.getByRole('button', { name: 'Stay' }).click();
+  await page.getByRole('button', { name: 'Stay', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page).toHaveURL(/\/notes\/610$/);
   await expect(title).toHaveValue('Saved after Stay');
@@ -656,7 +656,7 @@ test('holds a debounced create while the sign-out decision is open and resumes a
   await page.clock.fastForward(1_200);
   expect(writeCount).toBe(0);
 
-  await page.getByRole('button', { name: 'Stay' }).click();
+  await page.getByRole('button', { name: 'Stay', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.clock.fastForward(1_000);
   await expect.poll(() => writeCount).toBe(1);
