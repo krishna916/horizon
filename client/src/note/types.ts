@@ -41,3 +41,15 @@ export interface NoteListResponse {
   hasNext: boolean;
   counts: { active: number; archived: number };
 }
+
+export type NoteLifecycleOperation = 'archive' | 'restore' | 'delete';
+
+export type NoteLifecycleTarget = Pick<NoteSummary, 'id' | 'version' | 'archivedAt'>;
+
+export interface NoteDeletionReceipt {
+  id: number;
+  version: number;
+}
+
+export type NoteLifecycleResult =
+  { kind: 'note'; note: NoteDetail } | { kind: 'deleted'; receipt: NoteDeletionReceipt };

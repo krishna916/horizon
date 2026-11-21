@@ -87,6 +87,32 @@ describe('noteApi', () => {
     });
   });
 
+  it('sends expected versions to every Note lifecycle endpoint', async () => {
+    const detail: NoteDetail = { ...summary, content: null };
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue(response(detail) as never);
+    const deleteSpy = vi
+      .spyOn(apiClient, 'delete')
+      .mockResolvedValue(response({ id: 7, version: 2 }) as never);
+
+    await noteApi.archive(7, 0);
+    await noteApi.restoreArchived(7, 1);
+    await noteApi.softDelete(7, 2);
+    await noteApi.restoreDeleted(7, 3);
+
+    expect(postSpy).toHaveBeenNthCalledWith(1, '/notes/7/archive', undefined, {
+      headers: { 'X-Expected-Version': '0' },
+    });
+    expect(postSpy).toHaveBeenNthCalledWith(2, '/notes/7/restore', undefined, {
+      headers: { 'X-Expected-Version': '1' },
+    });
+    expect(deleteSpy).toHaveBeenCalledWith('/notes/7', {
+      headers: { 'X-Expected-Version': '2' },
+    });
+    expect(postSpy).toHaveBeenNthCalledWith(3, '/notes/7/restore-deleted', undefined, {
+      headers: { 'X-Expected-Version': '3' },
+    });
+  });
+
   it('updates a note with its expected version and nullable title', async () => {
     const detail: NoteDetail = { ...summary, content: null };
     const patchSpy = vi.spyOn(apiClient, 'patch').mockResolvedValue(response(detail) as never);
