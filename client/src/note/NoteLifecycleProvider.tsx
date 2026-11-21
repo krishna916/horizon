@@ -514,11 +514,26 @@ export function NoteLifecycleProvider({
   const dismiss = useCallback(
     (noticeId: string) => {
       const notice = noticesRef.current.find((item) => item.id === noticeId);
-      if (notice?.pending) return;
+      if (!notice) return;
+      const key = operationKey(notice.ownerId, notice.noteId);
+      const state = statesRef.current.get(key);
+      if (notice.pending || state?.pending || pendingRef.current.has(key)) return;
       publishNotices((current) => current.filter((item) => item.id !== noticeId));
-      if (notice) retryIntentsRef.current.delete(operationKey(notice.ownerId, notice.noteId));
+      if (notice.kind === 'delete-unconfirmed') {
+        const remainingForNote = noticesRef.current.some(
+          (item) => item.ownerId === notice.ownerId && item.noteId === notice.noteId
+        );
+        const intent = retryIntentsRef.current.get(key);
+        const editor = editorGatewaysRef.current.get(key);
+        const editorIsCurrent = editor?.ownerRevision === getCurrentOwnerRevision() &&
+          editor.sessionEpoch === getCurrentSessionEpoch();
+        if (!remainingForNote && intent?.operation === 'delete' && !editorIsCurrent) {
+          retryIntentsRef.current.delete(key);
+          publishState(key, null);
+        }
+      }
     },
-    [publishNotices]
+    [publishNotices, publishState]
   );
 
   const stateFor = useCallback(
@@ -540,7 +555,16 @@ export function NoteLifecycleProvider({
               item.ownerId === requestedOwnerId && item.noteId === noteId &&
               item.kind === 'delete-unconfirmed'
             );
-            if (notice) void retryDelete(notice.id);
+            if (notice) {
+              void retryDelete(notice.id);
+            } else {
+              void run(requestedOwnerId, intent.target, 'delete').then((result) => {
+                if (result?.kind !== 'deleted') return;
+                const editor = editorGatewaysRef.current.get(key);
+                if (editor?.ownerRevision === getCurrentOwnerRevision() &&
+                    editor.sessionEpoch === getCurrentSessionEpoch()) editor.gateway.complete(null);
+              });
+            }
             return;
           }
           void run(requestedOwnerId, intent.target, intent.operation);

@@ -89,6 +89,22 @@ describe('NoteListRow', () => {
     expect(lifecycle.run).toHaveBeenCalledTimes(1);
   });
 
+  it('restores List focus after Cancel and Escape without calling the API', async () => {
+    lifecycle.run.mockClear();
+    render(<NoteListRow note={summary()} />);
+    const trigger = screen.getByRole('button', { name: 'More actions for Trip notes' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(lifecycle.run).not.toHaveBeenCalled();
+  });
+
   it('shows Tags in a responsive metadata column without changing the note link', () => {
     render(
       <NoteListRow

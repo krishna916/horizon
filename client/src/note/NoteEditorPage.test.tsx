@@ -253,12 +253,17 @@ describe('NoteEditorPage', () => {
     state.note = { ...archivedNote, title: 'Recoverable note' };
     state.snapshot = { ...state.snapshot, persisted: { id: 6, version: 2 } };
     renderEditor('6');
-    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for Recoverable note' }), {
-      key: 'Enter',
-    });
+    const trigger = screen.getByRole('button', { name: 'More actions for Recoverable note' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('contents remain recoverable');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Move to Trash' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
     expect(state.prepareLifecycleMutation).not.toHaveBeenCalled();
     expect(state.lifecycleRun).not.toHaveBeenCalled();
     expect(state.onBack).not.toHaveBeenCalled();

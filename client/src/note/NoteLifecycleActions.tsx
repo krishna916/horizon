@@ -33,13 +33,16 @@ export function NoteLifecycleActions({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [localPending, setLocalPending] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const focusDestinationRef = useRef<HTMLElement | null>(null);
+  const deleteSucceededRef = useRef(false);
   const state = lifecycle.stateFor(ownerId, target.id);
   const archived = target.archivedAt !== null;
   const operation = archived ? 'restore' : 'archive';
   const disabled = state.pending || localPending || disabledByCaller;
 
   function captureFocusDestination() {
-    const row = triggerRef.current?.closest<HTMLElement>('[data-note-row]');
+    const nearestRow = triggerRef.current?.closest<HTMLElement>('[data-note-row]');
+    const row = nearestRow?.parentElement?.closest<HTMLElement>('[data-note-row]') ?? nearestRow;
     const following = row?.nextElementSibling?.querySelector<HTMLElement>('a, button');
     const preceding = row?.previousElementSibling?.querySelector<HTMLElement>('a, button');
     const collectionControl = document.querySelector<HTMLElement>(
@@ -49,7 +52,12 @@ export function NoteLifecycleActions({
   }
 
   function focusAfterRemoval(destination: HTMLElement | null) {
-    if (destination) requestAnimationFrame(() => destination.isConnected && destination.focus());
+    requestAnimationFrame(() => {
+      const target = destination?.isConnected
+        ? destination
+        : document.querySelector<HTMLElement>('[data-note-collection-controls] button');
+      target?.focus();
+    });
   }
 
   async function execute(action: NoteLifecycleOperation) {
@@ -66,15 +74,15 @@ export function NoteLifecycleActions({
 
   async function confirmDelete() {
     if (disabled) return;
-    const focusDestination = onExecute ? null : captureFocusDestination();
     setLocalPending(true);
     try {
       if (onExecute) {
         await onExecute('delete', target);
+        deleteSucceededRef.current = placement === 'editor' && !triggerRef.current?.isConnected;
         setDeleteOpen(false);
       } else if (await lifecycle.run(ownerId, target, 'delete')) {
+        deleteSucceededRef.current = true;
         setDeleteOpen(false);
-        focusAfterRemoval(focusDestination);
       }
     } finally {
       setLocalPending(false);
@@ -101,6 +109,7 @@ export function NoteLifecycleActions({
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <Button
+                ref={triggerRef}
                 type="button"
                 variant="outline"
                 size="icon"
@@ -117,7 +126,11 @@ export function NoteLifecycleActions({
                 className="z-50 min-w-40 rounded-md border border-border bg-background p-1 text-sm text-foreground shadow-md"
               >
                 <DropdownMenu.Item
-                  onSelect={() => setDeleteOpen(true)}
+                  onSelect={() => {
+                    focusDestinationRef.current = captureFocusDestination();
+                    deleteSucceededRef.current = false;
+                    setDeleteOpen(true);
+                  }}
                   className="flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-destructive outline-none focus:bg-muted"
                 >
                   <Trash2 aria-hidden="true" className="size-4" />
@@ -155,7 +168,11 @@ export function NoteLifecycleActions({
                 {archived ? 'Restore' : 'Archive'}
               </DropdownMenu.Item>
               <DropdownMenu.Item
-                onSelect={() => setDeleteOpen(true)}
+                onSelect={() => {
+                  focusDestinationRef.current = captureFocusDestination();
+                  deleteSucceededRef.current = false;
+                  setDeleteOpen(true);
+                }}
                 className="flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-destructive outline-none focus:bg-muted"
               >
                 Move to Trash
@@ -199,6 +216,15 @@ export function NoteLifecycleActions({
           <Dialog.Overlay className="fixed inset-0 z-[110] bg-black/45" />
           <Dialog.Content
             role="alertdialog"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              if (deleteSucceededRef.current) {
+                deleteSucceededRef.current = false;
+                focusAfterRemoval(focusDestinationRef.current);
+              } else if (triggerRef.current?.isConnected) {
+                triggerRef.current.focus();
+              }
+            }}
             className="fixed left-1/2 top-1/2 z-[111] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-6 shadow-xl outline-none"
           >
             <Dialog.Title className="text-base font-semibold text-foreground">

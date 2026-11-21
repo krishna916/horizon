@@ -59,6 +59,7 @@ function setup(gateway?: NoteEditorUndoGateway) {
       <>
         <button onClick={() => void lifecycle.run(1, summary, 'archive')}>Archive</button>
         <button onClick={() => void lifecycle.run(1, summary, 'delete')}>Delete</button>
+        <button onClick={() => void lifecycle.run(1, { ...summary, id: 8 }, 'delete')}>Delete other note</button>
         <button
           onClick={() =>
             void lifecycle.run(1, { ...summary, archivedAt: '2026-11-20T10:00:00Z' }, 'delete')
@@ -80,6 +81,7 @@ function setup(gateway?: NoteEditorUndoGateway) {
             <span>{notice.error}</span>
             <button onClick={() => void lifecycle.undo(notice.id)}>Undo</button>
             <button onClick={() => void lifecycle.retryDelete(notice.id)}>Retry delete</button>
+            <button onClick={() => lifecycle.dismiss(notice.id)}>Dismiss</button>
           </div>
         ))}
         <button onClick={() => {
@@ -87,6 +89,8 @@ function setup(gateway?: NoteEditorUndoGateway) {
           if (notice) void lifecycle.undo(notice.id);
         }}>Undo again</button>
         <span>{lifecycle.stateFor(1, 7).error}</span>
+        <span>{lifecycle.stateFor(1, 8).error}</span>
+        <button onClick={() => lifecycle.stateFor(1, 7).retry()}>Retry state 7</button>
       </>
     );
   }
@@ -330,5 +334,44 @@ describe('NoteLifecycleProvider', () => {
     await screen.findAllByText(/changed elsewhere/);
     expect(restore).not.toHaveBeenCalled();
     expect(gateway.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses an unconfirmed Delete and clears its inline error and retry intent', async () => {
+    const remove = vi.spyOn(noteApi, 'softDelete').mockRejectedValue(new Error('timeout'));
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await screen.findByText('delete-unconfirmed');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByText('delete-unconfirmed')).not.toBeInTheDocument();
+    expect(screen.queryByText("Couldn't move this note to Trash. Try again.")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry state 7' }));
+    await Promise.resolve();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismissing one uncertain Note does not clear another Note’s recovery', async () => {
+    const remove = vi.spyOn(noteApi, 'softDelete').mockRejectedValue(new Error('timeout'));
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await screen.findByText('delete-unconfirmed');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete other note' }));
+    await waitFor(() => expect(screen.getAllByText('delete-unconfirmed')).toHaveLength(2));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!);
+    expect(screen.getAllByText('delete-unconfirmed')).toHaveLength(1);
+    expect(screen.getAllByText("Couldn't move this note to Trash. Try again.")).toHaveLength(2);
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores dismissal while an Undo mutation is pending', async () => {
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    const restoreDeferred = deferred<never>();
+    vi.spyOn(noteApi, 'restoreArchived').mockReturnValue(restoreDeferred.promise);
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.getByText('undo')).toBeInTheDocument();
+    await act(async () => restoreDeferred.resolve({ data: detail(9, null) } as never));
   });
 });

@@ -20,7 +20,7 @@ export function NoteCard({ note }: { readonly note: NoteSummary }) {
   const visibleTags = tags.slice(0, 2);
 
   return (
-    <article className="relative min-w-0 max-h-[440px] self-start">
+    <article data-note-row className="relative min-w-0 max-h-[440px] self-start">
       <Link
         to="/notes/$id"
         params={{ id: String(note.id) }}
