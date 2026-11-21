@@ -90,6 +90,60 @@ class NoteTest {
         assertThat(note.getContent()).isNull();
     }
 
+    @Test
+    void archiveSetsOnceAndRestoreClearsOnlyArchive() {
+        Note note = Note.create(41L, "Title", bodyDocument());
+        java.time.OffsetDateTime archivedAt =
+                java.time.OffsetDateTime.parse("2026-11-21T10:00:00Z");
+
+        note.archive(archivedAt);
+        note.archive(archivedAt.plusDays(1));
+
+        assertThat(note.getArchivedAt()).isEqualTo(archivedAt);
+        assertThat(note.getDeletedAt()).isNull();
+        note.restoreArchived();
+        assertThat(note.getArchivedAt()).isNull();
+        assertThat(note.getDeletedAt()).isNull();
+    }
+
+    @Test
+    void softDeleteAndRestorePreservePreviousArchiveAndInbox() {
+        Note note = Note.create(41L, "Title", bodyDocument());
+        java.time.OffsetDateTime archivedAt =
+                java.time.OffsetDateTime.parse("2026-11-21T10:00:00Z");
+        java.time.OffsetDateTime deletedAt = archivedAt.plusHours(1);
+        note.archive(archivedAt);
+
+        note.softDelete(deletedAt);
+        assertThat(note.getArchivedAt()).isEqualTo(archivedAt);
+        assertThat(note.getDeletedAt()).isEqualTo(deletedAt);
+        note.restoreDeleted();
+
+        assertThat(note.getArchivedAt()).isEqualTo(archivedAt);
+        assertThat(note.getDeletedAt()).isNull();
+        assertThat(note.isInbox()).isFalse();
+    }
+
+    @Test
+    void repeatedOperationsDoNotTouchContentOrTimestamps() {
+        Note note = Note.create(41L, "Title", bodyDocument());
+        Map<String, Object> content = note.getContent();
+        java.time.OffsetDateTime at = java.time.OffsetDateTime.parse("2026-11-21T10:00:00Z");
+
+        note.archive(at);
+        note.archive(at.plusDays(1));
+        note.softDelete(at.plusHours(1));
+        note.softDelete(at.plusHours(2));
+        note.restoreDeleted();
+        note.restoreDeleted();
+        note.restoreArchived();
+        note.restoreArchived();
+
+        assertThat(note.getContent()).isEqualTo(content);
+        assertThat(note.getCreatedAt()).isNull();
+        assertThat(note.getUpdatedAt()).isNull();
+    }
+
     private static Map<String, Object> doc(Map<String, Object>... blocks) {
         return Map.of("type", "doc", "content", List.of(blocks));
     }
