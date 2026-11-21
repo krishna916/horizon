@@ -101,6 +101,7 @@ function setup(gateway?: NoteEditorUndoGateway) {
         <span>{lifecycle.stateFor(1, 7).error}</span>
         <span>{lifecycle.stateFor(1, 8).error}</span>
         <button onClick={() => lifecycle.stateFor(1, 7).retry()}>Retry state 7</button>
+        <button onClick={() => lifecycle.stateFor(1, 7).checkStatus()}>Check note status</button>
       </>
     );
   }
@@ -170,6 +171,56 @@ describe('NoteLifecycleProvider', () => {
     expect(remove).toHaveBeenNthCalledWith(1, 7, 4);
     expect(remove).toHaveBeenNthCalledWith(2, 7, 4);
   });
+
+  it.each([409, 404])(
+    'reconciles an uncertain DELETE retry %s from a readable Note without confirming deletion',
+    async (status) => {
+      const current = detail(7, null);
+      const remove = vi
+        .spyOn(noteApi, 'softDelete')
+        .mockRejectedValueOnce(new Error('timeout'))
+        .mockRejectedValueOnce(httpError(status));
+      const get = vi.spyOn(noteApi, 'get').mockResolvedValue({ data: current } as never);
+      const recover = vi.fn();
+      setup({ prepare: vi.fn(), complete: vi.fn(), cancel: vi.fn(), recover });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      await screen.findByText('delete-unconfirmed');
+      fireEvent.click(screen.getByRole('button', { name: 'Retry delete' }));
+
+      await waitFor(() => expect(recover).toHaveBeenCalledWith(current));
+      expect(remove).toHaveBeenNthCalledWith(1, 7, 4);
+      expect(remove).toHaveBeenNthCalledWith(2, 7, 4);
+      expect(get).toHaveBeenCalledOnce();
+      expect(screen.queryByText('undo')).not.toBeInTheDocument();
+    }
+  );
+
+  it.each([404, 500])(
+    'keeps recovery held and offers status-only recheck when retry or GET returns %s',
+    async (status) => {
+      const remove = vi
+        .spyOn(noteApi, 'softDelete')
+        .mockRejectedValueOnce(new Error('timeout'))
+        .mockRejectedValueOnce(httpError(409));
+      const get = vi.spyOn(noteApi, 'get').mockRejectedValue(httpError(status));
+      const recover = vi.fn();
+      setup({ prepare: vi.fn(), complete: vi.fn(), cancel: vi.fn(), recover });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      await screen.findByText('delete-unconfirmed');
+      fireEvent.click(screen.getByRole('button', { name: 'Retry delete' }));
+      await screen.findByText(/Editing remains paused/);
+      expect(screen.getByRole('button', { name: 'Check note status' })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Check note status' }));
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+      expect(recover).not.toHaveBeenCalled();
+      expect(remove).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText('undo')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Check note status' })).toBeInTheDocument();
+    }
+  );
 
   it('uses the confirmed delete version to Undo an archived Note and preserves its archived placement', async () => {
     const remove = vi
@@ -344,6 +395,7 @@ describe('NoteLifecycleProvider', () => {
       prepare: vi.fn().mockResolvedValue({ id: 7, version: 8 }),
       complete: vi.fn(),
       cancel: vi.fn(),
+      recover: vi.fn(),
     };
     setup(gateway);
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
@@ -364,6 +416,7 @@ describe('NoteLifecycleProvider', () => {
       prepare: vi.fn().mockResolvedValue({ id: 7, version: 9 }),
       complete: vi.fn(),
       cancel: vi.fn(),
+      recover: vi.fn(),
     };
     setup(gateway);
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }));

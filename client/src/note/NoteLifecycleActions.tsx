@@ -200,6 +200,17 @@ export function NoteLifecycleActions({
       {state.error && (
         <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
           <p>{state.error}</p>
+          {state.recoveryRequired && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={state.pending || localPending}
+              onClick={() => state.checkStatus()}
+            >
+              Check note status
+            </Button>
+          )}
           {state.retryOperation && (
             <Button
               type="button"

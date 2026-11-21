@@ -36,6 +36,77 @@ const conflictError = () =>
 afterEach(() => vi.useRealTimers());
 
 describe('NoteSaveCoordinator', () => {
+  it('reconciles a readable Note after uncertain delete without acknowledging a changed draft', async () => {
+    vi.useFakeTimers();
+    const initial = { title: 'Existing', content: null };
+    const current = detail(9, 3, initial);
+    const update = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+      debounceMs: 10,
+    });
+
+    expect(await coordinator.prepareLifecycleMutation()).toEqual({ id: 9, version: 2 });
+    coordinator.recoverLifecycleMutation(current);
+
+    expect(coordinator.snapshot()).toMatchObject({
+      persisted: { id: 9, version: 3 },
+      draft: initial,
+      phase: 'saved',
+      lifecycleBusy: false,
+      hasUnsavedChanges: false,
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(update).not.toHaveBeenCalled();
+    coordinator.dispose();
+  });
+
+  it('reconciles a readable Note after the editor remounts during recovery', async () => {
+    const initial = { title: 'Existing', content: null };
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update: vi.fn(), get: vi.fn() },
+      onChange: vi.fn(),
+    });
+
+    expect(coordinator.recoverLifecycleMutation(detail(9, 3, initial))).toBe(true);
+    expect(coordinator.snapshot()).toMatchObject({
+      persisted: { id: 9, version: 3 },
+      phase: 'saved',
+      lifecycleBusy: false,
+    });
+    coordinator.dispose();
+  });
+
+  it('keeps a local draft in conflict when the readable Note has changed remotely', async () => {
+    const initial = { title: 'Existing', content: null };
+    const local = { title: 'Local draft', content: null };
+    const remote = detail(9, 3, { title: 'Remote edit', content: null });
+    const update = vi.fn();
+    const coordinator = new NoteSaveCoordinator({
+      initialDraft: initial,
+      initialNote: detail(9, 2, initial),
+      transport: { create: vi.fn(), update, get: vi.fn() },
+      onChange: vi.fn(),
+    });
+
+    expect(await coordinator.prepareLifecycleMutation()).toEqual({ id: 9, version: 2 });
+    coordinator.edit(local);
+    coordinator.recoverLifecycleMutation(remote);
+
+    expect(coordinator.snapshot()).toMatchObject({
+      persisted: { id: 9, version: 3 },
+      draft: initial,
+      phase: 'conflict',
+      lifecycleBusy: false,
+    });
+    expect(update).not.toHaveBeenCalled();
+    coordinator.dispose();
+  });
   it('exposes Tag validation errors from create responses for a manual retry', async () => {
     const create = vi.fn().mockRejectedValue(
       Object.assign(new Error('invalid'), {

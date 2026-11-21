@@ -224,6 +224,7 @@ function ActiveNoteEditor({
     flush,
     prepareLifecycleMutation,
     completeLifecycleMutation,
+    recoverLifecycleMutation,
     cancelLifecycleMutation,
     retry,
     resolveConflict,
@@ -259,7 +260,7 @@ function ActiveNoteEditor({
     (latest, note) => (!note || (latest && latest.version > note.version) ? latest : note),
     null
   );
-  const lifecycleBusy = snapshot.lifecycleBusy || actionPending;
+  const lifecycleBusy = snapshot.lifecycleBusy || actionPending || lifecycleState.recoveryRequired;
 
   useEffect(() => {
     const noteId = lifecycleNote?.id;
@@ -271,11 +272,17 @@ function ActiveNoteEditor({
         if (note) setLocalLifecycleNote(note);
         else void onBack({ focusCollection: true });
       },
+      recover: (note) => {
+        const recovered = recoverLifecycleMutation(note);
+        if (recovered) setLocalLifecycleNote(note);
+        return recovered;
+      },
       cancel: cancelLifecycleMutation,
     });
   }, [
     cancelLifecycleMutation,
     completeLifecycleMutation,
+    recoverLifecycleMutation,
     lifecycleNote?.id,
     onBack,
     prepareLifecycleMutation,

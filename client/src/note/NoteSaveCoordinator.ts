@@ -323,6 +323,35 @@ export class NoteSaveCoordinator {
     this.publish();
   }
 
+  recoverLifecycleMutation(note: NoteDetail): boolean {
+    if (
+      this.disposed ||
+      !this.persisted ||
+      this.persisted.id !== note.id ||
+      this.inFlight !== null ||
+      this.outcomeUncertain ||
+      this.paused ||
+      this.navigationHeld
+    )
+      return false;
+
+    this.clearTimer();
+    this.lifecycleHeld = false;
+    this.lifecyclePreparing = false;
+    this.persisted = { id: note.id, version: note.version };
+    this.knownTags = [...note.tags];
+    this.onServerReconciled?.(note);
+
+    if (noteDraftMatchesNote(this.baseline, note)) {
+      this.phase = this.hasWork() ? 'dirty' : 'saved';
+      if (this.phase === 'dirty' && !this.paused && !this.navigationHeld) this.scheduleSave();
+    } else {
+      this.phase = 'conflict';
+    }
+    this.publish();
+    return true;
+  }
+
   adoptLifecycleVersion(note: NoteDetail): void {
     if (
       this.disposed ||

@@ -54,6 +54,7 @@ async function installApi(page: Page) {
   ]);
   const mutations: Array<{ method: string; path: string; expectedVersion: string | null }> = [];
   let failNextDelete = false;
+  let failNextNoteGet = false;
   let conflictNextDelete = false;
   let conflictNextArchive = false;
   let conflictNextUpdate = false;
@@ -109,6 +110,11 @@ async function installApi(page: Page) {
       return;
     }
     if (method === 'GET') {
+      if (failNextNoteGet) {
+        failNextNoteGet = false;
+        await route.fulfill({ status: 503, contentType: 'application/problem+json', body: '{}' });
+        return;
+      }
       const { deletedAt: _deletedAt, ...response } = current;
       await route.fulfill({
         status: 200,
@@ -185,6 +191,7 @@ async function installApi(page: Page) {
   return {
     mutations,
     failNextDelete: () => (failNextDelete = true),
+    failNextNoteGet: () => (failNextNoteGet = true),
     conflictNextDelete: () => (conflictNextDelete = true),
     conflictNextArchive: () => (conflictNextArchive = true),
     conflictNextUpdate: () => (conflictNextUpdate = true),
@@ -277,6 +284,69 @@ test('keeps editor autosave held after an uncertain Delete until the receipt ret
     { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
     { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '4' },
   ]);
+});
+
+test('recovers an uncertain editor Delete after a 409 using a readable Note and preserves its draft', async ({
+  page,
+}) => {
+  const api = await installApi(page);
+  api.failNextDelete();
+  api.conflictNextDelete();
+  await page.goto('/notes/1');
+  const title = page.getByRole('textbox', { name: 'Note title' });
+  await title.fill('Draft saved before Delete');
+  await expect
+    .poll(() => api.mutations.at(-1))
+    .toEqual({ method: 'PATCH', path: '/api/v1/notes/1', expectedVersion: '4' });
+
+  await page.getByRole('button', { name: 'More actions for Draft saved before Delete' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
+  await page.getByRole('button', { name: 'Retry delete for Note 1' }).click();
+
+  await expect(title).toBeEnabled();
+  await expect(title).toHaveValue('Draft saved before Delete');
+  await expect(page.getByRole('region', { name: 'Note updates' })).toHaveCount(0);
+  await title.fill('Edited after safe recovery');
+  await expect
+    .poll(() => api.mutations.at(-1))
+    .toEqual({ method: 'PATCH', path: '/api/v1/notes/1', expectedVersion: '5' });
+  expect(api.mutations.filter((mutation) => mutation.method === 'DELETE')).toEqual([
+    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '5' },
+    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '5' },
+  ]);
+});
+
+test('keeps autosave paused when reconciliation GET fails and offers a status-only recheck', async ({
+  page,
+}) => {
+  const api = await installApi(page);
+  api.failNextDelete();
+  api.conflictNextDelete();
+  await page.goto('/notes/1');
+  await page.getByRole('button', { name: 'More actions for Lifecycle active note' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
+  api.failNextNoteGet();
+  await page.getByRole('button', { name: 'Retry delete for Note 1' }).click();
+
+  const pausedMessage = page.getByRole('alert').filter({ hasText: 'Editing remains paused' });
+  await expect(pausedMessage).toBeVisible();
+  const title = page.getByRole('textbox', { name: 'Note title' });
+  await expect(title).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Check note status' })).toBeVisible();
+  expect(api.mutations.filter((mutation) => mutation.method === 'PATCH')).toHaveLength(0);
+  expect(api.mutations.filter((mutation) => mutation.method === 'DELETE')).toHaveLength(2);
+
+  await page.getByRole('button', { name: 'Back to Notes' }).click();
+  await expect(page.getByRole('button', { name: 'Check note status' })).toBeVisible();
+  await page.getByRole('button', { name: 'Check note status' }).click();
+  const noteLink = page.getByRole('link', { name: 'Lifecycle active note' });
+  await expect(noteLink).toBeVisible();
+  await noteLink.click();
+  await expect(page.getByRole('textbox', { name: 'Note title' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Check note status' })).toHaveCount(0);
+  expect(api.mutations.filter((mutation) => mutation.method === 'DELETE')).toHaveLength(2);
 });
 
 test('keeps an exact-version editor receipt retry available after dismissing uncertain Delete notice', async ({

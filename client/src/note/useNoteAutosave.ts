@@ -217,6 +217,10 @@ export function useNoteAutosave({
     (note: NoteDetail | null) => coordinator.completeLifecycleMutation(note),
     [coordinator]
   );
+  const recoverLifecycleMutation = useCallback(
+    (note: NoteDetail) => coordinator.recoverLifecycleMutation(note),
+    [coordinator]
+  );
   const adoptLifecycleVersion = useCallback(
     (note: NoteDetail) => coordinator.adoptLifecycleVersion(note),
     [coordinator]
@@ -269,6 +273,7 @@ export function useNoteAutosave({
     prepareLifecycleMutation,
     completeLifecycleMutation,
     adoptLifecycleVersion,
+    recoverLifecycleMutation,
     cancelLifecycleMutation,
     retry,
     resolveConflict,

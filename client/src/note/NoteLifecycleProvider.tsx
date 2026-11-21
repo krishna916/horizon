@@ -42,12 +42,15 @@ interface LifecycleState {
   outcomeUnknown?: boolean;
   retryOperation?: NoteLifecycleOperation;
   retryTarget?: NoteLifecycleTarget;
+  failureKind?: LifecycleErrorKind | null;
+  recoveryRequired?: boolean;
 }
 
 export interface NoteEditorUndoGateway {
   prepare: () => Promise<{ id: number; version: number } | null>;
   complete: (note: NoteDetail | null) => void;
   cancel: () => void;
+  recover: (note: NoteDetail) => boolean;
 }
 
 interface RetryIntent {
@@ -65,6 +68,7 @@ interface NoteLifecycleContextValue {
   undo: (noticeId: string) => Promise<boolean>;
   registerEditor: (noteId: number, gateway: NoteEditorUndoGateway) => () => void;
   retryDelete: (noticeId: string) => Promise<boolean>;
+  checkStatus: (ownerId: number, noteId: number) => Promise<boolean>;
   dismiss: (noticeId: string) => void;
   notices: readonly NoteLifecycleNotice[];
   stateFor: (
@@ -77,6 +81,8 @@ interface NoteLifecycleContextValue {
     outcomeUnknown: boolean;
     retryOperation: NoteLifecycleOperation | undefined;
     retryTarget: NoteLifecycleTarget | undefined;
+    recoveryRequired: boolean;
+    checkStatus: () => void;
     retry: () => void;
   };
 }
@@ -296,6 +302,8 @@ export function NoteLifecycleProvider({
             outcomeUnknown: false,
             retryOperation: undefined,
             retryTarget: undefined,
+            failureKind: null,
+            recoveryRequired: false,
           });
           publishNotices((current) => [
             ...current,
@@ -330,6 +338,8 @@ export function NoteLifecycleProvider({
           outcomeUnknown: false,
           retryOperation: undefined,
           retryTarget: undefined,
+          failureKind: null,
+          recoveryRequired: false,
         });
         if (operation === 'archive') {
           publishNotices((current) => [
@@ -359,6 +369,8 @@ export function NoteLifecycleProvider({
           outcomeUnknown: operation === 'delete' && errorKind === 'unknown',
           retryOperation: errorKind === 'unknown' ? operation : undefined,
           retryTarget: errorKind === 'unknown' ? target : undefined,
+          failureKind: errorKind,
+          recoveryRequired: false,
         });
         if (errorKind !== 'unknown') retryIntentsRef.current.delete(key);
         if (operation === 'delete' && errorKind === 'unknown') {
@@ -513,6 +525,82 @@ export function NoteLifecycleProvider({
     [acquire, isCurrent, ownerId, publishNotices, publishState, reconcile, release]
   );
 
+  const checkStatus = useCallback(
+    async (requestedOwnerId: number, noteId: number): Promise<boolean> => {
+      const key = operationKey(requestedOwnerId, noteId);
+      const lock = acquire(key, requestedOwnerId);
+      if (!lock) return false;
+      const { token, ownerRevision, sessionEpoch } = lock;
+      publishState(key, { pending: true, error: null, recoveryRequired: true });
+      try {
+        const response = await noteApi.get(noteId);
+        if (!isCurrent(requestedOwnerId, ownerRevision, sessionEpoch)) return false;
+        const note = response.data;
+        if (note.id !== noteId) throw new Error('Invalid Note status response');
+        const registered = editorGatewaysRef.current.get(key);
+        const editorIsCurrent =
+          registered?.ownerRevision === ownerRevision && registered.sessionEpoch === sessionEpoch;
+        if (editorIsCurrent) {
+          if (!registered.gateway.recover(note)) throw new Error('Editor recovery is unavailable');
+        } else if (!statesRef.current.get(key)?.recoveryRequired) {
+          throw new Error('Editor recovery is unavailable');
+        }
+        queryClient.setQueryData(noteQueryKeys.detail(requestedOwnerId, noteId), response);
+        if (!editorIsCurrent)
+          void queryClient.invalidateQueries({
+            queryKey: ['notes', requestedOwnerId, 'list'],
+          });
+        publishState(key, {
+          pending: false,
+          error: null,
+          note,
+          failureKind: null,
+          recoveryRequired: false,
+          outcomeUnknown: false,
+          retryOperation: undefined,
+          retryTarget: undefined,
+        });
+        return true;
+      } catch {
+        if (isCurrent(requestedOwnerId, ownerRevision, sessionEpoch))
+          publishState(key, {
+            pending: false,
+            error:
+              'Couldn’t verify whether this note is still available. Editing remains paused. Check its status again or return to Notes.',
+            recoveryRequired: true,
+            outcomeUnknown: false,
+            retryOperation: undefined,
+            retryTarget: undefined,
+          });
+        return false;
+      } finally {
+        release(key, token);
+        if (isCurrent(requestedOwnerId, ownerRevision, sessionEpoch))
+          publishState(key, {
+            ...statesRef.current.get(key),
+            pending: false,
+            error: statesRef.current.get(key)?.error ?? null,
+          });
+      }
+    },
+    [acquire, isCurrent, publishState, queryClient, release]
+  );
+
+  const recoverAfterDefinitiveDeleteRetry = useCallback(
+    async (requestedOwnerId: number, noteId: number) => {
+      const key = operationKey(requestedOwnerId, noteId);
+      const state = statesRef.current.get(key);
+      const editor = editorGatewaysRef.current.get(key);
+      if (
+        editor?.ownerRevision === getCurrentOwnerRevision() &&
+        editor.sessionEpoch === getCurrentSessionEpoch() &&
+        (state?.failureKind === 'conflict' || state?.failureKind === 'unavailable')
+      )
+        await checkStatus(requestedOwnerId, noteId);
+    },
+    [checkStatus]
+  );
+
   const retryDelete = useCallback(
     async (noticeId: string) => {
       const notice = noticesRef.current.find(
@@ -522,6 +610,8 @@ export function NoteLifecycleProvider({
       const intent = retryIntentsRef.current.get(operationKey(ownerId, notice.noteId));
       if (!intent || intent.operation !== 'delete') return false;
       const result = await run(ownerId, intent.target, 'delete');
+      if (result?.kind !== 'deleted')
+        await recoverAfterDefinitiveDeleteRetry(ownerId, notice.noteId);
       if (result?.kind === 'deleted') {
         const registered = editorGatewaysRef.current.get(operationKey(ownerId, notice.noteId));
         if (
@@ -532,7 +622,7 @@ export function NoteLifecycleProvider({
       }
       return result?.kind === 'deleted';
     },
-    [ownerId, run]
+    [ownerId, recoverAfterDefinitiveDeleteRetry, run]
   );
 
   const dismiss = useCallback(
@@ -572,6 +662,8 @@ export function NoteLifecycleProvider({
         outcomeUnknown: state?.outcomeUnknown ?? false,
         retryOperation: state?.retryOperation,
         retryTarget: state?.retryTarget,
+        recoveryRequired: state?.recoveryRequired ?? false,
+        checkStatus: () => void checkStatus(requestedOwnerId, noteId),
         retry: () => {
           const intent = retryIntentsRef.current.get(key);
           if (!intent) return;
@@ -585,8 +677,11 @@ export function NoteLifecycleProvider({
             if (notice) {
               void retryDelete(notice.id);
             } else {
-              void run(requestedOwnerId, intent.target, 'delete').then((result) => {
-                if (result?.kind !== 'deleted') return;
+              void run(requestedOwnerId, intent.target, 'delete').then(async (result) => {
+                if (result?.kind !== 'deleted') {
+                  await recoverAfterDefinitiveDeleteRetry(requestedOwnerId, noteId);
+                  return;
+                }
                 const editor = editorGatewaysRef.current.get(key);
                 if (
                   editor?.ownerRevision === getCurrentOwnerRevision() &&
@@ -601,12 +696,22 @@ export function NoteLifecycleProvider({
         },
       };
     },
-    [retryDelete, run]
+    [checkStatus, recoverAfterDefinitiveDeleteRetry, retryDelete, run]
   );
 
   return (
     <LifecycleContext.Provider
-      value={{ ownerId, run, undo, registerEditor, retryDelete, dismiss, notices, stateFor }}
+      value={{
+        ownerId,
+        run,
+        undo,
+        registerEditor,
+        retryDelete,
+        checkStatus,
+        dismiss,
+        notices,
+        stateFor,
+      }}
     >
       {children}
     </LifecycleContext.Provider>
