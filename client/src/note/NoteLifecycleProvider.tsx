@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import type { ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
@@ -37,6 +45,7 @@ interface RetryIntent {
 }
 
 interface NoteLifecycleContextValue {
+  ownerId: number;
   run: (
     ownerId: number,
     target: NoteLifecycleTarget,
@@ -80,9 +89,11 @@ export function NoteLifecycleProvider({
   const mountedRef = useRef(true);
   const ownerIdRef = useRef(ownerId);
 
-  noticesRef.current = notices;
-  statesRef.current = states;
-  ownerIdRef.current = ownerId;
+  useLayoutEffect(() => {
+    noticesRef.current = notices;
+    statesRef.current = states;
+    ownerIdRef.current = ownerId;
+  }, [notices, ownerId, states]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -268,7 +279,7 @@ export function NoteLifecycleProvider({
           });
       }
     },
-    [isCurrent, ownerId, publishNotices, publishState, reconcile]
+    [isCurrent, ownerId, publishNotices, publishState, queryClient, reconcile]
   );
 
   const undo = useCallback(
@@ -347,7 +358,9 @@ export function NoteLifecycleProvider({
   );
 
   return (
-    <LifecycleContext.Provider value={{ run, undo, retryDelete, dismiss, notices, stateFor }}>
+    <LifecycleContext.Provider
+      value={{ ownerId, run, undo, retryDelete, dismiss, notices, stateFor }}
+    >
       {children}
     </LifecycleContext.Provider>
   );

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useNotesBrowse } from '@/note/NotesBrowseContext';
 import { NotesRoute } from './NotesRoute';
@@ -34,6 +35,10 @@ vi.mock('@tanstack/react-router', () => ({
     history: { back: vi.fn() },
   }),
   useNavigate: () => route.navigate,
+}));
+
+vi.mock('./NoteLifecycleProvider', () => ({
+  NoteLifecycleProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 vi.mock('./NoteEditorPage', () => ({

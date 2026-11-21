@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import type { NoteSummary } from './types';
 import { noteListExcerpt } from './notePreview';
 import { sortNoteTags } from './noteTagDisplay';
+import { NoteLifecycleActions } from './NoteLifecycleActions';
 
 function titleFor(note: NoteSummary): string {
   return note.title?.trim() || 'Untitled note';
@@ -18,12 +19,12 @@ export function NoteListRow({ note }: { readonly note: NoteSummary }) {
   const excerpt = noteListExcerpt(note.preview);
   const tags = sortNoteTags(note.tags);
   return (
-    <li className="border-b border-border last:border-b-0">
+    <li data-note-row className="flex items-center gap-2 border-b border-border last:border-b-0">
       <Link
         to="/notes/$id"
         params={{ id: String(note.id) }}
         state={{ horizonNoteNavigation: { kind: 'from-workspace', noteId: note.id } }}
-        className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] sm:px-4"
+        className="grid min-h-16 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-3 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] sm:px-4"
       >
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium">{titleFor(note)}</span>
@@ -52,6 +53,11 @@ export function NoteListRow({ note }: { readonly note: NoteSummary }) {
           Updated {updatedDate(note)}
         </time>
       </Link>
+      <NoteLifecycleActions
+        target={{ id: note.id, version: note.version, archivedAt: note.archivedAt }}
+        label={titleFor(note)}
+        placement="list"
+      />
     </li>
   );
 }
