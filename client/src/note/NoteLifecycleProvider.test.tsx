@@ -131,7 +131,9 @@ describe('NoteLifecycleProvider', () => {
   });
 
   it('uses the confirmed delete version to Undo an archived Note and preserves its archived placement', async () => {
-    const remove = vi.spyOn(noteApi, 'softDelete').mockResolvedValue({ data: { id: 7, version: 8 } } as never);
+    const remove = vi
+      .spyOn(noteApi, 'softDelete')
+      .mockResolvedValue({ data: { id: 7, version: 8 } } as never);
     const restore = vi.spyOn(noteApi, 'restoreDeleted').mockResolvedValue({
       data: detail(9, '2026-11-20T10:00:00Z'),
     } as never);
@@ -145,7 +147,9 @@ describe('NoteLifecycleProvider', () => {
   });
 
   it('supersedes an older Note notice when a newer lifecycle action runs for that Note', async () => {
-    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: detail(8, '2026-11-21T11:00:00Z'),
+    } as never);
     vi.spyOn(noteApi, 'softDelete').mockResolvedValue({ data: { id: 7, version: 9 } } as never);
     setup();
 

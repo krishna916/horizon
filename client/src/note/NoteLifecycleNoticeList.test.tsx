@@ -27,16 +27,12 @@ function setup() {
     return (
       <>
         <button
-          onClick={() =>
-            void lifecycle.run(1, { id: 7, version: 4, archivedAt: null }, 'archive')
-          }
+          onClick={() => void lifecycle.run(1, { id: 7, version: 4, archivedAt: null }, 'archive')}
         >
           Archive 7
         </button>
         <button
-          onClick={() =>
-            void lifecycle.run(1, { id: 8, version: 6, archivedAt: null }, 'delete')
-          }
+          onClick={() => void lifecycle.run(1, { id: 8, version: 6, archivedAt: null }, 'delete')}
         >
           Delete 8
         </button>
@@ -61,8 +57,12 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('NoteLifecycleNoticeList', () => {
   it('keeps independent confirmed notices visible and dismisses only the selected note', async () => {
-    vi.spyOn(noteApi, 'archive').mockImplementation(async (id) => ({ data: note(id, 9, '2026-11-21T11:00:00Z') }) as never);
-    vi.spyOn(noteApi, 'softDelete').mockImplementation(async (id) => ({ data: { id, version: 10 } }) as never);
+    vi.spyOn(noteApi, 'archive').mockImplementation(
+      async (id) => ({ data: note(id, 9, '2026-11-21T11:00:00Z') }) as never
+    );
+    vi.spyOn(noteApi, 'softDelete').mockImplementation(
+      async (id) => ({ data: { id, version: 10 } }) as never
+    );
     setup();
 
     fireEvent.click(screen.getByRole('button', { name: 'Archive 7' }));
@@ -94,7 +94,9 @@ describe('NoteLifecycleNoticeList', () => {
   });
 
   it('clears notices and their recovery controls when the owner changes', async () => {
-    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: note(7, 9, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: note(7, 9, '2026-11-21T11:00:00Z'),
+    } as never);
     const { view, App } = setup();
     fireEvent.click(screen.getByRole('button', { name: 'Archive 7' }));
     await screen.findByRole('button', { name: 'Undo Note 7 archive' });
@@ -105,8 +107,12 @@ describe('NoteLifecycleNoticeList', () => {
   });
 
   it('retains failed Undo with an accessible Retry and does not expire success automatically', async () => {
-    const archive = vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: note(7, 9, '2026-11-21T11:00:00Z') } as never);
-    const restore = vi.spyOn(noteApi, 'restoreArchived').mockRejectedValueOnce(new Error('conflict'));
+    const archive = vi
+      .spyOn(noteApi, 'archive')
+      .mockResolvedValue({ data: note(7, 9, '2026-11-21T11:00:00Z') } as never);
+    const restore = vi
+      .spyOn(noteApi, 'restoreArchived')
+      .mockRejectedValueOnce(new Error('conflict'));
     setup();
 
     fireEvent.click(screen.getByRole('button', { name: 'Archive 7' }));
