@@ -138,3 +138,80 @@
 - [ ] **Step 3 — GREEN:** one Note-owned action component using existing Radix/shadcn, approved grayscale tokens, #68 row-major order/440px cap and title fallback. On row removal, place focus on stable next row/header. Do not fetch full documents for lists.
 - [ ] **Step 4 — verify GREEN:** targeted tests and existing #70 browsing tests.
 - [ ] **Step 5 — commit:** `git add client/src/note && git commit -m "feat(note): add Card and List lifecycle menus"`.
+
+
+### Task 6: Full-page editor actions, Trash confirmation and origin-aware navigation
+
+**Files:** Modify `client/src/note/NoteEditorPage.tsx`, `NotesRoute.tsx` and `NoteEditorNavigationGuard.tsx` only if the existing guard needs integration. Reuse `NoteLifecycleActions.tsx` from Task 5. Tests `NoteEditorPage.test.tsx`, `NotesRoute.test.tsx` and `NoteEditorNavigationGuard.test.tsx`.
+
+**Flow and interfaces:**
+1. Sticky editor action row shows Archive or Restore depending on **current** archived fact, and More → Move to Trash. Archived banner also offers Restore. An untouched `/notes/new` has no lifecycle action until its first meaningful persisted create completes.
+2. For Move to Trash show confirmation **Move note to Trash?** with Cancel/Move to Trash. Explain content/files remain recoverable; do not claim permanent deletion. Archive does not require confirmation.
+3. On user intent set lifecycle-busy/read-only, await `prepareLifecycleMutation()` from Task 4. If null, show existing save-error/conflict affordances, do not dispatch a lifecycle request. Otherwise invoke `useNoteLifecycle().run` with confirmed Note ID/version.
+4. On successful archive/restore call `completeLifecycleMutation(result.note)`, update banner/action label from returned `archivedAt`, keep editor route/caret and re-enable editing. On confirmed delete receipt call `completeLifecycleMutation(null)` and use the **existing** `NotesRoute.onBack` origin-aware callback to navigate to prior Cards/List context. Do **not** navigate on cancel, 409 or network failure.
+5. On failure call `cancelLifecycleMutation()`, preserve editor draft, show retry/manual conflict review; 409 must not trigger automatic reapplication. Do not replace the browser history stack or bypass current navigation guard/draft recovery.
+
+- [ ] **Step 1 — RED editor:** `NoteEditorPage.test.tsx` checks actions for persisted active/archived, no actions for untouched new, archived banner Restore, Delete confirmation/cancel, flush-before-archive, disabled inputs during request, failed save prevents lifecycle, 409 preserves draft, success keeps editor mounted without losing cursor, Delete navigation only after receipt.
+- [ ] **Step 2 — RED routing:** `NotesRoute.test.tsx` / `NoteEditorNavigationGuard.test.tsx` verify direct `/notes/{id}`, trusted origin return (Cards/List/sort/scroll), browser Back, pending save warning, cancelled mutation does not navigate, archived Note remains editable, owner change mid-operation does not reroute/display prior owner.
+- [ ] **Step 3 — verify RED:** `cd client && npm run test -- src/note/NoteEditorPage.test.tsx src/note/NotesRoute.test.tsx src/note/NoteEditorNavigationGuard.test.tsx`.
+- [ ] **Step 4 — GREEN:** integrate Task 4 gate and Task 3 lifecycle provider with approved #68 editor chrome; reuse `useNoteModal` and current TipTap/TagSelector components. No side panel or duplicate save/navigation guard.
+- [ ] **Step 5 — verify GREEN:** targeted tests plus `src/note/NoteSaveCoordinator.test.ts`.
+- [ ] **Step 6 — commit:** `git add client/src/note && git commit -m "feat(note): add safe full-page lifecycle actions"`.
+
+### Task 7: Persistent accessible notices and recoverable lifecycle errors
+
+**Files:** Create `client/src/note/NoteLifecycleNoticeList.tsx` and `NoteLifecycleNoticeList.test.tsx`; modify `NotesRoute.tsx` to mount the notice surface within authenticated Notes route, not inside a page which unmounts on delete. Extend `NoteLifecycleProvider.test.tsx`.
+
+**Interface:**
+- `NoteLifecycleNoticeList` consumes `useNoteLifecycle()`; displays owner-scoped independent notices with Undo, Retry when appropriate and Dismiss. Use accessible `role=status` for confirmed success and `role=alert` for failures; focus should remain keyboard reachable. It **does not** own network operations.
+- Archive success → persistent Undo → server-side `restoreArchived` with returned Note version. Delete success → persistent Undo → `restoreDeleted` with `NoteDeletionReceipt.version`. Restore-from-Archived itself needs no Undo; rearchive remains possible using actions.
+- A delete network timeout is **unconfirmed**, not a success or an Undo. Retry must use exact original expected version; show Undo only when API returns a confirmed receipt. A failed Undo retains the notice + Retry. If 409, require review; do not automatically rebase.
+- Notices have **no expiry timer** and survive moving between Notes browse/editor routes. They clear on Dismiss, superseding same-Note action, leaving Notes, or changing owner/session; no local/session storage of Note data, no global notification library. Two distinct Notes can have concurrent notices.
+
+- [ ] **Step 1 — RED:** test independent Undo/Dismiss/Retry, confirmed vs unconfirmed delete, archive Undo, archived→trash→Undo placement, failure notice persistence, keyboard/aria behavior and no timer-based disappearance, logout/owner switch cleanup.
+- [ ] **Step 2 — verify RED:** `cd client && npm run test -- src/note/NoteLifecycleNoticeList.test.tsx src/note/NoteLifecycleProvider.test.tsx`.
+- [ ] **Step 3 — GREEN:** implement a route-scoped notification list and wire real API Undo; use existing Tasks neutral notification language as a design precedent, not a cross-feature import.
+- [ ] **Step 4 — verify GREEN:** targeted tests and `src/note/NotesRoute.test.tsx`.
+- [ ] **Step 5 — commit:** `git add client/src/note && git commit -m "feat(note): surface persistent Undo and retry feedback"`.
+
+### Task 8: Browser acceptance, regression checks, and delivery evidence
+
+**Files:** Create `client/e2e/notes-lifecycle.spec.ts`. Extend existing fixtures/tests only where needed. **Do not** invent media tests before #78/#79.
+
+**Mandatory browser scenarios:**
+- Cards first-run preference; switch List; Archive using quick menu without opening Note; Active/Archived counts, sorting, card/list selection and scroll preserved.
+- Open persisted full-page Note; make title/content/Tag change with delayed autosave; Archive must wait and send acknowledged version; archived Note remains editable and editor does not remount.
+- Delete dialog Cancel (no API). Confirm (one API mutation, only after save) → return to originating view; persistent Undo restores prior Active/Archived Note.
+- Network timeout or offline error → Retry, no false success. Version `409` → conflict without silent overwrite; failed save → lifecycle not dispatched. Stale query response cannot restore deleted item.
+- Direct foreign/deleted `/notes/{id}` shows generic unavailable; another owner/session never sees old Notes or notices; ordinary GET remains `404` until successful restore.
+- No global Trash/permanent delete, Search, file upload or actual File cleanup implemented. Explicitly record deferred #78/#79 tests for live attachment/inline image retention and access after Trash restore.
+
+- [ ] **Step 1 — RED:** write named Playwright tests with existing Notes auth/API mocking conventions for the scenarios above; verify failures arise from missing lifecycle functionality, not test-harness flaws.
+- [ ] **Step 2 — GREEN:** only fix gaps uncovered in Tasks 1–7; no scope expansion.
+- [ ] **Step 3 — focused verification:** `cd client && npm run test -- src/note src/user/session/NotesPrivateQueries.test.tsx`. Correct test selection flags if this project's Vitest CLI differs.
+- [ ] **Step 4 — full frontend verification:** `cd client && npm run verify`; `npm run test:e2e -- notes-lifecycle.spec.ts`; and existing `npm run test:e2e -- notes-browsing.spec.ts notes-editing.spec.ts notes-tags.spec.ts`. Record command output and exit status.
+- [ ] **Step 5 — backend verification:** `cd server && ./mvnw -Duser.timezone=UTC verify` using Docker/Testcontainers. On Windows use the repository's `mvnw.cmd` equivalent. Record environmental failures instead of marking green.
+- [ ] **Step 6 — acceptance review:** inspect #73 checklist, approved #68 UX and this spec point by point; verify no new status enum/migration, no change to Tasks behavior, no unauthorized cross-module calls, all new endpoints owner-safe, no stale draft loss, and zero file cleanup on archive or soft delete.
+- [ ] **Step 7 — deferred integration checklist:** record `#78/#79 dependency: once actual attachments/inline images exist, test archive and Trash retain file associations/bytes, deleted Note normal file routes deny access, restoring from Trash restores access; parent permanent deletion invokes #77 only in future Epic #9. Do not claim these tests passed in this story.
+- [ ] **Step 8 — commit:** `git add client/e2e client/src/note server/src && git commit -m "test(note): verify lifecycle browser journeys"` (omit unchanged files, do not create an empty commit).
+- [ ] **Step 9 — handoff:** post implementation PR/commits and actual verification commands/blockers to #73. Owner review is required before merge/closure. No automatic PRD or Constitution updates.
+
+---
+
+## Definition of Done
+
+- [ ] Four approved product decisions implemented without violating #68's Notes-specific experience.
+- [ ] Archive/restore/delete/restore-deleted are owner-scoped, versioned and tested against PostgreSQL; no enum/migration.
+- [ ] Archiving changes archive fact only; deleting preserves prior archive fact, Inbox, content and Tag associations; Undo uses server-confirmed version.
+- [ ] Existing Autosave versioning, optimistic conflicts and unsaved draft guarantees remain correct; archived Notes remain editable.
+- [ ] Card/List/full-page controls, Active/Archived visibility/counts, persistent accessible Undo, confirmation and recoverable errors verified in tests.
+- [ ] Relevant backend, client, browser and quality gates run with evidence or clearly recorded blockers.
+- [ ] Live-file retention/access checks explicitly deferred to #78/#79; no false success claim.
+- [ ] Reviewed PR ready for **owner approval**; no merge, issue closure or authoritative docs change without further approval.
+
+## Luna execution handoff
+
+1. Use `feature/73-notes-lifecycle` and read both this plan and the linked design. Run repo `align-context`, test and design skills. Use worktree isolation if needed. **Execute natively/inline; no subagents.**
+2. Work Tasks 1→8. For each: failing tests → verify failure → minimal implementation → run tests → self-review → commit. Stop if a new product/ownership/API conflict requires owner judgment.
+3. **Owner approval of this detailed plan is required before Task 1**, especially the proposed `X-Expected-Version` header and `DELETE 200` receipt. These are explicit engineering contracts in the plan, not silently assumed earlier approvals.
+4. Report exact changed files, commits, actual test evidence, deferred integrations, and request PR review; do not auto-merge or mark #73 complete.
