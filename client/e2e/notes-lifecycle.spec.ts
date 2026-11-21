@@ -199,6 +199,31 @@ test('archives from a Card and restores the same Note with persistent Undo', asy
   await expect(page.getByRole('region', { name: 'Note updates' })).toHaveCount(0);
 });
 
+test('updates the editor lifecycle controls when archive Undo restores the Note', async ({
+  page,
+}) => {
+  const api = await installApi(page);
+  await page.goto('/notes/1');
+  await expect(page.getByRole('button', { name: 'Archive', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Archive', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Restore from Archive' })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo Note 1 archive' }).click();
+
+  await expect(page.getByRole('button', { name: 'Archive', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Restore from Archive' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'More actions for Lifecycle active note' }).click();
+  await page.getByRole('menuitem', { name: 'Move to Trash' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Move to Trash' }).click();
+  await expect(page).toHaveURL(/\/notes$/);
+  expect(api.mutations).toEqual([
+    { method: 'POST', path: '/api/v1/notes/1/archive', expectedVersion: '4' },
+    { method: 'POST', path: '/api/v1/notes/1/restore', expectedVersion: '5' },
+    { method: 'DELETE', path: '/api/v1/notes/1', expectedVersion: '6' },
+  ]);
+});
+
 test('requires Trash confirmation, returns to the workspace, then restores by receipt version', async ({
   page,
 }) => {

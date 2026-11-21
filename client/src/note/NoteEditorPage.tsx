@@ -6,7 +6,7 @@ import { useNoteDetail } from './queries';
 import { parseNoteId } from './noteNavigation';
 import { useNoteDraftRecovery } from './NoteDraftRecoveryProvider';
 import { NoteEditorNavigationGuard } from './NoteEditorNavigationGuard';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNoteAutosave } from './useNoteAutosave';
 import { useNoteModal } from './useNoteModal';
 import { useNoteLifecycle } from './NoteLifecycleProvider';
@@ -200,13 +200,14 @@ function ActiveNoteEditor({
 }) {
   const [conflictChoice, setConflictChoice] = useState<'keep-local' | 'load-server' | null>(null);
   const [actionPending, setActionPending] = useState(false);
-  const [lifecycleNote, setLifecycleNote] = useState(initialNote);
+  const [localLifecycleNote, setLocalLifecycleNote] = useState(initialNote);
   const {
     snapshot,
     edit,
     flush,
     prepareLifecycleMutation,
     completeLifecycleMutation,
+    adoptLifecycleVersion,
     cancelLifecycleMutation,
     retry,
     resolveConflict,
@@ -223,12 +224,28 @@ function ActiveNoteEditor({
     editorRoute: routeNoteId === null ? '/notes/new' : `/notes/${routeNoteId}`,
     recovery,
     onCreated: (note) => {
-      setLifecycleNote(note);
+      setLocalLifecycleNote(note);
       onCreated(note);
     },
   });
   const lifecycle = useNoteLifecycle();
+  const lifecycleState = lifecycle.stateFor(
+    ownerId,
+    localLifecycleNote?.id ?? initialNote?.id ?? -1
+  );
+  const lifecycleNote = [
+    initialNote,
+    localLifecycleNote,
+    lifecycleState.note,
+  ].reduce<NoteDetail | null>(
+    (latest, note) => (!note || (latest && latest.version > note.version) ? latest : note),
+    null
+  );
   const lifecycleBusy = snapshot.lifecycleBusy || actionPending;
+
+  useEffect(() => {
+    if (lifecycleState.note) adoptLifecycleVersion(lifecycleState.note);
+  }, [adoptLifecycleVersion, lifecycleState.note]);
 
   async function runLifecycleAction(operation: NoteLifecycleOperation) {
     if (!snapshot.persisted || lifecycleBusy) return;
@@ -248,7 +265,7 @@ function ActiveNoteEditor({
         operation
       );
       if (result?.kind === 'note') {
-        setLifecycleNote(result.note);
+        setLocalLifecycleNote(result.note);
         completeLifecycleMutation(result.note);
       } else if (result?.kind === 'deleted') {
         completeLifecycleMutation(null);

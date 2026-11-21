@@ -320,6 +320,18 @@ export class NoteSaveCoordinator {
     this.publish();
   }
 
+  adoptLifecycleVersion(note: NoteDetail): void {
+    if (
+      this.disposed ||
+      !this.persisted ||
+      this.persisted.id !== note.id ||
+      note.version <= this.persisted.version
+    )
+      return;
+    this.persisted = { id: note.id, version: note.version };
+    this.publish();
+  }
+
   cancelLifecycleMutation(): void {
     if (this.disposed || (!this.lifecycleHeld && !this.lifecyclePreparing)) return;
     this.lifecycleHeld = false;

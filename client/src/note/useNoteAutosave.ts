@@ -209,6 +209,10 @@ export function useNoteAutosave({
     (note: NoteDetail | null) => coordinator.completeLifecycleMutation(note),
     [coordinator]
   );
+  const adoptLifecycleVersion = useCallback(
+    (note: NoteDetail) => coordinator.adoptLifecycleVersion(note),
+    [coordinator]
+  );
   const cancelLifecycleMutation = useCallback(
     () => coordinator.cancelLifecycleMutation(),
     [coordinator]
@@ -256,6 +260,7 @@ export function useNoteAutosave({
     flush,
     prepareLifecycleMutation,
     completeLifecycleMutation,
+    adoptLifecycleVersion,
     cancelLifecycleMutation,
     retry,
     resolveConflict,

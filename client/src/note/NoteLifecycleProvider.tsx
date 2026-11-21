@@ -37,6 +37,7 @@ export interface NoteLifecycleNotice {
 interface LifecycleState {
   pending: boolean;
   error: string | null;
+  note?: NoteDetail;
 }
 
 interface RetryIntent {
@@ -58,7 +59,12 @@ interface NoteLifecycleContextValue {
   stateFor: (
     ownerId: number,
     noteId: number
-  ) => { pending: boolean; error: string | null; retry: () => void };
+  ) => {
+    pending: boolean;
+    error: string | null;
+    note: NoteDetail | undefined;
+    retry: () => void;
+  };
 }
 
 const LifecycleContext = createContext<NoteLifecycleContextValue | null>(null);
@@ -131,7 +137,7 @@ export function NoteLifecycleProvider({
 
   const publishState = useCallback((key: string, value: LifecycleState | null) => {
     const next = new Map(statesRef.current);
-    if (value) next.set(key, value);
+    if (value) next.set(key, { ...next.get(key), ...value });
     else next.delete(key);
     statesRef.current = next;
     setStates(next);
@@ -231,6 +237,11 @@ export function NoteLifecycleProvider({
         await reconcile(requestedOwnerId, ownerRevision, null, target.id);
         if (!isCurrent(requestedOwnerId, ownerRevision)) return null;
         queryClient.setQueryData(noteQueryKeys.detail(requestedOwnerId, target.id), response);
+        publishState(operationKey(requestedOwnerId, target.id), {
+          pending: false,
+          error: null,
+          note: response.data,
+        });
         if (operation === 'archive') {
           publishNotices((current) => [
             ...current,
@@ -313,6 +324,11 @@ export function NoteLifecycleProvider({
         if (!isCurrent(ownerId, ownerRevision)) return false;
         await reconcile(ownerId, ownerRevision, response.data, notice.noteId);
         if (!isCurrent(ownerId, ownerRevision)) return false;
+        publishState(operationKey(ownerId, notice.noteId), {
+          pending: false,
+          error: null,
+          note: response.data,
+        });
         publishNotices((current) => current.filter((item) => item.id !== noticeId));
         return true;
       } catch {
@@ -325,7 +341,7 @@ export function NoteLifecycleProvider({
         return false;
       }
     },
-    [isCurrent, ownerId, publishNotices, reconcile]
+    [isCurrent, ownerId, publishNotices, publishState, reconcile]
   );
 
   const retryDelete = useCallback(
@@ -359,6 +375,7 @@ export function NoteLifecycleProvider({
       return {
         pending: state?.pending ?? false,
         error: state?.error ?? null,
+        note: state?.note,
         retry: () => {
           const intent = retryIntentsRef.current.get(key);
           if (intent) void run(requestedOwnerId, intent.target, intent.operation);
