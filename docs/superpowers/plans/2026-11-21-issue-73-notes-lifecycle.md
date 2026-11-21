@@ -86,3 +86,55 @@
 - [ ] **Step 4 — implement GREEN:** endpoints in **existing** NoteController, header parsing, response record and minimal public recovery interface. Keep existing exception handler/Problem Details, owner scoping and transactions. No per-method controllers.
 - [ ] **Step 5 — run GREEN:** targeted command, then `./mvnw -Duser.timezone=UTC -Dtest=NoteTagAssignmentServiceIntegrationTest,NotePersistenceIntegrationTest test`. Verify no migration/new status introduced.
 - [ ] **Step 6 — commit:** `git add server/src/main/java/com/krishnamurti/horizon/note server/src/test/java/com/krishnamurti/horizon/note && git commit -m "feat(note): expose lifecycle and recovery REST actions"`.
+
+
+### Task 3: Typed frontend API and Note-scoped lifecycle/Undo coordinator
+
+**Files:** Modify `client/src/note/api.ts`, `types.ts`, `queries.ts` only if necessary. Create `NoteLifecycleProvider.tsx` and `NoteLifecycleProvider.test.tsx`; extend `api.test.ts` and `queries.test.tsx`.
+
+**Interfaces:**
+- `type NoteLifecycleOperation = 'archive' | 'restore' | 'delete'`; `type NoteLifecycleTarget = Pick<NoteSummary,'id'|'version'|'archivedAt'>`; `type NoteDeletionReceipt = {id:number;version:number}`.
+- `type NoteLifecycleResult = {kind:'note';note:NoteDetail} | {kind:'deleted';receipt:NoteDeletionReceipt}`.
+- `noteApi.archive(id:number,version:number):Promise<AxiosResponse<NoteDetail>>`; `restoreArchived` same; `softDelete(id:number,version:number):Promise<AxiosResponse<NoteDeletionReceipt>>`; `restoreDeleted(id:number,version:number):Promise<AxiosResponse<NoteDetail>>`. Every request sends `X-Expected-Version`.
+- `useNoteLifecycle()` exposes `run(ownerId:number,target:NoteLifecycleTarget,operation:NoteLifecycleOperation):Promise<NoteLifecycleResult|null>`; `undo(noticeId:string):Promise<boolean>`; `retryDelete(noticeId:string):Promise<boolean>`; `dismiss(noticeId:string):void`; `notices:readonly NoteLifecycleNotice[]`; `stateFor(ownerId:number,noteId:number):{pending:boolean;error:string|null;retry:()=>void}`.
+- Provider lives within owner-keyed `NotesRoute` outside the list/editor conditional. Notice records owner ID, Note ID, operation, pre-archive fact, **returned** version, pending/error state; never rich Note content or browser storage. Notices persist only within the Notes route and vanish on owner change/route exit.
+- Before success cache writes, cancel owner-specific list/detail queries. On Archive/Restore remove the note from old collection in all loaded infinite-query pages and set detail from returned response; invalidate all owner list collection/sort variants to refresh counts and order. On Delete remove normal detail/list only after confirmed receipt. On Undo use the server's **returned** version, invoke authenticated inverse route, then revalidate caches. Never synthesize bounded previews or use a global store.
+- For uncertain DELETE response show `delete-unconfirmed` with Retry using original expectedVersion; a real server receipt must precede Undo. For `409` show conflict, require manual review; no silent auto-rebase. Invalidate superseded notices for same Note; two Notes retain independent notices. Before and after awaits validate owner, session epoch and owner revision; never leak private data across accounts.
+
+- [ ] **Step 1 — RED transport:** `api.test.ts` checks path, verb, required header and responses on all four routes.
+- [ ] **Step 2 — RED state:** `NoteLifecycleProvider.test.tsx` tests `archiveMovesActiveToArchived`, `restoreMovesArchivedToActive`, `deleteWaitsForReceiptBeforeUndo`, `undoArchiveUsesReturnedVersion`, `undoDeletePreservesPriorArchivedCollection`, `twoNotesKeepIndependentNotices`, `failedUndoRetry`.
+- [ ] **Step 3 — RED races:** `unknownDeleteOutcomeRetryUsesOriginalVersion`, `stale409NeverAutoRebases`, `lateInfinitePageCannotResurrectDeletedNote`, `allSortsAndPageCountsInvalidate`, `ownerChangeDropsNoticesAndLateResults`, `sameNoteDoubleClickDispatchesOnce`.
+- [ ] **Step 4 — verify RED:** `cd client && npm run test -- src/note/api.test.ts src/note/NoteLifecycleProvider.test.tsx src/note/queries.test.tsx`.
+- [ ] **Step 5 — GREEN:** implement API/client coordinator. Look at `client/src/task/TaskLifecycleProvider.tsx` only for precedent; **do not import Task internals**.
+- [ ] **Step 6 — verify GREEN:** targeted tests plus `npm run test -- src/user/session/NotesPrivateQueries.test.tsx`.
+- [ ] **Step 7 — commit:** `git add client/src/note && git commit -m "feat(note): coordinate owner-safe lifecycle and Undo"`.
+
+### Task 4: Serialize full-page lifecycle actions with existing autosave
+
+**Files:** Modify `client/src/note/NoteSaveCoordinator.ts` and `useNoteAutosave.ts`; tests `NoteSaveCoordinator.test.ts` and `useNoteAutosave.test.tsx`.
+
+**Interfaces:**
+- `NoteSaveCoordinator.prepareLifecycleMutation():Promise<{id:number;version:number}|null>`: finish sent POST/PATCH; flush queued body/title/Tags; verify persisted identity, saved version and no pending or outcome-uncertain write, `failed`, `conflict` or `paused` phase; then hold further outgoing writes. If not confirmed, return null without pretending success. **Do not hold the existing navigation queue before flush** (that would prevent flush).
+- `NoteSaveCoordinator.completeLifecycleMutation(note:NoteDetail|null):void`: accept successful archive/restore's new version and metadata without remounting/resetting TipTap or losing local draft; null denotes confirmed Delete and prevents later writes.
+- `NoteSaveCoordinator.cancelLifecycleMutation():void`: release hold after failure; preserve current draft and existing Retry / Keep my version / Load latest version behavior.
+- `useNoteAutosave` exposes these methods and `lifecycleBusy`; full-page controls disable Title, Tags, and existing `RichTextEditor disabled` during lifecycle preparation/mutation. If an input event sneaks in during gate startup, save that captured revision before dispatch or cancel; never silently lose it. Use the version returned by `prepareLifecycleMutation`, not stale `initialNote.version`.
+- The editor remains mounted on Archive/Restore, focus/caret stay stable and later PATCH uses the acknowledged lifecycle version. Deleting shuts down future autosave only **after** server confirmation. Lifecycle 409 does not trigger automatic Keep/Load or overwrite local edits.
+
+- [ ] **Step 1 — RED coordinator:** tests `lifecycleFlushesDebouncedTextAndTags`, `waitsForInFlightPatchAndUsesAcknowledgedVersion`, `failedOrConflictedSaveBlocksLifecycle`, `archiveResultUpdatesVersionWithoutDraftReplacement`, `cancelReleasesQueuedWrites`, `confirmedDeleteBlocksLateWrites`, `newUntouchedDraftCannotMutateLifecycle`.
+- [ ] **Step 2 — RED hook:** tests lifecycle busy, editing disabled, session change while flushing and queued edits during preparation; assert no action call on save failure.
+- [ ] **Step 3 — verify RED:** `cd client && npm run test -- src/note/NoteSaveCoordinator.test.ts src/note/useNoteAutosave.test.tsx`.
+- [ ] **Step 4 — GREEN:** extend **existing** coordinator with gate and safe release; retain optimistic conflict handling, frozen POST/PATCH retries, local draft recovery, session checks, and callbacks.
+- [ ] **Step 5 — verify GREEN:** targeted tests plus `NoteEditorNavigationGuard.test.tsx` and `NoteEditorPage.test.tsx`.
+- [ ] **Step 6 — commit:** `git add client/src/note && git commit -m "feat(note): serialize lifecycle after autosave"`.
+
+### Task 5: Card/List quick actions with accessible navigation
+
+**Files:** Create `client/src/note/NoteLifecycleActions.tsx`; modify `NoteCard.tsx`, `NoteListRow.tsx`, `NotesWorkspacePage.tsx` only if required; tests `NoteCard.test.tsx`, `NoteListRow.test.tsx`, `NotesRoute.test.tsx`.
+
+**Interface:** `NoteLifecycleActions` props `{target:NoteLifecycleTarget;placement:'card'|'list'|'editor';onDeleted?:()=>void;beforeAction?:(operation:NoteLifecycleOperation)=>Promise<NoteLifecycleTarget|null>}`. Card/List uses the summary's version; editor's beforeAction obtains the version from Task 4's confirmed flush. Menu shows Archive when active / Restore when archived, and Move to Trash in both. All delete actions need a shared accessible confirmation with Cancel.
+
+- [ ] **Step 1 — RED:** card/list tests verify independently focusable menu **sibling** to note-opening `Link` (never nested anchor), no navigation when clicking menu, Archive vs Restore labels, Delete Cancel no API, keyboard Enter/Space/Escape and focus return, pending/error state, stable Card/List mode and origin after action.
+- [ ] **Step 2 — verify RED:** `cd client && npm run test -- src/note/NoteCard.test.tsx src/note/NoteListRow.test.tsx src/note/NotesRoute.test.tsx`.
+- [ ] **Step 3 — GREEN:** one Note-owned action component using existing Radix/shadcn, approved grayscale tokens, #68 row-major order/440px cap and title fallback. On row removal, place focus on stable next row/header. Do not fetch full documents for lists.
+- [ ] **Step 4 — verify GREEN:** targeted tests and existing #70 browsing tests.
+- [ ] **Step 5 — commit:** `git add client/src/note && git commit -m "feat(note): add Card and List lifecycle menus"`.
