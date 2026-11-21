@@ -42,6 +42,10 @@ vi.mock('./NoteLifecycleProvider', () => ({
   NoteLifecycleProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+vi.mock('./NoteLifecycleNoticeList', () => ({
+  NoteLifecycleNoticeList: () => null,
+}));
+
 vi.mock('./NoteEditorPage', () => ({
   NoteEditorPage: ({
     identityKey,

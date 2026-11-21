@@ -90,6 +90,16 @@ export function NoteLifecycleProvider({
   const ownerIdRef = useRef(ownerId);
 
   useLayoutEffect(() => {
+    if (ownerIdRef.current !== ownerId) {
+      ownerIdRef.current = ownerId;
+      noticesRef.current = [];
+      statesRef.current = new Map();
+      pendingRef.current.clear();
+      retryIntentsRef.current.clear();
+      setNotices([]);
+      setStates(new Map());
+      return;
+    }
     noticesRef.current = notices;
     statesRef.current = states;
     ownerIdRef.current = ownerId;
@@ -335,6 +345,7 @@ export function NoteLifecycleProvider({
   const dismiss = useCallback(
     (noticeId: string) => {
       const notice = noticesRef.current.find((item) => item.id === noticeId);
+      if (notice?.pending) return;
       publishNotices((current) => current.filter((item) => item.id !== noticeId));
       if (notice) retryIntentsRef.current.delete(operationKey(notice.ownerId, notice.noteId));
     },

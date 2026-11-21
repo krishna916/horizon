@@ -54,9 +54,24 @@ function setup() {
       <>
         <button onClick={() => void lifecycle.run(1, summary, 'archive')}>Archive</button>
         <button onClick={() => void lifecycle.run(1, summary, 'delete')}>Delete</button>
+        <button
+          onClick={() =>
+            void lifecycle.run(1, { ...summary, archivedAt: '2026-11-20T10:00:00Z' }, 'delete')
+          }
+        >
+          Delete archived
+        </button>
+        <button
+          onClick={() =>
+            void lifecycle.run(1, { ...summary, archivedAt: '2026-11-20T10:00:00Z' }, 'restore')
+          }
+        >
+          Restore archived
+        </button>
         {lifecycle.notices.map((notice) => (
           <div key={notice.id}>
             <span>{notice.kind}</span>
+            <span>{notice.operation}</span>
             <span>{notice.error}</span>
             <button onClick={() => void lifecycle.undo(notice.id)}>Undo</button>
             <button onClick={() => void lifecycle.retryDelete(notice.id)}>Retry delete</button>
@@ -113,5 +128,31 @@ describe('NoteLifecycleProvider', () => {
 
     expect(remove).toHaveBeenNthCalledWith(1, 7, 4);
     expect(remove).toHaveBeenNthCalledWith(2, 7, 4);
+  });
+
+  it('uses the confirmed delete version to Undo an archived Note and preserves its archived placement', async () => {
+    const remove = vi.spyOn(noteApi, 'softDelete').mockResolvedValue({ data: { id: 7, version: 8 } } as never);
+    const restore = vi.spyOn(noteApi, 'restoreDeleted').mockResolvedValue({
+      data: detail(9, '2026-11-20T10:00:00Z'),
+    } as never);
+    setup();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete archived' }));
+    await screen.findByText('undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(restore).toHaveBeenCalledWith(7, 8));
+    expect(remove).toHaveBeenCalledWith(7, 4);
+  });
+
+  it('supersedes an older Note notice when a newer lifecycle action runs for that Note', async () => {
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({ data: detail(8, '2026-11-21T11:00:00Z') } as never);
+    vi.spyOn(noteApi, 'softDelete').mockResolvedValue({ data: { id: 7, version: 9 } } as never);
+    setup();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await screen.findByText('archive');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText('delete')).toBeInTheDocument();
+    expect(screen.queryByText('archive')).not.toBeInTheDocument();
   });
 });

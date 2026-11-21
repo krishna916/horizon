@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { useAuthSession } from '@/user/session/AuthSessionProvider';
 import { NotesBrowseProvider } from './NotesBrowseContext';
 import { NoteLifecycleProvider } from './NoteLifecycleProvider';
+import { NoteLifecycleNoticeList } from './NoteLifecycleNoticeList';
 import { NoteEditorPage } from './NoteEditorPage';
 import { isTrustedNoteOrigin, parseNoteId } from './noteNavigation';
 import type { NoteDetail } from './types';
@@ -106,7 +107,10 @@ export function NotesRoute() {
 
   return (
     <NotesBrowseProvider key={`${owner.ownerRevision}:${owner.userId}`} userId={owner.userId}>
-      <NoteLifecycleProvider ownerId={owner.userId}>
+      <NoteLifecycleProvider key={`${owner.ownerRevision}:${owner.userId}`} ownerId={owner.userId}>
+        <div className="mx-auto w-full max-w-[808px] px-5 pt-3 sm:px-8">
+          <NoteLifecycleNoticeList />
+        </div>
         {isNoteEditorPath(pathname) ? (
           <NoteEditorPage
             routeNoteId={routeNoteId}
