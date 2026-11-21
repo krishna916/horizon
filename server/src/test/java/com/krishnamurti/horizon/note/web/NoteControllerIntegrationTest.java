@@ -1,6 +1,7 @@
 package com.krishnamurti.horizon.note.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -601,6 +602,64 @@ class NoteControllerIntegrationTest {
         mockMvc.perform(get("/api/v1/notes/{id}", noteId.longValue()).cookie(ownerCookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.content[0].content[0].text").value(fullText));
+    }
+
+    @Test
+    void lifecycleRequiresExpectedVersionReturnsDeleteReceiptAndRestoresArchivedTags()
+            throws Exception {
+        long id = createNote("{\"title\":\"Lifecycle\",\"tags\":[{\"name\":\"Keep\"}]}");
+
+        mockMvc.perform(post("/api/v1/notes/{id}/archive", id).cookie(ownerCookie))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        post("/api/v1/notes/{id}/archive", id)
+                                .cookie(ownerCookie)
+                                .header("X-Expected-Version", "not-a-version"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(
+                        post("/api/v1/notes/{id}/archive", id)
+                                .cookie(ownerCookie)
+                                .header("X-Expected-Version", "0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1))
+                .andExpect(jsonPath("$.archivedAt").exists());
+
+        mockMvc.perform(
+                        post("/api/v1/notes/{id}/restore", id)
+                                .cookie(ownerCookie)
+                                .header("X-Expected-Version", "0"))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(
+                        delete("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .header("X-Expected-Version", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.content").doesNotExist());
+        mockMvc.perform(get("/api/v1/notes/{id}", id).cookie(ownerCookie))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(
+                        delete("/api/v1/notes/{id}", id)
+                                .cookie(ownerCookie)
+                                .header("X-Expected-Version", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2));
+        mockMvc.perform(
+                        post("/api/v1/notes/{id}/restore-deleted", id)
+                                .cookie(ownerCookie)
+                                .header("X-Expected-Version", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(3))
+                .andExpect(jsonPath("$.archivedAt").exists())
+                .andExpect(jsonPath("$.tags[0].name").value("Keep"));
+        mockMvc.perform(get("/api/v1/notes?collection=archived").cookie(ownerCookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].id").value(id))
+                .andExpect(jsonPath("$.counts.active").value(0))
+                .andExpect(jsonPath("$.counts.archived").value(1));
     }
 
     private long createNote(String body) throws Exception {

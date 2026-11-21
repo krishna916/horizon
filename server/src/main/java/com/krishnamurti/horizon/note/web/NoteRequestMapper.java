@@ -121,6 +121,19 @@ public class NoteRequestMapper {
                         : FieldUpdate.absent());
     }
 
+    public long parseExpectedVersionHeader(String raw) {
+        if (raw == null || raw.isBlank() || !raw.matches("[0-9]+")) {
+            throw new NoteRequestValidationException(
+                    "X-Expected-Version", "A nonnegative integer version is required.");
+        }
+        try {
+            return Long.parseLong(raw);
+        } catch (NumberFormatException exception) {
+            throw new NoteRequestValidationException(
+                    "X-Expected-Version", "Must be a nonnegative 64-bit integer.");
+        }
+    }
+
     public NoteCollection parseCollection(String value) {
         String normalized = value == null ? "active" : value;
         return switch (normalized) {

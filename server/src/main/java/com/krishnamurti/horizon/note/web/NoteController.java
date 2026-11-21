@@ -3,9 +3,11 @@ package com.krishnamurti.horizon.note.web;
 import com.krishnamurti.horizon.note.application.IdempotentNoteCreationService;
 import com.krishnamurti.horizon.note.application.NoteCommandService;
 import com.krishnamurti.horizon.note.application.NoteQueryService;
+import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.shared.domain.BaseEntity;
 import java.net.URI;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -71,6 +73,47 @@ public class NoteController {
                 queryService
                         .tagsForNotes(java.util.List.of(id))
                         .getOrDefault(id, java.util.List.of());
+        return responseMapper.toDetail(note, tags);
+    }
+
+    @PostMapping("/{id}/archive")
+    public NoteDetailResponse archive(
+            @PathVariable Long id,
+            @RequestHeader(name = "X-Expected-Version", required = false) String rawVersion) {
+        long expectedVersion = requestMapper.parseExpectedVersionHeader(rawVersion);
+        return toDetail(commandService.archive(id, expectedVersion));
+    }
+
+    @PostMapping("/{id}/restore")
+    public NoteDetailResponse restoreArchived(
+            @PathVariable Long id,
+            @RequestHeader(name = "X-Expected-Version", required = false) String rawVersion) {
+        long expectedVersion = requestMapper.parseExpectedVersionHeader(rawVersion);
+        return toDetail(commandService.restoreArchived(id, expectedVersion));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<NoteDeletionReceipt> softDelete(
+            @PathVariable Long id,
+            @RequestHeader(name = "X-Expected-Version", required = false) String rawVersion) {
+        long expectedVersion = requestMapper.parseExpectedVersionHeader(rawVersion);
+        Note deleted = commandService.softDelete(id, expectedVersion);
+        return ResponseEntity.ok(new NoteDeletionReceipt(deleted.getId(), deleted.getVersion()));
+    }
+
+    @PostMapping("/{id}/restore-deleted")
+    public NoteDetailResponse restoreDeleted(
+            @PathVariable Long id,
+            @RequestHeader(name = "X-Expected-Version", required = false) String rawVersion) {
+        long expectedVersion = requestMapper.parseExpectedVersionHeader(rawVersion);
+        return toDetail(commandService.restoreDeleted(id, expectedVersion));
+    }
+
+    private NoteDetailResponse toDetail(Note note) {
+        var tags =
+                queryService
+                        .tagsForNotes(java.util.List.of(note.getId()))
+                        .getOrDefault(note.getId(), java.util.List.of());
         return responseMapper.toDetail(note, tags);
     }
 

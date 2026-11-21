@@ -1,5 +1,7 @@
 package com.krishnamurti.horizon.note.application;
 
+import com.krishnamurti.horizon.note.api.NoteRecoveryApi;
+import com.krishnamurti.horizon.note.api.NoteRecoverySnapshot;
 import com.krishnamurti.horizon.note.domain.Note;
 import com.krishnamurti.horizon.note.infrastructure.NoteRepository;
 import com.krishnamurti.horizon.shared.security.CurrentUserProvider;
@@ -17,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** Transactional Note mutation use cases. */
 @Service
-public class NoteCommandService {
+public class NoteCommandService implements NoteRecoveryApi {
 
     private final NoteRepository noteRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -65,6 +67,14 @@ public class NoteCommandService {
     @Transactional
     public Note restoreDeleted(Long noteId, long expectedVersion) {
         return changeLifecycle(noteId, expectedVersion, true, LifecycleAction.RESTORE_DELETED);
+    }
+
+    @Override
+    @Transactional
+    public NoteRecoverySnapshot restoreDeletedNote(Long noteId, long expectedVersion) {
+        Note note = restoreDeleted(noteId, expectedVersion);
+        return new NoteRecoverySnapshot(
+                note.getId(), note.getVersion(), note.getArchivedAt() != null);
     }
 
     private Note changeLifecycle(
