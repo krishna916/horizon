@@ -18,6 +18,9 @@ const note = (id: number, version = 4, archivedAt: string | null = null): NoteDe
   content: null,
 });
 
+const httpError = (status: number) =>
+  Object.assign(new Error(`HTTP ${status}`), { response: { status } });
+
 function setup() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -113,6 +116,7 @@ describe('NoteLifecycleNoticeList', () => {
     const restore = vi
       .spyOn(noteApi, 'restoreArchived')
       .mockRejectedValueOnce(new Error('conflict'));
+    vi.spyOn(noteApi, 'get').mockRejectedValue(httpError(503));
     setup();
 
     fireEvent.click(screen.getByRole('button', { name: 'Archive 7' }));
@@ -128,5 +132,24 @@ describe('NoteLifecycleNoticeList', () => {
     expect(screen.getByRole('button', { name: 'Retry undo for Note 7' })).toBeVisible();
     expect(archive).toHaveBeenCalledWith(7, 4);
     expect(restore).toHaveBeenCalledWith(7, 9);
+  });
+
+  it('does not offer a stale restore retry after 409 when verification GET fails', async () => {
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: note(7, 9, '2026-11-21T11:00:00Z'),
+    } as never);
+    const restore = vi.spyOn(noteApi, 'restoreArchived').mockRejectedValue(httpError(409));
+    const get = vi.spyOn(noteApi, 'get').mockRejectedValue(httpError(503));
+    setup();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive 7' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo Note 7 archive' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/changed elsewhere/);
+    expect(screen.queryByRole('button', { name: 'Undo Note 7 archive' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry undo for Note 7' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dismiss Note 7 notice' })).toBeEnabled();
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });

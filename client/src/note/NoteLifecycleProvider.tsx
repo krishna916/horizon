@@ -32,6 +32,7 @@ export interface NoteLifecycleNotice {
   kind: 'undo' | 'delete-unconfirmed';
   error: string | null;
   pending: boolean;
+  canRetry?: boolean;
 }
 
 interface LifecycleState {
@@ -405,7 +406,13 @@ export function NoteLifecycleProvider({
       const notice = noticesRef.current.find(
         (item) => item.id === noticeId && item.ownerId === ownerId
       );
-      if (!notice || notice.kind !== 'undo' || notice.version === null || notice.pending)
+      if (
+        !notice ||
+        notice.kind !== 'undo' ||
+        notice.version === null ||
+        notice.pending ||
+        notice.canRetry === false
+      )
         return false;
       const key = operationKey(ownerId, notice.noteId);
       const lock = acquire(key, ownerId);
@@ -482,7 +489,9 @@ export function NoteLifecycleProvider({
         const message = errorKind === 'conflict' ? conflictError : responseError('undo');
         publishNotices((current) =>
           current.map((item) =>
-            item.id === noticeId ? { ...item, pending: false, error: message } : item
+            item.id === noticeId
+              ? { ...item, pending: false, error: message, canRetry: errorKind !== 'conflict' }
+              : item
           )
         );
         publishState(key, { pending: false, error: message });

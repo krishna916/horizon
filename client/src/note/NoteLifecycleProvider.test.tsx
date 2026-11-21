@@ -81,8 +81,12 @@ function setup(gateway?: NoteEditorUndoGateway) {
             <span>{notice.kind}</span>
             <span>{notice.operation}</span>
             <span>{notice.error}</span>
-            <button onClick={() => void lifecycle.undo(notice.id)}>Undo</button>
-            <button onClick={() => void lifecycle.retryDelete(notice.id)}>Retry delete</button>
+            {notice.canRetry !== false && (
+              <button onClick={() => void lifecycle.undo(notice.id)}>Undo</button>
+            )}
+            {notice.kind === 'delete-unconfirmed' && (
+              <button onClick={() => void lifecycle.retryDelete(notice.id)}>Retry delete</button>
+            )}
             <button onClick={() => lifecycle.dismiss(notice.id)}>Dismiss</button>
           </div>
         ))}
@@ -289,7 +293,7 @@ describe('NoteLifecycleProvider', () => {
     expect(get).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps Undo visible when GET does not confirm the inverse and never auto-rebases', async () => {
+  it('disables stale Undo after GET does not confirm restoration and ignores repeated clicks', async () => {
     vi.spyOn(noteApi, 'archive').mockResolvedValue({
       data: detail(8, '2026-11-21T11:00:00Z'),
     } as never);
@@ -302,13 +306,17 @@ describe('NoteLifecycleProvider', () => {
     await screen.findByText('undo');
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await screen.findAllByText(/changed elsewhere/);
-    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
     expect(restore).toHaveBeenCalledTimes(1);
     expect(restore).toHaveBeenCalledWith(7, 8);
     expect(get).toHaveBeenCalledWith(7);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo again' }));
+    await Promise.resolve();
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps recovery visible when Undo verification GET returns 404', async () => {
+  it('keeps the conflict visible without a stale Undo when verification GET returns 404', async () => {
     vi.spyOn(noteApi, 'archive').mockResolvedValue({
       data: detail(8, '2026-11-21T11:00:00Z'),
     } as never);
@@ -319,7 +327,8 @@ describe('NoteLifecycleProvider', () => {
     await screen.findByText('undo');
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await screen.findAllByText(/changed elsewhere/);
-    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry delete' })).not.toBeInTheDocument();
     expect(get).toHaveBeenCalledWith(7);
   });
 

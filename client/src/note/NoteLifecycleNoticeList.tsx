@@ -21,7 +21,7 @@ export function NoteLifecycleNoticeList(): React.JSX.Element | null {
           >
             <p className="min-w-0 flex-1">{message}</p>
             {notice.error && <p className="w-full text-destructive">{notice.error}</p>}
-            {notice.kind === 'undo' && (
+            {notice.kind === 'undo' && notice.canRetry !== false && (
               <Button
                 type="button"
                 size="sm"
@@ -33,7 +33,8 @@ export function NoteLifecycleNoticeList(): React.JSX.Element | null {
                 {notice.pending ? 'Restoring…' : 'Undo'}
               </Button>
             )}
-            {(notice.kind === 'delete-unconfirmed' || (notice.kind === 'undo' && notice.error)) && (
+            {(notice.kind === 'delete-unconfirmed' ||
+              (notice.kind === 'undo' && notice.error && notice.canRetry !== false)) && (
               <Button
                 type="button"
                 size="sm"
