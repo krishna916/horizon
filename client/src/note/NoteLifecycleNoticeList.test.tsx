@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NoteLifecycleNoticeList } from './NoteLifecycleNoticeList';
 import { NoteLifecycleProvider, useNoteLifecycle } from './NoteLifecycleProvider';
 import { noteApi } from './api';
+import { NoteLifecycleActions } from './NoteLifecycleActions';
 import type { NoteDetail } from './types';
 
 const note = (id: number, version = 4, archivedAt: string | null = null): NoteDetail => ({
@@ -21,7 +22,13 @@ const note = (id: number, version = 4, archivedAt: string | null = null): NoteDe
 const httpError = (status: number) =>
   Object.assign(new Error(`HTTP ${status}`), { response: { status } });
 
-function setup() {
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => (resolve = resolvePromise));
+  return { promise, resolve };
+}
+
+function setup(includeActions = false) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -39,6 +46,13 @@ function setup() {
         >
           Delete 8
         </button>
+        {includeActions && (
+          <NoteLifecycleActions
+            target={{ id: 7, version: 4, archivedAt: null }}
+            label="Note 7"
+            placement="list"
+          />
+        )}
         <NoteLifecycleNoticeList />
       </>
     );
@@ -151,5 +165,26 @@ describe('NoteLifecycleNoticeList', () => {
     expect(screen.getByRole('button', { name: 'Dismiss Note 7 notice' })).toBeEnabled();
     expect(restore).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables same-Note Card/List actions while Undo is pending and re-enables them afterward', async () => {
+    vi.spyOn(noteApi, 'archive').mockResolvedValue({
+      data: note(7, 9, '2026-11-21T11:00:00Z'),
+    } as never);
+    const restoreDeferred = deferred<never>();
+    const restore = vi.spyOn(noteApi, 'restoreArchived').mockReturnValue(restoreDeferred.promise);
+    setup(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive 7' }));
+    const undo = await screen.findByRole('button', { name: 'Undo Note 7 archive' });
+    const actions = screen.getByRole('button', { name: 'More actions for Note 7' });
+    expect(actions).toBeEnabled();
+
+    fireEvent.click(undo);
+    await waitFor(() => expect(restore).toHaveBeenCalledWith(7, 9));
+    expect(actions).toBeDisabled();
+
+    await act(async () => restoreDeferred.resolve({ data: note(10) } as never));
+    await waitFor(() => expect(actions).toBeEnabled());
   });
 });

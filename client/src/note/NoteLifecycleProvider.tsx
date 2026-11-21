@@ -426,6 +426,7 @@ export function NoteLifecycleProvider({
           ? registered.gateway
           : null;
       let editorPrepared = false;
+      publishState(key, { pending: true, error: null });
       publishNotices((current) =>
         current.map((item) =>
           item.id === noticeId ? { ...item, pending: true, error: null } : item
