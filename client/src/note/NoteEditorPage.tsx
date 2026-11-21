@@ -269,7 +269,7 @@ function ActiveNoteEditor({
       complete: (note) => {
         completeLifecycleMutation(note);
         if (note) setLocalLifecycleNote(note);
-        else onBack();
+        else void onBack({ focusCollection: true });
       },
       cancel: cancelLifecycleMutation,
     });
