@@ -43,6 +43,7 @@ class S3PersistenceTest {
                 GetObjectRequest.builder().bucket(environment.bucket()).key(key).build()).asByteArray();
         assertEquals(expectedSha256, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(restored)));
         assertArrayEquals(payload, restored);
-        ProofEvidence.record(environment.runId(), "A07", "container removed/recreated with named volume horizon-issue75-s3-compat-data; GET preserved " + restored.length + " bytes sha256=" + expectedSha256);
+        String volumeName = System.getenv().getOrDefault("POC_S3_VOLUME", "horizon-issue75-s3-compat-data");
+        ProofEvidence.record(environment.runId(), "A07", "container removed/recreated with named volume " + volumeName + "; GET preserved " + restored.length + " bytes sha256=" + expectedSha256);
     }
 }

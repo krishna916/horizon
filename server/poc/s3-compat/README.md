@@ -18,26 +18,35 @@ From `server/`:
 ```bash
 cp poc/s3-compat/.env.example poc/s3-compat/.env
 # Edit only the test-only values if needed.
+export POC_S3_VOLUME=horizon-issue75-s3-compat-local
 docker compose -f poc/s3-compat/compose.yaml up -d
 ./mvnw -f poc/s3-compat/pom.xml test
 ```
 
 The service listens only on loopback port 8333. Tests use path-style S3 requests, endpoint overrides, explicit test-only credentials, and disabled SDK retries for fault attribution. A07 removes and recreates only the SeaweedFS container while retaining the named volume. A11–A15 use a one-request test-only TCP gate that records the request-body barrier and, for A12, observes the provider HTTP 200 before dropping the downstream response. Keep the published port private; do not run this stack on a shared/public host.
 
-For a fresh clone or a concurrent run, set `POC_S3_VOLUME` in `poc/s3-compat/.env` to a unique volume name before starting the service. Compose and the tests use that same named volume; it must remain intact through A07. The example value is stable and will be reused until changed.
+For each fresh clone, set and export `POC_S3_VOLUME` to a unique volume name before starting the service. Compose and the tests use that same named volume; it must remain intact through A07. The example value in `.env.example` is stable and will be reused until changed. Run this harness serially because Compose uses one fixed project and service name.
+
+To reproduce the clean-checkout evidence, run the full suite and then repeat the controlled S3 failure class four times. This gives five A14 barriers total and 25 A15 conditional interleavings; each attempt appends its run ID, unique object keys, outcome and independent S3 read to `results/observations.md`:
+
+```bash
+for attempt in 1 2 3 4; do
+  ./mvnw -f poc/s3-compat/pom.xml -Dtest=S3FailureTest test
+done
+```
 
 ## Persistence and teardown
 
-A07 removes and recreates only the `seaweedfs` container and retains the named `horizon-issue75-s3-compat-data` volume. Preserve that volume until the persistence evidence is captured. After all POC results have been recorded, stop the service with:
+A07 removes and recreates only the `seaweedfs` container and retains the configured POC volume. Preserve that exact volume until the persistence evidence is captured. After all POC results have been recorded, stop the service with:
 
 ```bash
 docker compose -f poc/s3-compat/compose.yaml down
 ```
 
-Only after the evidence is complete, remove this POC's dedicated volume with its exact configured name (the example uses `horizon-issue75-s3-compat-data`):
+Only after the evidence is complete, remove this POC's dedicated volume with its exact configured name (the README command's example uses `horizon-issue75-s3-compat-local`; `.env.example` defaults to `horizon-issue75-s3-compat-data`):
 
 ```bash
-docker volume rm horizon-issue75-s3-compat-data
+docker volume rm "$POC_S3_VOLUME"
 ```
 
 Never use `down -v` or remove any other volume. Do not point this fixture at the normal Horizon PostgreSQL database or a live object store.

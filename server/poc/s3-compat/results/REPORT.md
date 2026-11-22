@@ -1,89 +1,110 @@
 # Issue #75 S3 compatibility POC report
 
-## Scope and current state
+## Scope and status
 
-This is a standalone architecture proof only. No production File module, Note code, migrations, or main application build/deployment configuration is part of this POC. Issue #75 remains open; the draft File ADR in PR #93 remains unaccepted.
+This is a standalone proof harness only. It changes no production File/Note code, migrations, application database, main Maven project, or normal Compose file. Issue #75 remains open; draft File ADR PR #93 remains unaccepted. The Layer B recovery model is approved only for this disposable proof. **Production recovery strategy remains pending.**
 
-**Run status:** Standalone harness is implemented on branch `poc/75-s3-compatibility`; the Compose service is stopped and the dedicated evidence volume is retained. The initial compose startup timed out while pulling the approved SeaweedFS image; after it finished pulling, the test suite exposed and fixed Testcontainers image alias handling and the expected provider error classification. A01–A16 and B01–B13 now pass in the complete standalone suite (29 tests, 0 failures/errors). B01–B10 use the disposable PostgreSQL/SeaweedFS state-machine proof; B11–B13 are behavioral models only. A14/A15 expose a post-delete late-object risk, and B07 shows the durable attempt must remain tracked when settlement is unknown; see `DECISION-OPTIONS.md`. The first, failed startup attempt made no S3 requests.
+The original harness was recovered from the working checkout and is now committed on PR #94. The clean-checkout run used commit `52b1b1b9e806080174614d97e777c6c2c524896a` from branch `poc/75-s3-compatibility`, cloned after the harness and volume-isolation commits. The clone was clean before running. No previously ignored `target/` output was copied into it.
 
-## Approved pins
+## Clean-checkout verification
 
-| Component | Version / digest | Source | Rationale | Approved? |
-|---|---|---|---|---|
-| SeaweedFS | 4.54; `ghcr.io/chrislusf/seaweedfs:4.54@sha256:e7d4b80af9bd49b2630a60ac6fbb7ffb620ac6a2c501f689c22a71b9f89f0203` (linux/amd64; index `sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15`) | [Official SeaweedFS Docker docs](https://github.com/seaweedfs/seaweedfs/blob/4.54/docker/README.md); [4.54 image index](https://github.com/seaweedfs/seaweedfs/pkgs/container/seaweedfs) | Executable release image; exact child digest selected from verified multi-platform release index. | Yes — user approved 2026-11-22 (corrected) |
-| AWS SDK for Java v2 | 2.59.2 | [Official AWS SDK releases](https://github.com/aws/aws-sdk-java-v2/releases/tag/2.59.2) | Recent stable v2 release; use AWS SDK BOM to keep S3 artifacts aligned. | Yes — user approved 2026-11-22 |
-| Testcontainers for Java | 2.0.5 | [Official Testcontainers Toxiproxy module docs](https://java.testcontainers.org/modules/toxiproxy/) | Current documented Java module version. | Yes — user approved 2026-11-22 |
-| Toxiproxy | 2.13.0; `ghcr.io/shopify/toxiproxy:2.13.0@sha256:5d3dae09bc185dcc5ff6cf43abf6062a4a720aff0c4306a471e773acdcd107aa` | [Official package versions](https://github.com/Shopify/toxiproxy/pkgs/container/toxiproxy) | Current stable release; multi-architecture manifest digest verified with `docker buildx imagetools inspect`. | Yes — user approved 2026-11-22 |
-| PostgreSQL (Layer B test container) | 17.12; `postgres:17@sha256:9d4105e2fcb1308961d4ee01f0ebc14fdd0497b11243982a4a0935fdb1a8f8dc` (linux/amd64; index `sha256:223efeb196329b55b3b9a13db144956411dbc18e727e59f681c3e0aede6475cf`) | [Testcontainers PostgreSQL module](https://java.testcontainers.org/modules/databases/postgres/) and official image manifest inspection | Disposable protocol simulator only; no connection to Horizon application data. | Selected for authorized Layer B proof; not a production version decision |
-| PostgreSQL JDBC (Layer B test dependency) | 42.7.14 | [Official pgJDBC releases](https://github.com/pgjdbc/pgjdbc/releases) | Pinned JDBC driver for the disposable harness. | Test-only dependency; not a production version decision |
+Run from `server/`, using a new `.env` with a unique `POC_S3_VOLUME`:
 
-## Environment
+```bash
+docker compose -f poc/s3-compat/compose.yaml up -d seaweedfs
+./mvnw -f poc/s3-compat/pom.xml test
+for attempt in 1 2 3 4; do
+  ./mvnw -f poc/s3-compat/pom.xml -Dtest=S3FailureTest test
+done
+docker compose -f poc/s3-compat/compose.yaml down
+```
 
-| Check | Observed |
+The full suite ran **29 JUnit test methods: 29 passed, 0 failed, 0 errors, 0 skipped**. Four serial repetitions of `S3FailureTest` each ran six methods with no test failures, adding 24 method executions. The complete plus repeated runs therefore contain 53 test-method executions, not 53 unique tests. The fault suite repeated A14 five times total and A15 for 25 controlled interleavings total.
+
+Across the five A14 barriers, the direct DELETE returned HTTP 204 before the PUT body was released. Four PUTs completed and the independent direct GET found the complete 2 MiB payload after DELETE. One PUT hit the SDK's single-attempt 5-second timeout and the follow-up GET was absent. **The A14 late-object hazard reproduced in 4/5 attempts.**
+
+Across the 25 A15 conditional PUT/DELETE trials, 20 PUTs completed and the independent GET found the complete payload after DELETE. Five PUT attempts timed out; their follow-up GETs were absent. No partial payload was observed. **The A15 late-object hazard reproduced in 20/25 attempts.** These absent reads after timeout do not prove that a still-running remote write cannot commit later.
+
+A12's gate observed provider HTTP 200 after the full PUT, dropped the client response, and the independent client read back byte-identical content. B07 retained its durable `UNKNOWN` attempt after an early absent HEAD, then a reconstructed coordinator found and deleted the exercised late write. The B07 test deliberately retained the locator/tombstone: it does not prove a finite safe retirement rule.
+
+The clean run used a new named volume, `horizon-issue75-s3-compat-clean-20261122`, confirmed by Compose config and Docker volume inspection. Compose emitted a warning about the older `horizon-issue75-s3-compat-data` volume; it left that old volume untouched. The clean-run service was stopped with `docker compose down` after evidence capture; its dedicated volume remains for review. No `down -v` was run.
+
+Sanitized per-case observations, object keys, run IDs, checksums where recorded, and PostgreSQL facts are in [`observations.md`](observations.md). The clean-run IDs are grouped by test class below; A14/A15 repeat IDs are listed in full.
+
+## Environment and pinned inputs
+
+| Component | Clean-run value |
 |---|---|
-| OS / architecture | Ubuntu 26.04.1 LTS / x86_64 |
-| Docker Engine | 29.9.2; daemon reachable with elevated command access |
-| Docker Compose | 5.6.1 |
-| Java | Temurin 25.0.4 LTS |
-| Maven wrapper | Maven 3.9.16 |
-| Disk available | 385 GiB |
-| Host port 8333 | Free at check time |
-| Existing Horizon data | Not used; all POC data will be isolated to its dedicated volume |
+| PR branch commit | `52b1b1b9e806080174614d97e777c6c2c524896a` |
+| Host | Ubuntu 26.04.1 LTS, Linux x86_64 / `linux/amd64` |
+| Docker Engine / Compose | 29.9.2 / 5.6.1 |
+| Java / Maven | Temurin 25.0.4 / Maven 3.9.16 |
+| AWS SDK for Java v2 | 2.59.2 |
+| Testcontainers for Java | 2.0.5 |
+| JUnit Jupiter / pgJDBC | 5.14.3 / 42.7.14 |
+| SeaweedFS | 4.54, `ghcr.io/chrislusf/seaweedfs:4.54@sha256:e7d4b80af9bd49b2630a60ac6fbb7ffb620ac6a2c501f689c22a71b9f89f0203` (linux/amd64 child; release index `sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15`) |
+| Toxiproxy | 2.13.0, `ghcr.io/shopify/toxiproxy:2.13.0@sha256:5d3dae09bc185dcc5ff6cf43abf6062a4a720aff0c4306a471e773acdcd107aa` (linux/amd64) |
+| PostgreSQL test container | `postgres:17@sha256:9d4105e2fcb1308961d4ee01f0ebc14fdd0497b11243982a4a0935fdb1a8f8dc` (linux/amd64; PostgreSQL 17.12) |
+| Testcontainers Ryuk helper | Testcontainers-managed `testcontainers/ryuk:0.14.0`, observed manifest `sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0` (linux/amd64); selected transitively by Testcontainers 2.0.5, not explicitly configured in this POC |
 
-## Results
+The AWS SDK, Testcontainers, SeaweedFS, Toxiproxy, PostgreSQL, and pgJDBC versions match the approved POC pins. The SeaweedFS digest is the corrected runnable image. Ryuk is an auxiliary image selected by the pinned Testcontainers release; its runtime version and digest are recorded above.
 
-The cases below were exercised by the complete combined run; each row reflects observed test evidence rather than a planned or inferred result. `PASS (model only)` is a behavioral contract simulation, not application integration proof.
+The environment uses explicit test-only credentials, a private bucket, path-style requests, an independent direct S3 client, disabled AWS SDK retries, loopback-only SeaweedFS port 8333, and disposable Testcontainers PostgreSQL. The proof never connects to Horizon's application database or a live object store. Compose storage is isolated from the previous named volume.
 
-| Case | Status | Evidence |
-|---|---|---|
-| A01 | PASS | Signed ListBuckets found the configured private test bucket; sanitized observation in `observations.md` |
-| A02 | PASS | Wrong-key S3 request and unsigned GET both returned HTTP 403; sanitized observation in `observations.md` |
-| A03 | PASS | Complete run: PUT/HEAD/GET preserved 4,097 bytes and SHA-256 `f56d3e38e0970f948b99efa975be6fa8ad03c904c91f02c657ccc69a36ff043e`; ETag was distinct |
-| A04 | PASS | Bounded temp-file policy accepted 20,971,519 bytes and rejected 20,971,520, unknown length, and declared/observed mismatch before PUT; rejected keys returned HEAD 404 |
-| A05 | PASS | Mutated bounded temp file failed SHA-256 validation before PUT; independent HEAD returned 404 |
-| A06 | PASS | Repeated DELETE left key absent; independent HEAD returned HTTP 404 |
-| A07 | PASS | Complete run removed/recreated the container with the same named volume; GET preserved 1,000,003 bytes and SHA-256 `5da2c522760ea64ed34dcc142badb5a324dd97531d5a3f8b942e23ae1a374fe0` |
-| A08 | PASS | SDK sent `If-None-Match: *`; first PUT succeeded, second returned HTTP 412, original payload remained intact |
-| A09 | PASS | Five barrier-synchronized concurrent conditional PUT trials each had one accepted writer and one complete matching visible payload |
-| A10 | PASS | Unavailable endpoint produced one-attempt `SdkClientException` in 5 ms; direct HEAD found no object; subsequent direct healthy-path PUT stored and verified bytes |
-| A11 | PASS | Local TCP gate reset after forwarding at least 65,536 body bytes from a 4 MiB PUT; direct GET found no object |
-| A12 | PASS | Gate observed provider HTTP 200 after a 1 MiB PUT, dropped client response; SDK lacked success response; direct GET verified exact payload |
-| A13 | PASS | Container recreated on same volume with PUT held after 65,536+ body bytes; after restart direct GET found no object |
-| A14 | PASS (risk observed) | DELETE returned HTTP 204 at a held 2 MiB PUT body barrier; writer then succeeded and direct GET found the complete object after DELETE |
-| A15 | PASS (risk observed) | In repeated five-trial conditional PUT/DELETE overlaps, successful PUTs left complete objects visible after DELETE; full-suite runs also recorded bounded 5 s SDK attempt timeouts followed by absent objects. A separate five-trial rerun had five complete visible objects. No partial bytes observed. |
-| A16 | PASS | Missing HEAD returned HTTP 404 and provider code `NoSuchKey` |
-| B01 | PASS | PostgreSQL intent and attempt locator survived coordinator reconstruction before any PUT |
-| B02 | PASS | S3 PUT committed; injected DB transaction rollback left the locator; direct reconciliation verified bytes and cleanup removed them without attachment |
-| B03 | PASS | Identical UUID/content/Note/role returned the same File ID, attempt ID, key, and one durable attempt |
-| B04 | PASS | Changed Note, role, length, or checksum conflicted; expired request stayed terminal |
-| B05 | PASS | Stale Note version rejected finalize; uploaded bytes remained and version refresh finalized without another PUT |
-| B06 | PASS | Concurrent parent claims on one File ID resulted in one PostgreSQL claim/association |
-| B07 | PASS (POC model) | Early absent HEAD retained the UNKNOWN attempt; after late 2 MiB PUT commit, restarted reconciliation found/deleted it and retained the row. Unknown-attempt closeout remains unresolved. |
-| B08 | PASS (POC model) | Logical removal stayed tombstoned/inaccessible after S3 DELETE failure; restarted coordinator retried and verified deletion |
-| B09 | PASS | Verified physical deletion retained terminal tombstone and same UUID could not resurrect |
-| B10 | PASS | Lost finalize response replay returned the same committed File/version without a second claim or version increment |
-| B11 | PASS (model only) | Ordinary content PATCH preserved the protected inline-image association |
-| B12 | PASS (model only) | Repeated inline refs shared one association; explicit last removal detached it while bytes remained for cleanup |
-| B13 | PASS (model only) | Archive stayed readable; Trash denied ordinary reads but retained association/bytes; restore restored access |
+## Case ledger
 
-## Safety and teardown
+“Test execution” reports the JUnit outcome. “Architecture conclusion” states what the evidence supports; a passing hazard-detection test is not a safety guarantee.
 
-The eventual Compose project will use a dedicated named volume and test-only credentials. Only that volume may be removed during teardown, after persistence evidence is recorded. No `.env` file, credentials, request authorization headers, raw binary fixture, or unredacted proxy trace may be committed.
+| Case | Test source | Evidence run ID | Test execution | Architecture conclusion |
+|---|---|---|---|---|
+| A01 | `S3BasicCompatibilityTest.A01_credentialedClientSeesBootstrappedPrivateBucket` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Authenticated bucket access compatible |
+| A02 | `S3BasicCompatibilityTest.A02_wrongCredentialsAndUnsignedReadAreRejected` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Invalid credentials and unsigned read rejected |
+| A03 | `S3BasicCompatibilityTest.A03_putHeadAndGetPreserveExactBytesAndSha256` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Provider round trip compatible; 4,097 bytes, SHA-256 `bd1148f3f6d84f7da976665e6ca110a60b54e9fbc784436d2e70549d3970ebd9` |
+| A04 | `UploadValidationPolicyTest.A04_acceptsTheMaximumAndRejectsOversizeUnknownAndMismatchedLengthsBeforePut` | `207c2397-8173-4436-8e5d-154fe5c3bcb5` | PASS | Test-only upload policy accepted 20,971,519 bytes and rejected oversize, unknown, and mismatched lengths before PUT |
+| A05 | `UploadValidationPolicyTest.A05_mutatedBoundedTempFileFailsSha256ValidationBeforePut` | `207c2397-8173-4436-8e5d-154fe5c3bcb5` | PASS | Test-only checksum validation rejected mutation before PUT; HEAD 404 |
+| A06 | `S3BasicCompatibilityTest.A06_deleteAndRepeatedDeleteLeaveTheObjectAbsent` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Repeated DELETE left object absent |
+| A07 | `S3PersistenceTest.A07_objectSurvivesContainerRecreationOnTheSameNamedVolume` | `2576a5cb-a359-4d9a-b334-e7420850adb7` | PASS | Same-volume restart preserved 1,000,003 bytes; SHA-256 `9a1094c3eb5426fc25a2fd7e971348673ac28b4dcb2bc05092a231a6b3949d95` |
+| A08 | `S3ConditionalWriteTest.A08_ifNoneMatchStarPreservesTheFirstObject` | `ef49c46a-5790-4d55-8223-6348d14f8e0c` | PASS | Conditional create rejected overwrite with HTTP 412 and preserved first payload |
+| A09 | `S3ConditionalWriteTest.A09_concurrentConditionalPutsHaveExactlyOneVisibleWinner` | `ef49c46a-5790-4d55-8223-6348d14f8e0c` | PASS | Five barrier-synchronized trials had one accepted writer and one complete payload |
+| A10 | `S3FailureTest.A10_unavailableEndpointFailsBoundedlyWithoutFalseSuccess` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a` | PASS | Single-attempt local connection failure; direct HEAD absent; healthy PUT verified |
+| A11 | `S3FailureTest.A11_upstreamInterruptionOccursAfterAnObservedBodyBarrier` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a` | PASS | Gate reset after forwarding at least 65,536 bytes; direct GET absent; no incomplete object observed |
+| A12 | `S3FailureTest.A12_serverSuccessObservedBeforeTheResponseIsDropped` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a` | PASS | Unknown-result hazard reproduced after provider HTTP 200; independent GET byte-equal |
+| A13 | `S3FailureTest.A13_containerRestartDuringHeldPutIsReconciledByDirectRead` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a` | PASS | Restart with 65,536+ bytes held; direct GET absent in this run |
+| A14 | `S3FailureTest.A14_deleteInterleavedWithBodyBarrierCannotProducePartialVisibleBytes` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a`; repeats: `c7077001-970b-4457-9e19-5d5d126280d1`, `8a27a3e5-2d25-458e-a4ca-2efbc50a9d64`, `39607b52-f35c-438b-afb5-e9c4ed795c11`, `1423ebeb-d70e-4c57-9d40-9803777d56e7` | PASS, 5 executions | **Hazard reproduced:** 4/5 late PUTs completed after DELETE 204 and were visible as complete objects; one SDK timeout had an absent follow-up GET |
+| A15 | `S3FailureTest.A15_conditionalPutInterleavedWithDeleteHasAtMostOneCompleteVisibleObject` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a`; repeats: `c7077001-970b-4457-9e19-5d5d126280d1`, `8a27a3e5-2d25-458e-a4ca-2efbc50a9d64`, `39607b52-f35c-438b-afb5-e9c4ed795c11`, `1423ebeb-d70e-4c57-9d40-9803777d56e7` | PASS, 25 trials | **Hazard reproduced:** 20/25 late conditional PUTs completed after DELETE 204 and were visible as complete objects; five timed-out attempts had absent follow-up reads. Conditional PUT does not fence an in-flight writer |
+| A16 | `S3BasicCompatibilityTest.A16_missingObjectHeadIsClassifiedAsNotFound` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Missing key classified as HTTP 404 / `NoSuchKey` |
+| B01 | `RecoveryProtocolTest.B01_intentIsDurableAndRecoverableAfterCoordinatorRecreation` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | PostgreSQL intent/attempt recovery in disposable simulator |
+| B02 | `RecoveryProtocolTest.B02_s3CommitThenDatabaseFailureRemainsTrackedButNeverAttached` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | PUT + injected DB rollback; direct reconciliation verified and deleted unassociated object |
+| B03 | `RecoveryProtocolTest.B03_identicalIdempotencyRetryReturnsTheSameFileAndAttempt` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Same request fingerprint returns same intent/attempt in simulator |
+| B04 | `RecoveryProtocolTest.B04_requestFingerprintMismatchAndTerminalIntentCannotResurrect` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Mismatch conflicts and terminal intent stays terminal in simulator |
+| B05 | `RecoveryProtocolTest.B05_staleNoteVersionRejectsFinalizeButRetainsUploadedBytesForRetry` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Stale version blocked; staged bytes retained for retry in simulator |
+| B06 | `RecoveryProtocolTest.B06_competingParentClaimsHaveExactlyOneWinner` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | PostgreSQL accepted one concurrent claim in simulator |
+| B07 | `RecoveryProtocolTest.B07_expiredInFlightAttemptRemainsTrackedAcrossEarlyAbsentCheckAndLateCommit` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | One late write was found/deleted after coordinator reconstruction; UNKNOWN attempt stayed tracked. **Finite UNKNOWN retirement remains unsolved.** |
+| B08 | `RecoveryProtocolTest.B08_deleteFailureKeepsLogicalRemoveDurableAndRetryableAcrossCoordinatorRestart` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Failed S3 delete remained inaccessible and retryable after coordinator restart in simulator |
+| B09 | `RecoveryProtocolTest.B09_confirmedPhysicalDeletionRetainsTerminalTombstoneAndRejectsRetry` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Confirmed delete kept a terminal simulator tombstone |
+| B10 | `RecoveryProtocolTest.B10_lostFinalizeResponseReplayDoesNotClaimTwiceOrIncrementVersionAgain` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Replay returned committed claim/version in simulator |
+| B11 | `RecoveryProtocolTest.B11_ordinaryContentPatchCannotRemoveTheProtectedInlineImageAssociation` / `NoteFileContractModel` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | **Model only:** ordinary PATCH preserved modeled image association |
+| B12 | `RecoveryProtocolTest.B12_repeatedInlineReferencesShareOneAssociationUntilExplicitLastRemoval` / `NoteFileContractModel` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | **Model only:** repeated references and final removal behavior simulated |
+| B13 | `RecoveryProtocolTest.B13_archiveTrashAndRestorePreserveBytesAndRestrictTrashReads` / `NoteFileContractModel` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | **Model only:** archive/Trash/restore access behavior simulated |
 
-## Current interpretation
+### Test-source ownership
 
-Observed provider behavior supports authenticated path-style AWS SDK v2 operations, bounded application-side length/checksum validation, same-volume restart persistence, and conditional object creation including concurrent writers for the tested cases. A02 established rejection of both invalid credentials and unsigned reads. A03 independently verified returned bytes and SHA-256; ETag is not the SHA-256. A06 repeated deletion is idempotent from the observed API result, and A16 maps a missing key to `NoSuchKey`/404. These are provider/SDK observations for the exact pinned versions, not production File-module proof. A14 and A15 demonstrate that neither DELETE nor `If-None-Match: *` fences a PUT already receiving bytes: complete objects can appear after DELETE. A12 independently confirms an unknown-result window even when the provider committed successfully. Stable-key conditional writes alone are unsafe as a cleanup/recovery protocol. Layer B exercised per-attempt keys, durable attempt tracking, tombstones, and retryable cleanup against the observed cases. B07 deliberately keeps an unknown attempt row after deleting a late object; a finite rule for retiring unknown rows and a bound on arbitrary provider-side delay remain unproven. B11–B13 are contract models only.
+- `S3BasicCompatibilityTest`: A01–A03, A06, A16.
+- `UploadValidationPolicyTest` and `S3UploadPolicy`: A04–A05; test-only bounded-file validation, not a production upload API.
+- `S3PersistenceTest`: A07.
+- `S3ConditionalWriteTest`: A08–A09.
+- `S3FailureTest` and `S3FaultGate`: A10–A15. A12 records upstream HTTP 200 before dropping the client response. A14/A15 record the 65,536-byte body barrier, DELETE result, PUT outcome, and independent direct GET.
+- `RecoveryProtocolTest`, `RecoveryCoordinator`, PostgreSQL Testcontainers, and SeaweedFS: B01–B10, an isolated protocol simulator, not production File or Notes integration.
+- `NoteFileContractModel` called from `RecoveryProtocolTest`: B11–B13, behavioral models only.
 
-## Pending gates
+## Interpretation and decision request
 
-- A01–A16 and B01–B13 proof suite — complete; combined run: 29 tests, 0 failures/errors.
-- Human review remains needed before treating the POC model as a production recovery decision or accepting the draft ADR.
-- Keep PR #93 unmerged and Issue #75 open pending explicit ADR/source-document review and acceptance.
+The pinned provider/SDK passed the exercised authenticated path-style S3 operations, byte round-trip, validation-policy, persistence, conditional-write, missing-key, and controlled-fault cases. A12 demonstrates an unknown client outcome after provider commit. A14 and A15 show that a successful DELETE does not fence a PUT already receiving bytes; conditional creation also does not fence it. Stable-key delete or conditional-write-only cleanup is unsafe for the tested races.
 
-## Historical image startup correction
+Per-attempt physical keys plus PostgreSQL intent/tombstone records allowed the simulator to find and delete the one exercised late write and to retry a failed delete after restart. B07 did not prove a provider-side maximum delay, authoritative termination, or a finite safe retirement rule. An UNKNOWN attempt may therefore require indefinite retention/reconciliation unless a separate mechanism is proven. B11–B13 do not exercise Notes production behavior.
 
-**Initial result: FAILED before any S3 request.** The user-approved reference `ghcr.io/seaweedfs/seaweedfs:4.54.0@sha256:7cb5cb29c7c0358a7c9f68ccdb0a79a46cfdb5c45194d843b5d183fef4e1f21a` resolves to a 95,473-byte OCI manifest with empty image config, no command, and no OS/architecture. Compose therefore tried to execute `mini` directly and container creation failed. No compatibility conclusion can be drawn from this startup error.
+**Decision requested:** for future architecture review, choose whether to investigate indefinite UNKNOWN-attempt retention/reconciliation, require evidence of a valid delay bound or authoritative fencing before finite retirement, or evaluate provider inventory/sweeps as defense in depth. No production strategy is selected here. Issue #75 and draft ADR PR #93 remain pending human review.
 
-The pinned release's official Docker documentation identifies the runnable image repository as `ghcr.io/chrislusf/seaweedfs`; its 4.54 release index resolves to `sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15`, with a Linux/amd64 image manifest `sha256:e7d4b80af9bd49b2630a60ac6fbb7ffb620ac6a2c501f689c22a71b9f89f0203`. The user approved this replacement digest on 2026-11-22. Compose uses it with the image default command; it started successfully. The first test invocation timed out only because the image pull exceeded the harness’s 30-second Compose command timeout; after pull completion, all A and B cases ran.
+## Historical image correction
 
-Sources: [SeaweedFS 4.54 Docker documentation](https://github.com/seaweedfs/seaweedfs/blob/4.54/docker/README.md), [official image package](https://github.com/seaweedfs/seaweedfs/pkgs/container/seaweedfs).
+The originally approved `ghcr.io/seaweedfs/seaweedfs:4.54.0@sha256:7cb5cb29c7c0358a7c9f68ccdb0a79a46cfdb5c45194d843b5d183fef4e1f21a` was an empty OCI artifact with no executable or platform. That startup failed before an S3 request and provides no compatibility evidence. The user approved the corrected runnable image at the digest above. The prior image-pull timeout and correction remain part of the historical observation; they are not part of the clean-checkout pass count.
