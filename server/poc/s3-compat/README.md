@@ -24,6 +24,8 @@ docker compose -f poc/s3-compat/compose.yaml up -d
 
 The service listens only on loopback port 8333. Tests use path-style S3 requests, endpoint overrides, explicit test-only credentials, and disabled SDK retries for fault attribution. A07 removes and recreates only the SeaweedFS container while retaining the named volume. A11–A15 use a one-request test-only TCP gate that records the request-body barrier and, for A12, observes the provider HTTP 200 before dropping the downstream response. Keep the published port private; do not run this stack on a shared/public host.
 
+For a fresh clone or a concurrent run, set `POC_S3_VOLUME` in `poc/s3-compat/.env` to a unique volume name before starting the service. Compose and the tests use that same named volume; it must remain intact through A07. The example value is stable and will be reused until changed.
+
 ## Persistence and teardown
 
 A07 removes and recreates only the `seaweedfs` container and retains the named `horizon-issue75-s3-compat-data` volume. Preserve that volume until the persistence evidence is captured. After all POC results have been recorded, stop the service with:
@@ -32,7 +34,7 @@ A07 removes and recreates only the `seaweedfs` container and retains the named `
 docker compose -f poc/s3-compat/compose.yaml down
 ```
 
-Only after the evidence is complete, remove this POC's dedicated volume with:
+Only after the evidence is complete, remove this POC's dedicated volume with its exact configured name (the example uses `horizon-issue75-s3-compat-data`):
 
 ```bash
 docker volume rm horizon-issue75-s3-compat-data

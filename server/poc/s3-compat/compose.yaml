@@ -15,4 +15,4 @@ services:
 
 volumes:
   seaweedfs-data:
-    name: horizon-issue75-s3-compat-data
+    name: ${POC_S3_VOLUME:-horizon-issue75-s3-compat-data}
