@@ -91,3 +91,7 @@ These are **alternatives, not accepted choices**. Production design must still d
 | ADR #93 acceptance/merge and issue #75 closure | **Not automatically implied by POC result** |
 
 **Record as complete POC evidence, not proof of all production guarantees.** Keep the POC branch `poc/75-s3-compatibility` available and reference the immutable commits. Do not require merging experimental code into `master` for traceability.
+
+## Post-POC architecture disposition (2026-11-22)
+
+**Subsequent to this evidence report**, the user agreed to the recommended conservative V1 recovery direction. See [draft ADR §7.2](../adr/ADR-DRAFT-shared-file-object-storage.md) and [#75](https://github.com/krishna916/horizon/issues/75) for the current architecture record. **Select distinct never-reused physical keys per new PUT, persist each attempt before transfer, and retain/reconcile UNKNOWN attempt locators for as long as the provider's outcome cannot be authoritatively settled (potentially indefinitely).** No automatic retirement based on timeout, DELETE success or negative HEAD. This does **not** change what the POC proved: B07 did not establish a finite bound on delayed writes, and #76/#77 must verify the actual production mechanism. Exact schema, worker lease/retry mechanics, source-document reconciliation and ADR acceptance remain review gates. The historical POC options and per-case results above are preserved as originally observed.
