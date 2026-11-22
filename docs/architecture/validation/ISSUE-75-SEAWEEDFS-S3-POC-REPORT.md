@@ -2,7 +2,7 @@
 
 | Field | Recorded result |
 | --- | --- |
-| Status | **POC completed and documented; production recovery design NOT approved** |
+| Status | **POC completed and documented; conservative V1 recovery direction subsequently selected (§4 / post-POC disposition below); production worker correctness not demonstrated** |
 | Date | 2026-11-22 |
 | POC issue | [#75](https://github.com/krishna916/horizon/issues/75) |
 | Experimental PR | [#94](https://github.com/krishna916/horizon/pull/94) — **not merged**, retained branch `poc/75-s3-compatibility` |
@@ -84,14 +84,14 @@ These are **alternatives, not accepted choices**. Production design must still d
 | Real private SeaweedFS/AWS SDK operations and controlled fault behavior | **POC evidence completed** for tested pins |
 | Executable standalone POC source and clean-checkout report | **Committed in PR #94**; not merged into production branch |
 | Architecture D-01–D-29 | Already approved as design directions |
-| Provider choice for production | Compatibility evidence supports SeaweedFS candidate; **deployment policy remains subject to final architecture approval** |
-| Safe `UNKNOWN` attempt settlement/retirement policy | **Not selected; requires explicit decision** |
+| Provider choice for production | POC supports the pinned SeaweedFS candidate; general S3-compatible configuration is the approved architecture direction, while final application/Compose pins and operational validation belong to implementation review |
+| Safe `UNKNOWN` attempt settlement/retirement policy | **POC did not prove a finite safe retirement bound**; V1 subsequently selected conservative indefinite tracking/reconciliation of uncertain attempts (§4) |
 | Actual File/Note/worker implementation, exact DDL/HTTP contracts | #76–#80; not authorized by the POC |
-| PRD/Constitution reconciliations | **Still pending separately approved updates** |
+| PRD/Constitution reconciliations | **Approved and merged** into authoritative [knowledge-store PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1), after the POC |
 | ADR #93 acceptance/merge and issue #75 closure | **Not automatically implied by POC result** |
 
 **Record as complete POC evidence, not proof of all production guarantees.** Keep the POC branch `poc/75-s3-compatibility` available and reference the immutable commits. Do not require merging experimental code into `master` for traceability.
 
 ## Post-POC architecture disposition (2026-11-22)
 
-**Subsequent to this evidence report**, the user agreed to the recommended conservative V1 recovery direction. See [draft ADR §7.2](../adr/ADR-DRAFT-shared-file-object-storage.md) and [#75](https://github.com/krishna916/horizon/issues/75) for the current architecture record. **Select distinct never-reused physical keys per new PUT, persist each attempt before transfer, and retain/reconcile UNKNOWN attempt locators for as long as the provider's outcome cannot be authoritatively settled (potentially indefinitely).** No automatic retirement based on timeout, DELETE success or negative HEAD. This does **not** change what the POC proved: B07 did not establish a finite bound on delayed writes, and #76/#77 must verify the actual production mechanism. Exact schema, worker lease/retry mechanics, source-document reconciliation and ADR acceptance remain review gates. The historical POC options and per-case results above are preserved as originally observed.
+**Subsequent to this evidence report**, the user agreed to the recommended conservative V1 recovery direction. See [draft ADR §7.2](../adr/ADR-DRAFT-shared-file-object-storage.md) and [#75](https://github.com/krishna916/horizon/issues/75) for the current architecture record. **Select distinct never-reused physical keys per new PUT, persist each attempt before transfer, and retain/reconcile UNKNOWN attempt locators for as long as the provider's outcome cannot be authoritatively settled (potentially indefinitely).** No automatic retirement based on timeout, DELETE success or negative HEAD. This does **not** change what the POC proved: B07 did not establish a finite bound on delayed writes, and #76/#77 must verify the actual production mechanism. Exact schema, worker lease/retry mechanics and **File ADR acceptance** remain review gates; source-document reconciliation was subsequently merged into [knowledge-store PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1). The historical POC options and per-case results above are preserved as originally observed.
