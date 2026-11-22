@@ -133,9 +133,9 @@ cd server
 
 ## 8. Task 5 — Update PR #94 and final audit
 
-- [ ] Add a meaningful **PR #94 description**: scope, exactly what source was restored/committed, instructions to reproduce, approved pins, observed risk A12/A14/A15, B07 limitation, case-classification caveats, exact test results and links to #75/ADR #93. No automatic merge/acceptance wording.
-- [ ] Verify documentation paths are relative where practical and that `README.md` and reports link to the actual committed source/test names.
-- [ ] Check diff and branch scope:
+- [x] Add a meaningful **PR #94 description**: scope, exactly what source was restored/committed, instructions to reproduce, approved pins, observed risk A12/A14/A15, B07 limitation, case-classification caveats, exact test results and links to #75/ADR #93. No automatic merge/acceptance wording.
+- [x] Verify documentation paths are relative where practical and that `README.md` and reports link to the actual committed source/test names.
+- [x] Check diff and branch scope:
 
 ```bash
 git status --short
@@ -144,17 +144,17 @@ git ls-files server/poc/s3-compat
 git check-ignore -v server/poc/s3-compat/pom.xml || true
 ```
 
-- [ ] Ensure only scoped POC files, existing original-plan file and PR description changed. Do not rewrite #75 acceptance criteria, edit ADR #93, merge PRs or close #75.
-- [ ] Execute the complete clean-checkout validation one last time and record the actual output. If the evidence diverges from earlier observations, show the discrepancy, do not hide it.
-- [ ] Summarize in PR #94: **what is proved**, **what is a simulated contract**, **what remains open**, **what user approval is needed next**. Link or reference this plan in the PR conversation for Luna's review and handoff.
+- [x] Ensure only scoped POC files, existing original-plan file and PR description changed. Do not rewrite #75 acceptance criteria, edit ADR #93, merge PRs or close #75.
+- [x] Execute the complete clean-checkout validation one last time and record the actual output. If the evidence diverges from earlier observations, show the discrepancy, do not hide it.
+- [x] Summarize in PR #94: **what is proved**, **what is a simulated contract**, **what remains open**, **what user approval is needed next**. Link or reference this plan in the PR conversation for Luna's review and handoff.
 
 ### Final definition of done for the remediation PR
 
-- [ ] Runnable `pom.xml`, pinned private `compose.yaml`, all necessary test/fault code and usage README are **tracked on PR #94**.
-- [ ] Test harness works from a clean checkout or an explicit reproduced blocker is recorded.
-- [ ] Every A01–A16/B01–B13 has truthful outcome/provenance/test source mapping, with A14/A15 risks and B11–B13 model scope clearly separated.
-- [ ] B07 UNKNOWN-attempt lifetime is **explicitly unresolved or separately approved after evidence**, never silently accepted.
-- [ ] PR #94 has a reviewable summary, exact run instructions and clean scope.
-- [ ] No production Note/File code, main server dependencies, normal Compose, Flyway migrations, ADR status, source PRDs or Constitution were changed.
+- [x] Runnable `pom.xml`, pinned private `compose.yaml`, all necessary test/fault code and usage README are **tracked on PR #94**.
+- [x] Test harness works from a clean checkout or an explicit reproduced blocker is recorded.
+- [x] Every A01–A16/B01–B13 has truthful outcome/provenance/test source mapping, with A14/A15 risks and B11–B13 model scope clearly separated.
+- [x] B07 UNKNOWN-attempt lifetime is **explicitly unresolved or separately approved after evidence**, never silently accepted.
+- [x] PR #94 has a reviewable summary, exact run instructions and clean scope.
+- [x] No production Note/File code, main server dependencies, normal Compose, Flyway migrations, ADR status, source PRDs or Constitution were changed.
 
 **STOP and present results for human review. Do not merge PR #94, approve a production recovery protocol, mark ADR #93 accepted, close #75 or start #76 without explicit approval.**
