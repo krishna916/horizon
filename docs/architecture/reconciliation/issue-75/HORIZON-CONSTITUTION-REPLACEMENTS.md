@@ -1,6 +1,6 @@
 # Proposed authoritative amendment — HORIZON_CONSTITUTION v1.0
 
-**Status:** WORDING APPROVED on 2026-11-22. The corresponding authoritative Constitution amendment is staged in [knowledge-store draft PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1), **not yet merged**. This remains a review proposal, not the accepted Constitution.
+**Status:** WORDING APPROVED on 2026-11-22. The corresponding authoritative Constitution amendment is staged in [knowledge-store draft PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1), **merged to `main`** (commit [`631e2a8`](https://github.com/krishna916/horizon-knowledge-store/commit/631e2a81e00f8816d983fdca3b289a903f2cc3b3)). This remains a review proposal, not the accepted Constitution.
 
 **Inspected source:** `50-AI/ChatGPT Context/HORIZON_CONSTITUTION.md`, Accepted v1.0, SHA-256 `2e70915a929d69165dc89d5e47e56725888a26be5854c8a4fd5b658289dc83c5` (uploaded project source). Reverify its latest revision before application.
 
