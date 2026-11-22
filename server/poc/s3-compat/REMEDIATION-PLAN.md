@@ -76,8 +76,8 @@ server/poc/s3-compat/
 
 The previous workstation's leftover source files and volumes MUST NOT be necessary to run the POC.
 
-- [ ] Run from a **fresh clean checkout/worktree of the PR branch** in an isolated directory, with empty/untracked state. Record branch commit SHA, OS/architecture, Docker, Java, Maven, image digests and the environment used.
-- [ ] Verify prerequisites using commands such as:
+- [x] Run from a **fresh clean checkout/worktree of the PR branch** in an isolated directory, with empty/untracked state. Record branch commit SHA, OS/architecture, Docker, Java, Maven, image digests and the environment used.
+- [x] Verify prerequisites using commands such as:
 
 ```bash
 git status --short
@@ -89,32 +89,32 @@ cd server
 ./mvnw -version
 ```
 
-- [ ] Run the standalone POC using checked-in README's exact startup, bucket/bootstrap, test and teardown commands. The baseline requested verification command is:
+- [x] Run the standalone POC using checked-in README's exact startup, bucket/bootstrap, test and teardown commands. The baseline requested verification command is:
 
 ```bash
 cd server
 ./mvnw -f poc/s3-compat/pom.xml test
 ```
 
-- [ ] Reproduce all A01–A16/B01–B13 **from committed source**. If particular tests require an isolated Compose lifecycle or a second command, put that exact step in README; never rely on a manual action left undocumented.
-- [ ] For A12, require the proxy/gate to observe an actual **provider success response before dropping the client reply**, plus independent readback; a timeout alone is `INCONCLUSIVE`.
-- [ ] For A14/A15, require recorded objective in-flight PUT body barrier, DELETE response, release of PUT, and final independent object read; repeat the race with recorded count/observations. A successful hazard reproduction is NOT a safe cleanup outcome.
-- [ ] For B07, require persisted UNKNOWN attempt/locator, early negative HEAD while writer still in flight, later PUT settlement, post-restart reconciliation/delete and retained tombstone/locator. Clearly state **what remains unproved**.
-- [ ] Capture sanitized Maven/Surefire summary and test names, exact run ID(s), assertions, key/digest observations, independent S3 verification and the relevant PostgreSQL facts; avoid committing bulky raw logs. Record any failures and differences from the original report as **new observations** rather than altering history.
-- [ ] If execution is blocked (Docker unavailable, permission denied, non-amd64 host, image unavailable), mark **NOT_RUN/BLOCKED with exact error**. Do not report a PASS without a completed run.
+- [x] Reproduce all A01–A16/B01–B13 **from committed source**. If particular tests require an isolated Compose lifecycle or a second command, put that exact step in README; never rely on a manual action left undocumented.
+- [x] For A12, require the proxy/gate to observe an actual **provider success response before dropping the client reply**, plus independent readback; a timeout alone is `INCONCLUSIVE`.
+- [x] For A14/A15, require recorded objective in-flight PUT body barrier, DELETE response, release of PUT, and final independent object read; repeat the race with recorded count/observations. A successful hazard reproduction is NOT a safe cleanup outcome.
+- [x] For B07, require persisted UNKNOWN attempt/locator, early negative HEAD while writer still in flight, later PUT settlement, post-restart reconciliation/delete and retained tombstone/locator. Clearly state **what remains unproved**.
+- [x] Capture sanitized Maven/Surefire summary and test names, exact run ID(s), assertions, key/digest observations, independent S3 verification and the relevant PostgreSQL facts; avoid committing bulky raw logs. Record any failures and differences from the original report as **new observations** rather than altering history.
+- [x] If execution is blocked (Docker unavailable, permission denied, non-amd64 host, image unavailable), mark **NOT_RUN/BLOCKED with exact error**. Do not report a PASS without a completed run.
 
 **Exit:** reviewer can reproduce the result without accessing Luna's original development workspace. If a clean run fails, PR must say so; do not silently leave the old green summary as if newly verified.
 
 ## 6. Task 3 — Correct report/observation provenance and classification
 
-- [ ] Reconcile `REPORT.md`, `observations.md` and `DECISION-OPTIONS.md` against actual checked-in tests and new run output. Keep original run history with timestamps/provenance; append separate clean-run observations rather than rewriting historical evidence as if it came from the new commit.
-- [ ] Update the report's "standalone harness implemented on branch" statement to match what is **actually committed** and the clean-checkout execution status.
-- [ ] Add a compact case ledger with columns: **case**, **test/class**, **evidence run ID**, **test execution (PASS/FAIL/NOT_RUN)**, **architecture conclusion (compatible / hazard reproduced / model only / still open)**. This prevents false equivalence between a test asserting a hazard and a design guarantee.
-- [ ] Specifically classify **A14/A15 as "test PASS — hazard reproduced; stable-key DELETE/conditional-PUT-only protocol UNSAFE"** if the new evidence corroborates that result; if not reproducible, classify as INCONCLUSIVE and show why.
-- [ ] Distinguish **B01–B10: isolated PostgreSQL/SeaweedFS protocol simulator** from **B11–B13: behavior models only**. No claim that Notes production authorization/editor lifecycle has been integrated.
-- [ ] Clarify **B07 "tested cleanup of one late write" versus "general unknown-attempt closeout NOT SOLVED"**. Do not make a blanket `no-orphan guarantee` or call the recovery protocol production-accepted.
-- [ ] Make the test count precise: `29 cases` are not necessarily `29 tests` unless source/runner confirms exactly 29 executable tests. Document any repeated trials separately.
-- [ ] Include the exact pinned **SeaweedFS 4.54** digest, SDK/tool versions, supported platform, sanitized run summary, README links, retained data/teardown state and explicit POC-only limitations.
+- [x] Reconcile `REPORT.md`, `observations.md` and `DECISION-OPTIONS.md` against actual checked-in tests and new run output. Keep original run history with timestamps/provenance; append separate clean-run observations rather than rewriting historical evidence as if it came from the new commit.
+- [x] Update the report's "standalone harness implemented on branch" statement to match what is **actually committed** and the clean-checkout execution status.
+- [x] Add a compact case ledger with columns: **case**, **test/class**, **evidence run ID**, **test execution (PASS/FAIL/NOT_RUN)**, **architecture conclusion (compatible / hazard reproduced / model only / still open)**. This prevents false equivalence between a test asserting a hazard and a design guarantee.
+- [x] Specifically classify **A14/A15 as "test PASS — hazard reproduced; stable-key DELETE/conditional-PUT-only protocol UNSAFE"** if the new evidence corroborates that result; if not reproducible, classify as INCONCLUSIVE and show why.
+- [x] Distinguish **B01–B10: isolated PostgreSQL/SeaweedFS protocol simulator** from **B11–B13: behavior models only**. No claim that Notes production authorization/editor lifecycle has been integrated.
+- [x] Clarify **B07 "tested cleanup of one late write" versus "general unknown-attempt closeout NOT SOLVED"**. Do not make a blanket `no-orphan guarantee` or call the recovery protocol production-accepted.
+- [x] Make the test count precise: `29 cases` are not necessarily `29 tests` unless source/runner confirms exactly 29 executable tests. Document any repeated trials separately.
+- [x] Include the exact pinned **SeaweedFS 4.54** digest, SDK/tool versions, supported platform, sanitized run summary, README links, retained data/teardown state and explicit POC-only limitations.
 
 **Exit:** every claimed result has corresponding executable test and independently reviewable observations, or is explicitly downgraded to NOT_RUN/INCONCLUSIVE.
 
@@ -122,12 +122,12 @@ cd server
 
 **This is the remaining design gate. The goal is to expose the tradeoff, not to choose a production policy.**
 
-- [ ] Explain why one negative HEAD, DELETE 204, the end of the caller's lease, or an SDK timeout is insufficient to prove no remotely delayed writer remains. Distinguish *logical non-resurrection* (DB tombstones) from *eventual physical cleanup of late bytes*.
-- [ ] Evaluate **at least** these boundedly described options in `DECISION-OPTIONS.md`: (1) retain UNKNOWN attempt key and periodically reconcile indefinitely until authoritative settlement; (2) allow finite retirement **only after evidence of a valid upper bound or authoritative termination/fencing mechanism**; (3) longer-term provider-side inventory/sweep plus keyed attempts as defense in depth. Do not assert that inventory alone can stop writes that complete after its final scan.
-- [ ] For each candidate, state metadata/retention cost, recoverability after restart, expected storage/worker overhead, whether it satisfies "no permanently untracked orphan", and what **must** be proven for safe terminal deletion.
-- [ ] Where the **existing isolated harness** permits it without new architectural commitments, add a targeted controlled case: delay a PUT across at least one negative HEAD and cleanup pass; verify attempt locator remains and eventual late bytes are found/deleted. Demonstrate it after coordinator reconstruction. Label it a **falsification scenario**, not proof of a universal delay bound.
-- [ ] Avoid new production SQL, File APIs, retention constants, lease/fencing choices or recovery policy. If extra test infrastructure or a new version pin is required, **STOP FOR APPROVAL** instead of treating it as incidental.
-- [ ] Write a concise **explicit decision request** for the user, citing the observed hazards and remaining failure bounds; maintain status "PRODUCTION RECOVERY STRATEGY PENDING". Do not decide this merely because the per-attempt-key prototype worked in B07.
+- [x] Explain why one negative HEAD, DELETE 204, the end of the caller's lease, or an SDK timeout is insufficient to prove no remotely delayed writer remains. Distinguish *logical non-resurrection* (DB tombstones) from *eventual physical cleanup of late bytes*.
+- [x] Evaluate **at least** these boundedly described options in `DECISION-OPTIONS.md`: (1) retain UNKNOWN attempt key and periodically reconcile indefinitely until authoritative settlement; (2) allow finite retirement **only after evidence of a valid upper bound or authoritative termination/fencing mechanism**; (3) longer-term provider-side inventory/sweep plus keyed attempts as defense in depth. Do not assert that inventory alone can stop writes that complete after its final scan.
+- [x] For each candidate, state metadata/retention cost, recoverability after restart, expected storage/worker overhead, whether it satisfies "no permanently untracked orphan", and what **must** be proven for safe terminal deletion.
+- [x] Where the **existing isolated harness** permits it without new architectural commitments, add a targeted controlled case: delay a PUT across at least one negative HEAD and cleanup pass; verify attempt locator remains and eventual late bytes are found/deleted. Demonstrate it after coordinator reconstruction. Label it a **falsification scenario**, not proof of a universal delay bound.
+- [x] Avoid new production SQL, File APIs, retention constants, lease/fencing choices or recovery policy. If extra test infrastructure or a new version pin is required, **STOP FOR APPROVAL** instead of treating it as incidental.
+- [x] Write a concise **explicit decision request** for the user, citing the observed hazards and remaining failure bounds; maintain status "PRODUCTION RECOVERY STRATEGY PENDING". Do not decide this merely because the per-attempt-key prototype worked in B07.
 
 **Exit:** decision options and residual risks are clear enough for an informed human review, without claiming the issue is solved.
 

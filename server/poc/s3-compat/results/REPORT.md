@@ -4,7 +4,7 @@
 
 This is a standalone proof harness only. It changes no production File/Note code, migrations, application database, main Maven project, or normal Compose file. Issue #75 remains open; draft File ADR PR #93 remains unaccepted. The Layer B recovery model is approved only for this disposable proof. **Production recovery strategy remains pending.**
 
-The original harness was recovered from the working checkout and is now committed on PR #94. The clean-checkout run used commit `52b1b1b9e806080174614d97e777c6c2c524896a` from branch `poc/75-s3-compatibility`, cloned after the harness and volume-isolation commits. The clone was clean before running. No previously ignored `target/` output was copied into it.
+The original harness was recovered from the working checkout and is now committed on PR #94. The final clean-checkout run used commit `d5d3132eee8e9102fdc95e32a55d919d557d3d62` from branch `poc/75-s3-compatibility`, cloned after the harness and volume-isolation commits. The clone was clean before running. No previously ignored `target/` output was copied into it.
 
 ## Clean-checkout verification
 
@@ -27,7 +27,7 @@ Across the 25 A15 conditional PUT/DELETE trials, 20 PUTs completed and the indep
 
 A12's gate observed provider HTTP 200 after the full PUT, dropped the client response, and the independent client read back byte-identical content. B07 retained its durable `UNKNOWN` attempt after an early absent HEAD, then a reconstructed coordinator found and deleted the exercised late write. The B07 test deliberately retained the locator/tombstone: it does not prove a finite safe retirement rule.
 
-The clean run used a new named volume, `horizon-issue75-s3-compat-clean-20261122`, confirmed by Compose config and Docker volume inspection. Compose emitted a warning about the older `horizon-issue75-s3-compat-data` volume; it left that old volume untouched. The clean-run service was stopped with `docker compose down` after evidence capture; its dedicated volume remains for review. No `down -v` was run.
+The final clean run used a new named volume, `horizon-issue75-s3-compat-final-20261122`, confirmed by Compose config and Docker volume inspection. Compose emitted a warning about the older `horizon-issue75-s3-compat-data` volume; it left that old volume untouched. The final clean-run service was stopped with `docker compose down` after evidence capture; its dedicated volume remains for review. No `down -v` was run.
 
 Sanitized per-case observations, object keys, run IDs, checksums where recorded, and PostgreSQL facts are in [`observations.md`](observations.md). The clean-run IDs are grouped by test class below; A14/A15 repeat IDs are listed in full.
 
@@ -35,7 +35,7 @@ Sanitized per-case observations, object keys, run IDs, checksums where recorded,
 
 | Component | Clean-run value |
 |---|---|
-| PR branch commit | `52b1b1b9e806080174614d97e777c6c2c524896a` |
+| PR branch commit | `d5d3132eee8e9102fdc95e32a55d919d557d3d62` |
 | Host | Ubuntu 26.04.1 LTS, Linux x86_64 / `linux/amd64` |
 | Docker Engine / Compose | 29.9.2 / 5.6.1 |
 | Java / Maven | Temurin 25.0.4 / Maven 3.9.16 |
@@ -57,35 +57,35 @@ The environment uses explicit test-only credentials, a private bucket, path-styl
 
 | Case | Test source | Evidence run ID | Test execution | Architecture conclusion |
 |---|---|---|---|---|
-| A01 | `S3BasicCompatibilityTest.A01_credentialedClientSeesBootstrappedPrivateBucket` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Authenticated bucket access compatible |
-| A02 | `S3BasicCompatibilityTest.A02_wrongCredentialsAndUnsignedReadAreRejected` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Invalid credentials and unsigned read rejected |
-| A03 | `S3BasicCompatibilityTest.A03_putHeadAndGetPreserveExactBytesAndSha256` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Provider round trip compatible; 4,097 bytes, SHA-256 `bd1148f3f6d84f7da976665e6ca110a60b54e9fbc784436d2e70549d3970ebd9` |
-| A04 | `UploadValidationPolicyTest.A04_acceptsTheMaximumAndRejectsOversizeUnknownAndMismatchedLengthsBeforePut` | `207c2397-8173-4436-8e5d-154fe5c3bcb5` | PASS | Test-only upload policy accepted 20,971,519 bytes and rejected oversize, unknown, and mismatched lengths before PUT |
-| A05 | `UploadValidationPolicyTest.A05_mutatedBoundedTempFileFailsSha256ValidationBeforePut` | `207c2397-8173-4436-8e5d-154fe5c3bcb5` | PASS | Test-only checksum validation rejected mutation before PUT; HEAD 404 |
-| A06 | `S3BasicCompatibilityTest.A06_deleteAndRepeatedDeleteLeaveTheObjectAbsent` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Repeated DELETE left object absent |
-| A07 | `S3PersistenceTest.A07_objectSurvivesContainerRecreationOnTheSameNamedVolume` | `2576a5cb-a359-4d9a-b334-e7420850adb7` | PASS | Same-volume restart preserved 1,000,003 bytes; SHA-256 `9a1094c3eb5426fc25a2fd7e971348673ac28b4dcb2bc05092a231a6b3949d95` |
-| A08 | `S3ConditionalWriteTest.A08_ifNoneMatchStarPreservesTheFirstObject` | `ef49c46a-5790-4d55-8223-6348d14f8e0c` | PASS | Conditional create rejected overwrite with HTTP 412 and preserved first payload |
-| A09 | `S3ConditionalWriteTest.A09_concurrentConditionalPutsHaveExactlyOneVisibleWinner` | `ef49c46a-5790-4d55-8223-6348d14f8e0c` | PASS | Five barrier-synchronized trials had one accepted writer and one complete payload |
-| A10 | `S3FailureTest.A10_unavailableEndpointFailsBoundedlyWithoutFalseSuccess` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a` | PASS | Single-attempt local connection failure; direct HEAD absent; healthy PUT verified |
-| A11 | `S3FailureTest.A11_upstreamInterruptionOccursAfterAnObservedBodyBarrier` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a` | PASS | Gate reset after forwarding at least 65,536 bytes; direct GET absent; no incomplete object observed |
-| A12 | `S3FailureTest.A12_serverSuccessObservedBeforeTheResponseIsDropped` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a` | PASS | Unknown-result hazard reproduced after provider HTTP 200; independent GET byte-equal |
-| A13 | `S3FailureTest.A13_containerRestartDuringHeldPutIsReconciledByDirectRead` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a` | PASS | Restart with 65,536+ bytes held; direct GET absent in this run |
-| A14 | `S3FailureTest.A14_deleteInterleavedWithBodyBarrierCannotProducePartialVisibleBytes` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a`; repeats: `c7077001-970b-4457-9e19-5d5d126280d1`, `8a27a3e5-2d25-458e-a4ca-2efbc50a9d64`, `39607b52-f35c-438b-afb5-e9c4ed795c11`, `1423ebeb-d70e-4c57-9d40-9803777d56e7` | PASS, 5 executions | **Hazard reproduced:** 4/5 late PUTs completed after DELETE 204 and were visible as complete objects; one SDK timeout had an absent follow-up GET |
-| A15 | `S3FailureTest.A15_conditionalPutInterleavedWithDeleteHasAtMostOneCompleteVisibleObject` | `7dc755e8-2a43-40a1-9cb2-5ff670d7331a`; repeats: `c7077001-970b-4457-9e19-5d5d126280d1`, `8a27a3e5-2d25-458e-a4ca-2efbc50a9d64`, `39607b52-f35c-438b-afb5-e9c4ed795c11`, `1423ebeb-d70e-4c57-9d40-9803777d56e7` | PASS, 25 trials | **Hazard reproduced:** 20/25 late conditional PUTs completed after DELETE 204 and were visible as complete objects; five timed-out attempts had absent follow-up reads. Conditional PUT does not fence an in-flight writer |
-| A16 | `S3BasicCompatibilityTest.A16_missingObjectHeadIsClassifiedAsNotFound` | `36fbd43b-825f-4cf4-beea-a2a3e9186fe0` | PASS | Missing key classified as HTTP 404 / `NoSuchKey` |
-| B01 | `RecoveryProtocolTest.B01_intentIsDurableAndRecoverableAfterCoordinatorRecreation` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | PostgreSQL intent/attempt recovery in disposable simulator |
-| B02 | `RecoveryProtocolTest.B02_s3CommitThenDatabaseFailureRemainsTrackedButNeverAttached` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | PUT + injected DB rollback; direct reconciliation verified and deleted unassociated object |
-| B03 | `RecoveryProtocolTest.B03_identicalIdempotencyRetryReturnsTheSameFileAndAttempt` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Same request fingerprint returns same intent/attempt in simulator |
-| B04 | `RecoveryProtocolTest.B04_requestFingerprintMismatchAndTerminalIntentCannotResurrect` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Mismatch conflicts and terminal intent stays terminal in simulator |
-| B05 | `RecoveryProtocolTest.B05_staleNoteVersionRejectsFinalizeButRetainsUploadedBytesForRetry` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Stale version blocked; staged bytes retained for retry in simulator |
-| B06 | `RecoveryProtocolTest.B06_competingParentClaimsHaveExactlyOneWinner` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | PostgreSQL accepted one concurrent claim in simulator |
-| B07 | `RecoveryProtocolTest.B07_expiredInFlightAttemptRemainsTrackedAcrossEarlyAbsentCheckAndLateCommit` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | One late write was found/deleted after coordinator reconstruction; UNKNOWN attempt stayed tracked. **Finite UNKNOWN retirement remains unsolved.** |
-| B08 | `RecoveryProtocolTest.B08_deleteFailureKeepsLogicalRemoveDurableAndRetryableAcrossCoordinatorRestart` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Failed S3 delete remained inaccessible and retryable after coordinator restart in simulator |
-| B09 | `RecoveryProtocolTest.B09_confirmedPhysicalDeletionRetainsTerminalTombstoneAndRejectsRetry` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Confirmed delete kept a terminal simulator tombstone |
-| B10 | `RecoveryProtocolTest.B10_lostFinalizeResponseReplayDoesNotClaimTwiceOrIncrementVersionAgain` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | Replay returned committed claim/version in simulator |
-| B11 | `RecoveryProtocolTest.B11_ordinaryContentPatchCannotRemoveTheProtectedInlineImageAssociation` / `NoteFileContractModel` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | **Model only:** ordinary PATCH preserved modeled image association |
-| B12 | `RecoveryProtocolTest.B12_repeatedInlineReferencesShareOneAssociationUntilExplicitLastRemoval` / `NoteFileContractModel` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | **Model only:** repeated references and final removal behavior simulated |
-| B13 | `RecoveryProtocolTest.B13_archiveTrashAndRestorePreserveBytesAndRestrictTrashReads` / `NoteFileContractModel` | `f76d81b8-2d77-4a4e-a721-85c96fcf4093` | PASS | **Model only:** archive/Trash/restore access behavior simulated |
+| A01 | `S3BasicCompatibilityTest.A01_credentialedClientSeesBootstrappedPrivateBucket` | `420ecc8f-4af8-4cbb-a8f3-32d490f9e400` | PASS | Authenticated bucket access compatible |
+| A02 | `S3BasicCompatibilityTest.A02_wrongCredentialsAndUnsignedReadAreRejected` | `420ecc8f-4af8-4cbb-a8f3-32d490f9e400` | PASS | Invalid credentials and unsigned read rejected |
+| A03 | `S3BasicCompatibilityTest.A03_putHeadAndGetPreserveExactBytesAndSha256` | `420ecc8f-4af8-4cbb-a8f3-32d490f9e400` | PASS | Provider round trip compatible; 4,097 bytes, SHA-256 `f486c7918f0bcba3eb14bd08d85579d2802780425bb68dbf7f6bc026fc6a3f26` |
+| A04 | `UploadValidationPolicyTest.A04_acceptsTheMaximumAndRejectsOversizeUnknownAndMismatchedLengthsBeforePut` | `f3893a42-0a6f-4f9d-b88b-b698c896412b` | PASS | Test-only upload policy accepted 20,971,519 bytes and rejected oversize, unknown, and mismatched lengths before PUT |
+| A05 | `UploadValidationPolicyTest.A05_mutatedBoundedTempFileFailsSha256ValidationBeforePut` | `f3893a42-0a6f-4f9d-b88b-b698c896412b` | PASS | Test-only checksum validation rejected mutation before PUT; HEAD 404 |
+| A06 | `S3BasicCompatibilityTest.A06_deleteAndRepeatedDeleteLeaveTheObjectAbsent` | `420ecc8f-4af8-4cbb-a8f3-32d490f9e400` | PASS | Repeated DELETE left object absent |
+| A07 | `S3PersistenceTest.A07_objectSurvivesContainerRecreationOnTheSameNamedVolume` | `85091b78-710b-4c97-8b85-b38bd813da2f` | PASS | Same-volume restart preserved 1,000,003 bytes; SHA-256 `ee64fb8400eb2a44bfd5468a8177cdd464448f9049fb68938fb2d5fd034a1a80` |
+| A08 | `S3ConditionalWriteTest.A08_ifNoneMatchStarPreservesTheFirstObject` | `71f7236f-7f70-4295-9aed-ed92d80e4e01` | PASS | Conditional create rejected overwrite with HTTP 412 and preserved first payload |
+| A09 | `S3ConditionalWriteTest.A09_concurrentConditionalPutsHaveExactlyOneVisibleWinner` | `71f7236f-7f70-4295-9aed-ed92d80e4e01` | PASS | Five barrier-synchronized trials had one accepted writer and one complete payload |
+| A10 | `S3FailureTest.A10_unavailableEndpointFailsBoundedlyWithoutFalseSuccess` | `d4e8bf70-c706-4b45-ba3a-0f78000b5e5a` | PASS | Single-attempt local connection failure; direct HEAD absent; healthy PUT verified |
+| A11 | `S3FailureTest.A11_upstreamInterruptionOccursAfterAnObservedBodyBarrier` | `d4e8bf70-c706-4b45-ba3a-0f78000b5e5a` | PASS | Gate reset after forwarding at least 65,536 bytes; direct GET absent; no incomplete object observed |
+| A12 | `S3FailureTest.A12_serverSuccessObservedBeforeTheResponseIsDropped` | `d4e8bf70-c706-4b45-ba3a-0f78000b5e5a` | PASS | Unknown-result hazard reproduced after provider HTTP 200; independent GET byte-equal |
+| A13 | `S3FailureTest.A13_containerRestartDuringHeldPutIsReconciledByDirectRead` | `d4e8bf70-c706-4b45-ba3a-0f78000b5e5a` | PASS | Restart with 65,536+ bytes held; direct GET absent in this run |
+| A14 | `S3FailureTest.A14_deleteInterleavedWithBodyBarrierCannotProducePartialVisibleBytes` | `d4e8bf70-c706-4b45-ba3a-0f78000b5e5a`; repeats: `13c7c3bf-009b-47d1-91f3-58c8464e3310`, `493568bd-30e2-43ab-82ed-4a7e4a886a8c`, `fd8c54ea-dfbd-45f5-aa8d-fd99fa2beb5b`, `5de7296e-d684-4ace-8c7f-916a23b8a538` | PASS, 5 executions | **Hazard reproduced:** 4/5 late PUTs completed after DELETE 204 and were visible as complete objects; one SDK timeout had an absent follow-up GET |
+| A15 | `S3FailureTest.A15_conditionalPutInterleavedWithDeleteHasAtMostOneCompleteVisibleObject` | `d4e8bf70-c706-4b45-ba3a-0f78000b5e5a`; repeats: `13c7c3bf-009b-47d1-91f3-58c8464e3310`, `493568bd-30e2-43ab-82ed-4a7e4a886a8c`, `fd8c54ea-dfbd-45f5-aa8d-fd99fa2beb5b`, `5de7296e-d684-4ace-8c7f-916a23b8a538` | PASS, 25 trials | **Hazard reproduced:** 20/25 late conditional PUTs completed after DELETE 204 and were visible as complete objects; five timed-out attempts had absent follow-up reads. Conditional PUT does not fence an in-flight writer |
+| A16 | `S3BasicCompatibilityTest.A16_missingObjectHeadIsClassifiedAsNotFound` | `420ecc8f-4af8-4cbb-a8f3-32d490f9e400` | PASS | Missing key classified as HTTP 404 / `NoSuchKey` |
+| B01 | `RecoveryProtocolTest.B01_intentIsDurableAndRecoverableAfterCoordinatorRecreation` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | PostgreSQL intent/attempt recovery in disposable simulator |
+| B02 | `RecoveryProtocolTest.B02_s3CommitThenDatabaseFailureRemainsTrackedButNeverAttached` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | PUT + injected DB rollback; direct reconciliation verified and deleted unassociated object |
+| B03 | `RecoveryProtocolTest.B03_identicalIdempotencyRetryReturnsTheSameFileAndAttempt` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | Same request fingerprint returns same intent/attempt in simulator |
+| B04 | `RecoveryProtocolTest.B04_requestFingerprintMismatchAndTerminalIntentCannotResurrect` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | Mismatch conflicts and terminal intent stays terminal in simulator |
+| B05 | `RecoveryProtocolTest.B05_staleNoteVersionRejectsFinalizeButRetainsUploadedBytesForRetry` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | Stale version blocked; staged bytes retained for retry in simulator |
+| B06 | `RecoveryProtocolTest.B06_competingParentClaimsHaveExactlyOneWinner` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | PostgreSQL accepted one concurrent claim in simulator |
+| B07 | `RecoveryProtocolTest.B07_expiredInFlightAttemptRemainsTrackedAcrossEarlyAbsentCheckAndLateCommit` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | One late write was found/deleted after coordinator reconstruction; UNKNOWN attempt stayed tracked. **Finite UNKNOWN retirement remains unsolved.** |
+| B08 | `RecoveryProtocolTest.B08_deleteFailureKeepsLogicalRemoveDurableAndRetryableAcrossCoordinatorRestart` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | Failed S3 delete remained inaccessible and retryable after coordinator restart in simulator |
+| B09 | `RecoveryProtocolTest.B09_confirmedPhysicalDeletionRetainsTerminalTombstoneAndRejectsRetry` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | Confirmed delete kept a terminal simulator tombstone |
+| B10 | `RecoveryProtocolTest.B10_lostFinalizeResponseReplayDoesNotClaimTwiceOrIncrementVersionAgain` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | Replay returned committed claim/version in simulator |
+| B11 | `RecoveryProtocolTest.B11_ordinaryContentPatchCannotRemoveTheProtectedInlineImageAssociation` / `NoteFileContractModel` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | **Model only:** ordinary PATCH preserved modeled image association |
+| B12 | `RecoveryProtocolTest.B12_repeatedInlineReferencesShareOneAssociationUntilExplicitLastRemoval` / `NoteFileContractModel` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | **Model only:** repeated references and final removal behavior simulated |
+| B13 | `RecoveryProtocolTest.B13_archiveTrashAndRestorePreserveBytesAndRestrictTrashReads` / `NoteFileContractModel` | `14865992-7ecf-48fe-8c1a-a9a850a496fd` | PASS | **Model only:** archive/Trash/restore access behavior simulated |
 
 ### Test-source ownership
 
