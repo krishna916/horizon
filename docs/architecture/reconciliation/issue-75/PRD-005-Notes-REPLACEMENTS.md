@@ -1,6 +1,6 @@
 # Proposed authoritative amendment — PRD-005 Notes v1.0
 
-**Status:** PROPOSAL FOR USER REVIEW. **Not** an authoritative PRD and **not** applied to the knowledge repository.
+**Status:** WORDING APPROVED by user on 2026-11-22. **Not** an authoritative PRD and **not yet applied** to the knowledge repository.
 
 **Baseline inspected:** `10-Product/V1/PRD-005 Notes.md` (supplied project source), v1.0 Draft, dated 2026-06-13; SHA-256 `c24b1adc473f25cd252ae5f7f5820c8a468227d1562aa6df60052eefa1ff59e0`. Recheck the current knowledge-repository revision before applying.
 
