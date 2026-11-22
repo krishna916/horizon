@@ -1,6 +1,6 @@
 # Proposed authoritative amendment — HORIZON_CONSTITUTION v1.0
 
-**Status:** PROPOSAL FOR REVIEW ONLY. Not accepted; the authoritative knowledge-repository Constitution has not been changed.
+**Status:** WORDING APPROVED by user on 2026-11-22. The constitutional amendment has **not** been applied to or accepted in the authoritative knowledge repository.
 
 **Inspected source:** `50-AI/ChatGPT Context/HORIZON_CONSTITUTION.md`, Accepted v1.0, SHA-256 `2e70915a929d69165dc89d5e47e56725888a26be5854c8a4fd5b658289dc83c5` (uploaded project source). Reverify its latest revision before application.
 
