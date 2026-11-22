@@ -7,10 +7,10 @@
 | Date | 2026-11-22 |
 | Scope | Horizon V1, Notes-first shared File capability |
 | Authoritative location | This GitHub repository's `docs/architecture/adr/` for **this File ADR only** (D-04, D-24) |
-| Evidence gate | SeaweedFS / AWS SDK Java v2 compatibility and upload-recovery POC **NOT RUN** |
+| Evidence gate | **POC executed and documented:** A01–A16 and B01–B13 (29 JUnit methods passed as reported by PR #94); production UNKNOWN-attempt recovery **NOT APPROVED** |
 | Approval gate | User review of ADR, explicit selection of evidence-dependent recovery strategy, source-document reconciliation |
 
-> **Do not interpret the approved decision register as approval of this ADR or of an implementation.** The architecture direction is approved; the version-pinned storage proof, uncertain-write protocol, final SQL/HTTP contracts and ADR acceptance remain open. This file is deliberately on a review branch.
+> **Do not interpret the approved decision register or completed POC as approval of this ADR or of an implementation.** The architecture direction and pinned-provider POC evidence are documented; the uncertain-write recovery policy, final SQL/HTTP contracts, document reconciliations and ADR acceptance remain open. This file is deliberately on a review branch.
 
 ## 1. Context and problem
 
@@ -33,7 +33,7 @@ Object storage cannot participate in the same PostgreSQL transaction. A successf
 
 ### 2.1 Storage topology and deployment
 
-Use **AWS SDK for Java v2** as the single S3 API integration in all environments. Self-hosting prefers a **single-machine, persisted SeaweedFS S3 endpoint**; SeaweedFS remains a **candidate** until the isolated POC succeeds. Cloud deployments may select AWS S3 or another proven compatible provider through deployment-wide endpoint, region, credentials and bucket configuration. **Provider switching is not data migration.**
+Use **AWS SDK for Java v2** as the single S3 API integration in all environments. Self-hosting prefers a **single-machine, persisted SeaweedFS S3 endpoint**; the isolated #75 POC has **demonstrated interoperability for the pinned SeaweedFS 4.54 and AWS SDK v2 2.59.2 test configuration**. Production recovery and the final ADR remain subject to separate approval. Cloud deployments may select AWS S3 or another proven compatible provider through deployment-wide endpoint, region, credentials and bucket configuration. **Provider switching is not data migration.**
 
 Use **one private bucket per deployment**, with generated opaque keys in the approved form:
 
@@ -188,21 +188,21 @@ Use #68's **attachment preview modal** from the full-page editor. Support image 
 
 A timeout does not establish whether an S3 PUT succeeded. An apparently absent object may be written later by an already-started transfer. Deleting a key while a previous PUT remains in flight can recreate the object after cleanup. **Conditional S3 PUT alone does not solve late write after DELETE.** Do not settle stable physical keys versus unique per-attempt keys, retry/fencing design or a purported no-orphan guarantee without real evidence.
 
-### 7.1 #75 isolated POC (still unexecuted)
+### 7.1 #75 isolated POC — executed and reported (experimental evidence)
 
-Use a **pinned SeaweedFS image/digest**, pinned AWS SDK Java v2 dependency, a private bucket, test credentials, path-style/endpoint configuration, persisted test volume, and controlled failure injection (e.g. Testcontainers/Toxiproxy). Do not use production customer data, and do not implement the production File module as part of this proof.
+The standalone POC used a **pinned SeaweedFS 4.54 image/digest**, AWS SDK Java v2 **2.59.2**, private test bucket, test credentials, path-style endpoint, persistent dedicated volume, Java Testcontainers and controlled TCP fault gates. It did not use customer data or implement the production File module. The reported clean-checkout run at commit `d5d3132eee8e9102fdc95e32a55d919d557d3d62` executed **29 distinct JUnit methods with 0 failures/errors/skips**, plus four repeated runs of the S3 fault test class. Those results and sources are recorded in [the permanent evidence summary](../validation/ISSUE-75-SEAWEEDFS-S3-POC-REPORT.md), with [full runnable harness and detailed evidence in PR #94](https://github.com/krishna916/horizon/pull/94).
 
 **Layer A — provider/S3 operations A01–A16:** bucket bootstrap/authentication and privacy, ordinary Put/Head/Get/Delete with independent SHA-256 readback, restart persistence, conditional writes and concurrent writers, unavailable endpoint, interrupted PUT, **lost response after verified commit**, service restart during transfer, PUT-vs-DELETE interleavings, and missing-object classification. Size/checksum policy is measured in the application validation harness rather than assumed to be S3-enforced.
 
 **Layer B — recovery-protocol behavior B01–B13:** persisted intent/crash, S3 success followed by DB failure, repeat/mismatched upload requests, Note version conflict, concurrent claim, **expiry versus late PUT**, logical deletion with failed remote DELETE, tombstone non-resurrection, lost finalize response, protected image PATCH, duplicate image references and Archive/Trash/restore behavior.
 
-See [#75's proof matrix](https://github.com/krishna916/horizon/issues/75) for case-by-case exit criteria and the dedicated proof specification prepared during review. The proof specification is **not a completed test report**.
+See [#75's proof matrix](https://github.com/krishna916/horizon/issues/75) for case-by-case criteria. Results are summarized in the [POC evidence report](../validation/ISSUE-75-SEAWEEDFS-S3-POC-REPORT.md) and supported by the [committed PR #94 harness, reports and observations](https://github.com/krishna916/horizon/tree/9afce16dde1911f96933f13434b47fac3ce17165/server/poc/s3-compat). **A12** showed provider HTTP 200 followed by a lost client response; **A14** found late objects after DELETE in **4/5** controlled attempts and **A15** in **20/25** conditional attempts. A passing hazard test means the risk was reproduced, **not** that cleanup is safe. **B07** showed one delayed upload recovered and removed with durable attempt tracking, but a finite safe retirement rule for indefinitely UNKNOWN attempts was **not proven**. B11–B13 were behavioral models only.
 
-For each case record exact version/digest, environment, test inputs, fault barrier, S3 response/exceptions, direct post-fault object inspection, checksum, relevant PG state, and **PASS/FAIL/INCONCLUSIVE/NOT_RUN**. A nondeterministic timeout without a verified server-side commit signal is **not** proof of "lost response after commit".
+The POC source report records test class/case mapping, versions, run IDs, fault barriers, S3 responses, direct S3 inspection, selected checksums and PostgreSQL model observations. The tests were not independently rerun during architecture review. A nondeterministic timeout without verified server-side commit remains **inconclusive** as to actual remote outcome.
 
 ### 7.2 Required approval before storage implementation
 
-After POC, explicitly review and approve the recovery approach, lease/fencing behavior and provider suitability. If SeaweedFS cannot meet the necessary contract, review an alternative provider rather than silently switching. #77 must then verify **production** worker/recovery correctness; #75's protocol harness is not a substitute.
+The POC supports the pinned SeaweedFS SDK integration, but **does not select a production cleanup protocol**. Before production storage implementation, explicitly review the recovery approach, UNKNOWN attempt retention/settlement, retries and lease/fencing behavior. The evidence shows stable-key conditional PUT alone is **insufficient** for safe post-delete behavior. Candidate per-transfer-attempt keys plus durable tracking were exercised in the test-only model; **not approved as production policy**. If SeaweedFS cannot satisfy the eventually selected contract, review an alternative provider rather than silently switching. #77 must verify **production** worker/recovery correctness; #75's simulator is not a substitute.
 
 ## 8. Consequences and alternatives
 
@@ -218,7 +218,7 @@ After POC, explicitly review and approve the recovery approach, lease/fencing be
 
 **Not chosen for V1:** separate filesystem storage backend, File library/folders, cross-note sharing, direct browser S3/presigned uploads, user-selected backend, multipart/resumable transfers, per-user quotas, attachment filename/full-text search, Office conversion/editing, backup/import/export, public/blog sharing or distributed storage. Some are future product opportunities, not implementation tasks now.
 
-**Evidence-dependent alternatives still open:** stable key plus conditional PUT/reconciliation **versus** uniquely keyed transfer attempts with durable attempt tracking. Neither is selected. Exact File technical-state representation, worker lease/fencing, physical cleanup timing, provider pin and request contracts are not selected.
+**Evidence-dependent alternatives still open:** The POC demonstrated that **stable key + conditional PUT + one DELETE/negative HEAD alone is unsafe**. A separate immutable key per transfer attempt with durable attempt tracking was successfully exercised as a **test-only model**, but its UNKNOWN-record retirement policy remains unproved. No production recovery strategy, File technical-state schema, worker lease/fencing, physical cleanup timing or request contract is selected. The POC pins are evidence inputs, not automatic production dependency policy.
 
 ## 9. Documentation conflicts and required dispositions
 
@@ -236,7 +236,7 @@ Current implementation already supports optional Note title and full-page editin
 
 ## 10. Implementation handoff and acceptance
 
-- **#75:** document and review this draft; execute isolated S3/recovery POC; explicitly settle evidence-dependent protocol; reconcile authority conflicts through reviewed documentation changes; **only then accept ADR/close gate**.
+- **#75:** POC executed and linked; explicitly settle evidence-dependent UNKNOWN-attempt recovery protocol, reconcile authority conflicts through reviewed documentation changes, and **only then accept this ADR/close the gate**.
 - **#76:** File metadata, private provider configuration, validated staging/upload, atomic claim API and integration tests.
 - **#77:** PostgreSQL-backed durable retry worker, expiry, cleanup, tombstones and proven late-write safety.
 - **#78:** Note association, Note-first file upload, secure attachment routes and lifecycle tests.
@@ -249,21 +249,23 @@ Current implementation already supports optional Note title and full-page editin
 
 - [x] D-01–D-29 direction reviewed/approved in conversation and recorded in #75.
 - [x] **Draft** ADR stored in GitHub for review; **NOT accepted**.
-- [ ] Pin provider/SDK/fault-tool versions and execute A01–A16 interoperability evidence.
-- [ ] Resolve the uncertain-PUT/cleanup protocol with explicit user approval; prove relevant Layer B guarantees.
+- [x] Run pinned SeaweedFS/AWS SDK POC and document A01–A16/B01–B13 in [the evidence summary](../validation/ISSUE-75-SEAWEEDFS-S3-POC-REPORT.md) (results reported; test harness available on PR #94).
+- [ ] Resolve UNKNOWN-attempt settlement/retention and the uncertain-PUT/cleanup **production** protocol with explicit user approval; POC Layer B feasibility is documented, not production proof.
 - [ ] Approve exact minimum File API and invariant-enforcing schema before production stories use them.
 - [ ] Review/apply necessary PRD/Constitution updates (separate approval).
-- [ ] Review and **accept** ADR; cross-link issues; close #75 only after its evidence gate passes.
+- [ ] Review and **accept** ADR; cross-linking/evidence update complete, but close #75 only after outstanding decision and documentation gates pass.
 
 ## 11. References
 
 - [#55 — Approved shared File/object-storage handoff](https://github.com/krishna916/horizon/issues/55)
 - [#68 — Approved Notes UX direction](https://github.com/krishna916/horizon/issues/68)
 - [#75 — Architecture decision register and POC acceptance matrix](https://github.com/krishna916/horizon/issues/75)
+- [SeaweedFS POC evidence report](../validation/ISSUE-75-SEAWEEDFS-S3-POC-REPORT.md) — permanent summary, results and unresolved hazards
+- [PR #94 — experimental harness, full report and observations](https://github.com/krishna916/horizon/pull/94) — independent branch, not merged
 - [#4 — Notes epic](https://github.com/krishna916/horizon/issues/4)
 - [#76–#80 — Implementation stories](https://github.com/krishna916/horizon/issues/76)
 - [#9 — Global Trash and permanent parent deletion](https://github.com/krishna916/horizon/issues/9)
 - [Notes design baseline](../../design/notes-workspace/DESIGN-SPEC.md)
 - Existing Notes persistence and command service under `server/src/main/java/com/krishnamurti/horizon/note/`
 
-**Draft only — do not merge or mark accepted before the POC and user review.**
+**Draft only — POC evidence now complete. Do not mark accepted or merge as a final ADR before explicit recovery-policy review/approval and source-document reconciliation.**
