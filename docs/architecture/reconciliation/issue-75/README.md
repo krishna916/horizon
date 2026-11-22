@@ -1,6 +1,6 @@
 # Issue #75 — Source-document reconciliation package (review only)
 
-**Status: All four amendment proposals approved for wording by the user on 2026-11-22; none has yet been applied to the authoritative knowledge repository.**
+**Status: All four amendment proposals approved; source-document changes are staged in [horizon-knowledge-store draft PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1), not yet merged into its `main`.**
 
 Prepared 2026-11-22 on the existing File ADR review branch `docs/75-file-architecture-adr-draft`. The four **actual project source files were inspected**; the application GitHub repository does **not** contain the authoritative versions of these PRDs or Constitution. This directory therefore supplies review-ready, section-anchored **replacement text**, rather than competing copies of the originals.
 
@@ -29,14 +29,15 @@ Prepared 2026-11-22 on the existing File ADR review branch `docs/75-file-archite
 | `PRD-009 Navigation.md` | `721043c4c2124347e0464da066931437a18c5505a0776214f9b92b5bf1a080ef` |
 | `HORIZON_CONSTITUTION.md` | `2e70915a929d69165dc89d5e47e56725888a26be5854c8a4fd5b658289dc83c5` |
 
-These identify the supplied source snapshots. Recheck the current knowledge-repository version **before applying any replacements**.
+These identify the supplied source snapshots. The matching authoritative Git blobs were confirmed on `horizon-knowledge-store/main` before the changes were staged in [draft PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1).
 
 ## Application and approval sequence
 
 - [x] Inspect actual four project source documents and approved design/architecture references.
 - [x] Prepare four proposed, section-specific amendments on ADR PR #93's branch.
 - [x] **User approved the four proposed amendments** (2026-11-22); this accepts the wording, not an unverified source revision or a change to the authoritative documents.
-- [ ] **Apply the approved amendments in the authoritative knowledge repository** after confirming the latest source versions and write access. The connected personal Drive search found no matching authoritative documents; do not misrepresent the uploaded snapshots or this GitHub review package as applied source edits. Update version/date/change log and link the accepted File ADR.
+- [x] Found authoritative source files in [horizon-knowledge-store](https://github.com/krishna916/horizon-knowledge-store), confirmed baseline Git blobs match, applied four versioned amendments on `docs/75-notes-file-reconciliation`, and opened [draft PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1).
+- [ ] Review and explicitly **merge knowledge-store PR #1** into `main`. Source edits are **staged for review, not yet live** on the authoritative default branch.
 - [ ] After source approval, reconcile application-level context mirrors such as `docs/ai/HORIZON_PRODUCT_CONTEXT.md` through the normal documentation workflow.
 - [ ] Confirm ADR numbering/status and explicitly accept/merge [ADR PR #93](https://github.com/krishna916/horizon/pull/93).
 - [ ] Close issue #75 only after its final acceptance gates are met.
