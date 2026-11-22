@@ -7,10 +7,10 @@
 | Date | 2026-11-22 |
 | Scope | Horizon V1, Notes-first shared File capability |
 | Authoritative location | This GitHub repository's `docs/architecture/adr/` for **this File ADR only** (D-04, D-24) |
-| Evidence gate | **POC executed and documented:** A01–A16 and B01–B13 (29 JUnit methods passed as reported by PR #94); production UNKNOWN-attempt recovery **NOT APPROVED** |
-| Approval gate | Selected post-POC recovery direction to be documented/reviewed; explicit ADR acceptance and source-document reconciliation still pending |
+| Evidence gate | **POC executed and documented:** A01–A16 and B01–B13 (29 JUnit methods reported passed in PR #94); controlled lost-response and late-PUT risks identified. Production recovery **direction selected**, worker correctness pending #77 |
+| Approval gate | D-01–D-29 and conservative recovery direction approved; four authoritative source amendments **merged** via knowledge-store PR #1; **this ADR's final acceptance and merge still require explicit review** |
 
-> **Do not interpret the completed POC as proof of production cleanup guarantees or acceptance of this ADR.** Approved D-01–D-29, the post-POC recovery direction, and pinned-provider observations are documented here. Final SQL/HTTP contracts, implementation-level locking/scheduling, source-document reconciliation and ADR acceptance are separate review gates. This document remains on a review branch.
+> **Do not interpret the completed POC as proof of production cleanup guarantees or acceptance of this ADR.** Approved D-01–D-29, the selected post-POC recovery direction, and pinned-provider observations are documented here. The four authoritative source reconciliations are merged in the knowledge repository; final SQL/HTTP contracts, implementation-level locking/scheduling and this ADR's acceptance remain separate review gates. This document remains on a review branch.
 
 ## 1. Context and problem
 
@@ -33,7 +33,7 @@ Object storage cannot participate in the same PostgreSQL transaction. A successf
 
 ### 2.1 Storage topology and deployment
 
-Use **AWS SDK for Java v2** as the single S3 API integration in all environments. Self-hosting prefers a **single-machine, persisted SeaweedFS S3 endpoint**; the isolated #75 POC has **demonstrated interoperability for the pinned SeaweedFS 4.54 and AWS SDK v2 2.59.2 test configuration**. Production recovery and the final ADR remain subject to separate approval. Cloud deployments may select AWS S3 or another proven compatible provider through deployment-wide endpoint, region, credentials and bucket configuration. **Provider switching is not data migration.**
+Use **AWS SDK for Java v2** as the single S3 API integration in all environments. Self-hosting prefers a **single-machine, persisted SeaweedFS S3 endpoint**; the isolated #75 POC has **demonstrated interoperability for the pinned SeaweedFS 4.54 and AWS SDK v2 2.59.2 test configuration**. The conservative per-transfer-attempt recovery **direction is selected** (§7.2), while actual worker correctness and this ADR's final acceptance remain to be reviewed separately. Cloud deployments may select AWS S3 or another proven compatible provider through deployment-wide endpoint, region, credentials and bucket configuration. **Provider switching is not data migration.**
 
 Use **one private bucket per deployment**, with generated opaque keys in the approved form:
 
@@ -214,7 +214,7 @@ The POC source report records test class/case mapping, versions, run IDs, fault 
 
 ### 7.3 Storage acceptance boundary
 
-The POC demonstrated interoperability for pinned SeaweedFS and AWS SDK versions, **not** end-to-end production correctness. The selected recovery direction follows [the POC's UNKNOWN-attempt options](https://github.com/krishna916/horizon/blob/9afce16dde1911f96933f13434b47fac3ce17165/server/poc/s3-compat/results/DECISION-OPTIONS.md), most closely Option 1, while rejecting the assumption that conditional PUT plus a one-time DELETE is sufficient. This document's **acceptance and source-document reconciliation remain explicit separate gates**. #77 owns the production worker and runtime correctness proof.
+The POC demonstrated interoperability for pinned SeaweedFS and AWS SDK versions, **not** end-to-end production correctness. The selected recovery direction follows [the POC's UNKNOWN-attempt options](https://github.com/krishna916/horizon/blob/9afce16dde1911f96933f13434b47fac3ce17165/server/poc/s3-compat/results/DECISION-OPTIONS.md), most closely Option 1, while rejecting the assumption that conditional PUT plus a one-time DELETE is sufficient. The four authoritative source-document reconciliations **have been merged** via [knowledge-store PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1), while **this ADR's final acceptance remains a separate explicit gate**. #77 owns the production worker and runtime correctness proof.
 
 ## 8. Consequences and alternatives
 
@@ -232,11 +232,11 @@ The POC demonstrated interoperability for pinned SeaweedFS and AWS SDK versions,
 
 **Post-POC disposition:** Stable key + conditional PUT + one DELETE/negative HEAD is **rejected as an insufficient cleanup protocol** by the reported A14/A15 evidence. V1 selects **never-reused per-transfer-attempt keys, committed durable attempt tracking and conservative indefinite retention/reconciliation of UNKNOWN locators** where authoritative settlement cannot be proven (§7.2). The POC's B07 demonstrates feasibility for one late write but not a finite settlement bound. Exact File technical-state DDL, worker lease/fencing, retry cadence and request signatures remain to be reviewed in #76/#77; the POC pins are evidence inputs, not automatic production dependency policy.
 
-## 9. Documentation conflicts and required dispositions
+## 9. Documentation conflict dispositions — reconciled
 
-The approved Notes V1 design conflicts with historical sources. This ADR **records** the conflict; it **does not silently amend** those documents or promote itself above the Constitution.
+The approved Notes V1 design conflicted with the earlier PRDs and Constitution. The four owner-document amendments were individually reviewed and **merged into the authoritative knowledge repository** via [PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1). The File ADR does not override those sources or promote itself above the Constitution.
 
-| Source | Conflict | Intended disposition, requiring separate reviewed update |
+| Source | Original conflict | Approved disposition (applied to source PRDs/Constitution unless stated otherwise) |
 | --- | --- | --- |
 | `PRD-005 Notes` | FR-003 requires a title; old list/side-panel navigation and incomplete file scope | Optional title; file/image-only Notes; Cards/List; direct full-page editor; Notes V1 attachments/inline images |
 | `PRD-000 Horizon V1 Scope` | Old general Notes/navigation/file scope | Reflect approved Notes V1 exception without changing Task behavior |
@@ -244,11 +244,11 @@ The approved Notes V1 design conflicts with historical sources. This ADR **recor
 | `HORIZON_CONSTITUTION` | BIGINT/Long identity norm, knowledge-repository ADR policy, shared module/job assumptions | Record **File UUID-only** exception, lightweight technical lifecycle/recovery, and **File ADR-only GitHub location** exception (D-04/D-24) |
 | `PRD-008 Trash` | Must preserve recoverable content | **No scope change**; archive/Trash retain bytes, future confirmed parent permanent deletion invokes cleanup |
 
-Current implementation already supports optional Note title and full-page editing, but source documentation must still be reconciled in its owning locations. **Four section-anchored amendment proposals were approved by the user on 2026-11-22** in the [#75 source-document reconciliation package](../reconciliation/issue-75/README.md): [PRD-005 Notes](../reconciliation/issue-75/PRD-005-Notes-REPLACEMENTS.md), [PRD-000 V1 Scope](../reconciliation/issue-75/PRD-000-V1-Scope-REPLACEMENTS.md), [PRD-009 Navigation](../reconciliation/issue-75/PRD-009-Navigation-REPLACEMENTS.md) and [HORIZON_CONSTITUTION](../reconciliation/issue-75/HORIZON-CONSTITUTION-REPLACEMENTS.md). The authoritative sources were located in [horizon-knowledge-store](https://github.com/krishna916/horizon-knowledge-store); their `main` Git blob hashes **exactly matched** the reviewed project snapshots. The four approved source amendments were applied and **[knowledge-store PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1) was merged into `main`** ([merge commit `631e2a81e00f8816d983fdca3b289a903f2cc3b3`](https://github.com/krishna916/horizon-knowledge-store/commit/631e2a81e00f8816d983fdca3b289a903f2cc3b3)). The current authoritative documents now include the approved v1.1 Notes, V1 Scope, Navigation and Constitution reconciliations. **No broad migration of ADR authority is implied.** Acceptance and merger of **this** File ADR remain separate explicit gates.
+Current implementation already supports optional Note title and full-page editing, and the source documents have now been reconciled in their owning repository. **Four section-anchored amendment proposals were approved by the user on 2026-11-22** in the [#75 source-document reconciliation package](../reconciliation/issue-75/README.md): [PRD-005 Notes](../reconciliation/issue-75/PRD-005-Notes-REPLACEMENTS.md), [PRD-000 V1 Scope](../reconciliation/issue-75/PRD-000-V1-Scope-REPLACEMENTS.md), [PRD-009 Navigation](../reconciliation/issue-75/PRD-009-Navigation-REPLACEMENTS.md) and [HORIZON_CONSTITUTION](../reconciliation/issue-75/HORIZON-CONSTITUTION-REPLACEMENTS.md). The authoritative sources were located in [horizon-knowledge-store](https://github.com/krishna916/horizon-knowledge-store); their `main` Git blob hashes **exactly matched** the reviewed project snapshots. The four approved source amendments were applied and **[knowledge-store PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1) was merged into `main`** ([merge commit `631e2a81e00f8816d983fdca3b289a903f2cc3b3`](https://github.com/krishna916/horizon-knowledge-store/commit/631e2a81e00f8816d983fdca3b289a903f2cc3b3)). The current authoritative documents now include the approved v1.1 Notes, V1 Scope, Navigation and Constitution reconciliations. **No broad migration of ADR authority is implied.** Acceptance and merger of **this** File ADR remain separate explicit gates.
 
 ## 10. Implementation handoff and acceptance
 
-- **#75:** POC executed and linked; post-POC conservative recovery direction documented in §7.2; review exact ADR acceptance and reconcile authority conflicts through reviewed document changes, and **only then close the gate**.
+- **#75:** POC executed and linked, conservative recovery direction selected in §7.2, and source-document conflicts reconciled; review/accept the final File ADR, then evaluate issue closure. Exact implementation contracts remain story-level approval gates.
 - **#76:** File metadata, private provider configuration, validated staging/upload, atomic claim API and integration tests.
 - **#77:** PostgreSQL-backed durable retry worker, expiry, cleanup, tombstones and proven late-write safety.
 - **#78:** Note association, Note-first file upload, secure attachment routes and lifecycle tests.
@@ -263,12 +263,12 @@ Current implementation already supports optional Note title and full-page editin
 - [x] **Draft** ADR stored in GitHub for review; **NOT accepted**.
 - [x] Run pinned SeaweedFS/AWS SDK POC and document A01–A16/B01–B13 in [the evidence summary](../validation/ISSUE-75-SEAWEEDFS-S3-POC-REPORT.md) (results reported; test harness available on PR #94).
 - [x] Select V1 **per-transfer-attempt keys + durable PostgreSQL tracking + indefinite UNKNOWN retention/reconciliation unless authoritative settlement is proven**; keep actual runtime and worker guarantees for #76/#77 implementation tests.
-- [ ] Approve exact minimum File API and invariant-enforcing schema before production stories use them.
+- [ ] **#76/#77 implementation gate (not an ADR acceptance prerequisite):** review and approve exact minimum File API, invariant-enforcing schema, worker concurrency/lease behavior and production tests before those contracts are implemented.
 - [x] User approved the four **source-document amendment proposals** on 2026-11-22.
-- [x] Located the four **authoritative source files** in `krishna916/horizon-knowledge-store`; verified their Git blobs against approved source snapshots, and applied v1.1/date/changelog updates on [knowledge-store draft PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1).
+- [x] Located the four **authoritative source files** in `krishna916/horizon-knowledge-store`; verified their Git blobs against approved source snapshots, and applied v1.1/date/amendment updates through [knowledge-store PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1).
 - [x] User explicitly approved and merged [knowledge-store PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1) into `main` (commit [`631e2a81e00f8816d983fdca3b289a903f2cc3b3`](https://github.com/krishna916/horizon-knowledge-store/commit/631e2a81e00f8816d983fdca3b289a903f2cc3b3)); authoritative source documents verified on `main`.
 - [ ] Finalize this File ADR's number/status and obtain **separate explicit acceptance/merge approval** for PR #93; exact minimum File API/schema remains a reviewed implementation gate.
-- [ ] Review and **accept** ADR; cross-linking/evidence and selected policy recorded, but close #75 only after review of source-document reconciliation and remaining contract gates.
+- [ ] Final review and explicit **acceptance/merge of this File ADR**; source reconciliation is complete. Assess #75 closure separately, leaving exact File API/schema/worker design to #76/#77 review.
 
 ## 11. References
 
