@@ -1,6 +1,6 @@
 # Issue #75 — Source-document reconciliation package (review only)
 
-**Status: Four proposed amendments prepared. None is an accepted edit to the authoritative knowledge repository.**
+**Status: All four amendment proposals approved for wording by the user on 2026-11-22; none has yet been applied to the authoritative knowledge repository.**
 
 Prepared 2026-11-22 on the existing File ADR review branch `docs/75-file-architecture-adr-draft`. The four **actual project source files were inspected**; the application GitHub repository does **not** contain the authoritative versions of these PRDs or Constitution. This directory therefore supplies review-ready, section-anchored **replacement text**, rather than competing copies of the originals.
 
@@ -35,8 +35,8 @@ These identify the supplied source snapshots. Recheck the current knowledge-repo
 
 - [x] Inspect actual four project source documents and approved design/architecture references.
 - [x] Prepare four proposed, section-specific amendments on ADR PR #93's branch.
-- [ ] **User review and approval** of proposed authoritative wording.
-- [ ] Apply approved amendments **in the knowledge repository**, with suitable version/date/change-log revisions and a pointer to the accepted File ADR.
+- [x] **User approved the four proposed amendments** (2026-11-22); this accepts the wording, not an unverified source revision or a change to the authoritative documents.
+- [ ] **Apply the approved amendments in the authoritative knowledge repository** after confirming the latest source versions and write access. The connected personal Drive search found no matching authoritative documents; do not misrepresent the uploaded snapshots or this GitHub review package as applied source edits. Update version/date/change log and link the accepted File ADR.
 - [ ] After source approval, reconcile application-level context mirrors such as `docs/ai/HORIZON_PRODUCT_CONTEXT.md` through the normal documentation workflow.
 - [ ] Confirm ADR numbering/status and explicitly accept/merge [ADR PR #93](https://github.com/krishna916/horizon/pull/93).
 - [ ] Close issue #75 only after its final acceptance gates are met.
