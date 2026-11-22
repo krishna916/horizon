@@ -1,6 +1,6 @@
 # Proposed authoritative amendment — PRD-000 Horizon V1 Scope
 
-**Status:** WORDING APPROVED by user on 2026-11-22. Not applied to the authoritative knowledge repository or accepted as a new V1 scope version.
+**Status:** WORDING APPROVED on 2026-11-22. Corresponding authoritative V1 Scope edits are staged in [knowledge-store draft PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1), **not yet merged**. This is a review proposal, not an independent authoritative scope version.
 
 **Baseline inspected:** `10-Product/V1/PRD 000 Horizon V1 Scope.md`, “Horizon V1 Scope Document v1 (Draft)”; SHA-256 `a52c8815411fb9c2508edafb2578bdab1b5398584ea2428825ed8b18f94af9b5`. Check knowledge-repository revision before applying.
 
