@@ -34,11 +34,11 @@ Observed/report-claimed conclusions needing accurate labeling:
 
 ## 3. Task 0 — Inspect and recover existing local test source before touching reports
 
-- [ ] Check out and fetch **`poc/75-s3-compatibility`** at PR #94 head; verify clean/dirty working tree and current branch.
-- [ ] Read all authoritative inputs and repository agent instructions; run the required `align-context` review. Record the actual existing POC environment and the evidence already on the PR.
-- [ ] Run `git ls-files server/poc/s3-compat` and `git status --short --untracked-files=all`. Specifically inspect whether `server/poc/s3-compat/pom.xml`, `compose.yaml`, `README.md`, test sources and fault helpers exist **only as ignored/untracked local files**. Use `git check-ignore -v PATH` to find the exact ignore rule. Current PR head has no tracked executable harness.
-- [ ] Recover the **actual source used for the recorded runs** if available. Do not fabricate source, pretend freshly reconstructed code was the original source, or silently backfill logs. If original source is irretrievably unavailable, **STOP and disclose**. Reconstruct a new independent harness only after user approval and label resulting evidence as a new run, not verification of the old runs.
-- [ ] Make a scoped file inventory with purpose/test ownership, pins and whether each file is tracked. Confirm no source, test harness or dependency was pulled from a private/production storage location inappropriately.
+- [x] Check out and fetch **`poc/75-s3-compatibility`** at PR #94 head; verify clean/dirty working tree and current branch.
+- [x] Read all authoritative inputs and repository agent instructions; run the required `align-context` review. Record the actual existing POC environment and the evidence already on the PR.
+- [x] Run `git ls-files server/poc/s3-compat` and `git status --short --untracked-files=all`. Specifically inspect whether `server/poc/s3-compat/pom.xml`, `compose.yaml`, `README.md`, test sources and fault helpers exist **only as ignored/untracked local files**. Use `git check-ignore -v PATH` to find the exact ignore rule. Current PR head has no tracked executable harness.
+- [x] Recover the **actual source used for the recorded runs** if available. Do not fabricate source, pretend freshly reconstructed code was the original source, or silently backfill logs. If original source is irretrievably unavailable, **STOP and disclose**. Reconstruct a new independent harness only after user approval and label resulting evidence as a new run, not verification of the old runs.
+- [x] Make a scoped file inventory with purpose/test ownership, pins and whether each file is tracked. Confirm no source, test harness or dependency was pulled from a private/production storage location inappropriately.
 
 **Exit:** exact source files and their provenance are known. If executable source cannot be recovered, do not continue claiming PR #94 is reproducible.
 
@@ -62,13 +62,13 @@ server/poc/s3-compat/
     └── DECISION-OPTIONS.md
 ```
 
-- [ ] Add/restore the actual standalone Maven `pom.xml`, pinned provider Compose setup, Java test sources and minimal TCP gate/fault helper(s). Ensure tests and lifecycle commands do **not** depend on ignored local paths or undisclosed files.
-- [ ] Make test data deterministic or clearly seeded; distinguish **direct** S3 inspection client from **fault-proxied** client, isolate run IDs and keys; verify SDK retries disabled or documented for fault attribution.
-- [ ] Keep original provider image correction evidence intact; the accidentally chosen non-runnable `ghcr.io/seaweedfs/seaweedfs` manifest is historical failure evidence, **not** a pin to reintroduce.
-- [ ] Pin every required container and Maven test dependency as already approved. Check Java 25 compatibility and preserve the single-machine, dedicated-volume persistence probe.
-- [ ] Preserve the actual Layer B implementation's status as a **disposable test-only PostgreSQL coordinator**, not File module code; B11–B13 remain marked models only.
-- [ ] Add safe repeatable startup/cleanup instructions; ports restricted to loopback, temporary credentials not hardcoded into public logs, no access to `server/database` or the regular application storage.
-- [ ] Stage and inspect the exact diff. Do not commit generated files, Maven target output, data volumes or accidental secrets.
+- [x] Add/restore the actual standalone Maven `pom.xml`, pinned provider Compose setup, Java test sources and minimal TCP gate/fault helper(s). Ensure tests and lifecycle commands do **not** depend on ignored local paths or undisclosed files.
+- [x] Make test data deterministic or clearly seeded; distinguish **direct** S3 inspection client from **fault-proxied** client, isolate run IDs and keys; verify SDK retries disabled or documented for fault attribution.
+- [x] Keep original provider image correction evidence intact; the accidentally chosen non-runnable `ghcr.io/seaweedfs/seaweedfs` manifest is historical failure evidence, **not** a pin to reintroduce.
+- [x] Pin every required container and Maven test dependency as already approved. Check Java 25 compatibility and preserve the single-machine, dedicated-volume persistence probe.
+- [x] Preserve the actual Layer B implementation's status as a **disposable test-only PostgreSQL coordinator**, not File module code; B11–B13 remain marked models only.
+- [x] Add safe repeatable startup/cleanup instructions; ports restricted to loopback, temporary credentials not hardcoded into public logs, no access to `server/database` or the regular application storage.
+- [x] Stage and inspect the exact diff. Do not commit generated files, Maven target output, data volumes or accidental secrets.
 
 **Exit:** a reader of PR #94 can inspect every class, dependency and fault gate that generated the test observations.
 
