@@ -1,6 +1,6 @@
 # Proposed authoritative amendment — PRD-009 Navigation v1.0
 
-**Status:** PROPOSAL FOR USER REVIEW; this file does not replace the knowledge-repository PRD.
+**Status:** WORDING APPROVED by user on 2026-11-22; this file does **not** replace the knowledge-repository PRD and has not been applied there.
 
 **Source inspected:** `PRD-009 Navigation.md`, project-provided Draft v1.0; SHA-256 `721043c4c2124347e0464da066931437a18c5505a0776214f9b92b5bf1a080ef`. Read the current knowledge-repository revision before applying.
 
