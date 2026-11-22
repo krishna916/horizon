@@ -244,7 +244,7 @@ The approved Notes V1 design conflicts with historical sources. This ADR **recor
 | `HORIZON_CONSTITUTION` | BIGINT/Long identity norm, knowledge-repository ADR policy, shared module/job assumptions | Record **File UUID-only** exception, lightweight technical lifecycle/recovery, and **File ADR-only GitHub location** exception (D-04/D-24) |
 | `PRD-008 Trash` | Must preserve recoverable content | **No scope change**; archive/Trash retain bytes, future confirmed parent permanent deletion invokes cleanup |
 
-Current implementation already supports optional Note title and full-page editing, but source documentation must still be reconciled in its owning locations. **Four section-anchored proposed amendments are prepared for review** in the [#75 source-document reconciliation package](../reconciliation/issue-75/README.md): [PRD-005 Notes](../reconciliation/issue-75/PRD-005-Notes-REPLACEMENTS.md), [PRD-000 V1 Scope](../reconciliation/issue-75/PRD-000-V1-Scope-REPLACEMENTS.md), [PRD-009 Navigation](../reconciliation/issue-75/PRD-009-Navigation-REPLACEMENTS.md) and [HORIZON_CONSTITUTION](../reconciliation/issue-75/HORIZON-CONSTITUTION-REPLACEMENTS.md). These are **proposals, not applied authoritative-source edits**, because the PRDs and Constitution live in Horizon's separate knowledge repository. **No broad migration of ADR authority is implied.** Final approval and source updates remain explicit review gates.
+Current implementation already supports optional Note title and full-page editing, but source documentation must still be reconciled in its owning locations. **Four section-anchored amendment proposals were approved by the user on 2026-11-22** in the [#75 source-document reconciliation package](../reconciliation/issue-75/README.md): [PRD-005 Notes](../reconciliation/issue-75/PRD-005-Notes-REPLACEMENTS.md), [PRD-000 V1 Scope](../reconciliation/issue-75/PRD-000-V1-Scope-REPLACEMENTS.md), [PRD-009 Navigation](../reconciliation/issue-75/PRD-009-Navigation-REPLACEMENTS.md) and [HORIZON_CONSTITUTION](../reconciliation/issue-75/HORIZON-CONSTITUTION-REPLACEMENTS.md). These are **approved wording proposals but not yet applied authoritative-source edits**, because the PRDs and Constitution live in Horizon's separate knowledge repository and no editable authoritative copy was identified in the connected personal Drive. The reviewed supplied project files match the proposal baseline fingerprints. **No broad migration of ADR authority is implied.** Live source revisions and access must be verified before applying; ADR acceptance and merge remain separate review gates.
 
 ## 10. Implementation handoff and acceptance
 
@@ -264,7 +264,8 @@ Current implementation already supports optional Note title and full-page editin
 - [x] Run pinned SeaweedFS/AWS SDK POC and document A01–A16/B01–B13 in [the evidence summary](../validation/ISSUE-75-SEAWEEDFS-S3-POC-REPORT.md) (results reported; test harness available on PR #94).
 - [x] Select V1 **per-transfer-attempt keys + durable PostgreSQL tracking + indefinite UNKNOWN retention/reconciliation unless authoritative settlement is proven**; keep actual runtime and worker guarantees for #76/#77 implementation tests.
 - [ ] Approve exact minimum File API and invariant-enforcing schema before production stories use them.
-- [ ] Review/apply necessary PRD/Constitution updates (separate approval).
+- [x] User approved the four **source-document amendment proposals** on 2026-11-22.
+- [ ] Verify current authoritative knowledge-source revisions and apply the approved PRD/Constitution updates there (including version/date/changelog). The uploaded source snapshots and GitHub review proposals are not authoritative updates.
 - [ ] Review and **accept** ADR; cross-linking/evidence and selected policy recorded, but close #75 only after review of source-document reconciliation and remaining contract gates.
 
 ## 11. References
@@ -280,4 +281,4 @@ Current implementation already supports optional Note title and full-page editin
 - [Notes design baseline](../../design/notes-workspace/DESIGN-SPEC.md)
 - Existing Notes persistence and command service under `server/src/main/java/com/krishnamurti/horizon/note/`
 
-**Draft only — POC evidence now complete. Do not mark accepted or merge as a final ADR before explicit recovery-policy review/approval and source-document reconciliation.**
+**Draft only — POC evidence and conservative recovery direction documented; four reconciliation proposals approved for wording. Do not mark this ADR accepted or merge it as final before the actual authoritative source updates and separate ADR acceptance review.**
