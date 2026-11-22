@@ -1,0 +1,18 @@
+name: horizon-issue75-s3-compat
+services:
+  seaweedfs:
+    platform: linux/amd64
+    image: ghcr.io/chrislusf/seaweedfs:4.54@sha256:e7d4b80af9bd49b2630a60ac6fbb7ffb620ac6a2c501f689c22a71b9f89f0203
+    environment:
+      AWS_ACCESS_KEY_ID: ${POC_S3_ACCESS_KEY:-issue75-poc-access}
+      AWS_SECRET_ACCESS_KEY: ${POC_S3_SECRET_KEY:-issue75-poc-secret-only}
+      S3_BUCKET: ${POC_S3_BUCKET:-issue75-poc}
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - seaweedfs-data:/data
+    restart: unless-stopped
+
+volumes:
+  seaweedfs-data:
+    name: horizon-issue75-s3-compat-data
