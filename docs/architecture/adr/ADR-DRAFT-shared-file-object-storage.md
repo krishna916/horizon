@@ -8,9 +8,9 @@
 | Scope | Horizon V1, Notes-first shared File capability |
 | Authoritative location | This GitHub repository's `docs/architecture/adr/` for **this File ADR only** (D-04, D-24) |
 | Evidence gate | **POC executed and documented:** A01–A16 and B01–B13 (29 JUnit methods passed as reported by PR #94); production UNKNOWN-attempt recovery **NOT APPROVED** |
-| Approval gate | User review of ADR, explicit selection of evidence-dependent recovery strategy, source-document reconciliation |
+| Approval gate | Selected post-POC recovery direction to be documented/reviewed; explicit ADR acceptance and source-document reconciliation still pending |
 
-> **Do not interpret the approved decision register or completed POC as approval of this ADR or of an implementation.** The architecture direction and pinned-provider POC evidence are documented; the uncertain-write recovery policy, final SQL/HTTP contracts, document reconciliations and ADR acceptance remain open. This file is deliberately on a review branch.
+> **Do not interpret the completed POC as proof of production cleanup guarantees or acceptance of this ADR.** Approved D-01–D-29, the post-POC recovery direction, and pinned-provider observations are documented here. Final SQL/HTTP contracts, implementation-level locking/scheduling, source-document reconciliation and ADR acceptance are separate review gates. This document remains on a review branch.
 
 ## 1. Context and problem
 
@@ -184,9 +184,9 @@ Use #68's **attachment preview modal** from the full-page editor. Support image 
 
 ## 7. Crash consistency, expiry and POC gate
 
-**We have approved the invariants, NOT the uncertain-PUT recovery protocol.** Upload identity, active transfer, 24-hour expiration, one-time claim, cleanup, tombstone and concurrent workers must form a coherent state machine.
+**Approved V1 recovery direction (post-POC): attempt-specific object keys and durable PostgreSQL attempt tracking, with conservative retention/reconciliation of UNKNOWN outcomes.** This is an architecture policy, not proof that every delayed S3 write can be bounded. Upload identity, 24-hour logical staged expiry, one-time claim, cleanup, tombstone and concurrent workers still require a coherent production implementation.
 
-A timeout does not establish whether an S3 PUT succeeded. An apparently absent object may be written later by an already-started transfer. Deleting a key while a previous PUT remains in flight can recreate the object after cleanup. **Conditional S3 PUT alone does not solve late write after DELETE.** Do not settle stable physical keys versus unique per-attempt keys, retry/fencing design or a purported no-orphan guarantee without real evidence.
+A timeout does not establish whether an S3 PUT succeeded. An apparently absent object may be written later by an already-started transfer. Deleting a key while a previous PUT remains in flight can recreate the object after cleanup. **Conditional S3 PUT alone does not solve late write after DELETE**, demonstrated in #94. V1 therefore **does not rely on a single reused physical key or a time-based assumption of S3 write settlement**. See §7.2 for the selected conservative recovery approach.
 
 ### 7.1 #75 isolated POC — executed and reported (experimental evidence)
 
@@ -200,9 +200,21 @@ See [#75's proof matrix](https://github.com/krishna916/horizon/issues/75) for ca
 
 The POC source report records test class/case mapping, versions, run IDs, fault barriers, S3 responses, direct S3 inspection, selected checksums and PostgreSQL model observations. The tests were not independently rerun during architecture review. A nondeterministic timeout without verified server-side commit remains **inconclusive** as to actual remote outcome.
 
-### 7.2 Required approval before storage implementation
+### 7.2 Selected V1 recovery policy — post-POC architecture direction
 
-The POC supports the pinned SeaweedFS SDK integration, but **does not select a production cleanup protocol**. Before production storage implementation, explicitly review the recovery approach, UNKNOWN attempt retention/settlement, retries and lease/fencing behavior. The evidence shows stable-key conditional PUT alone is **insufficient** for safe post-delete behavior. Candidate per-transfer-attempt keys plus durable tracking were exercised in the test-only model; **not approved as production policy**. If SeaweedFS cannot satisfy the eventually selected contract, review an alternative provider rather than silently switching. #77 must verify **production** worker/recovery correctness; #75's simulator is not a substitute.
+**Decision:** For new network transfers, use **an immutable, never-reused S3 object key per transfer attempt**. Keep the **logical upload idempotency UUID** stable across retries. Persist every attempt's UUID, generated physical key, expected content fingerprint, owning logical request and durable technical outcome **before** issuing its S3 PUT. No physical transfer may begin without a committed attempt locator. Retried *inspection/finalization* may refer to a prior attempt, but any **new PUT operation** uses a newly recorded attempt ID and key. Earlier attempts must remain independently discoverable.
+
+**Unknown results:** Any timeout, broken connection, lost response or crash that does not authoritatively settle the PUT leaves its attempt **UNKNOWN** (or equivalently non-terminal) in durable PostgreSQL state. A lightweight in-process File cleanup/reconciler periodically checks and, when logically expired/removed/unclaimed, deletes objects under those recorded keys. It keeps retrying across restarts and temporary storage failures. Cleanup never promotes an expired/tombstoned request to a live Note association; authorization remains Note-owned.
+
+**Conservative record retention:** An UNKNOWN attempt's physical key and minimal durable state are **not deleted or compacted merely because** the SDK timed out, the Note's 24-hour staging window expired, a PostgreSQL lease expired, S3 returned DELETE 204, or a single (or repeated) HEAD returned 404. All these can precede an already-started remote PUT committing later. **If authoritative settlement cannot be established, retain the UNKNOWN locator indefinitely and continue reconciliation/operational monitoring; do not invent a finite retention deadline for V1.** This may grow database metadata and background work. Tombstone compaction (D-23) applies to confirmed terminal attempts only and must never discard the last discoverable locator while a late writer remains possible.
+
+**Logical lifecycle versus physical bytes:** Finalization claims only a verified transfer and atomically associates it in the caller's PostgreSQL transaction, while other attempts remain traceable. Once logical removal/expiry commits, Note routes deny access and any remaining attempt keys are scheduled for cleanup. Physical DELETE is asynchronous and may require repeated inspection. Neither immediate erasure nor a finite orphan-cleanup bound is asserted. A database lease can coordinate workers but **cannot cancel an already-in-flight S3 request**.
+
+**Boundaries delegated to #76/#77:** Exact File API and schema, technically terminal evidence for safe attempt retirement, scheduling/backoff/alerting, lock order and worker lease/fencing details remain story-level design/review tasks **within these invariants**. In particular, do not silently transform indefinite UNKNOWN retention into a timeout-based purge. A future objectively proven settlement/fencing mechanism may justify a separately reviewed finite retirement policy. Real production integration tests must reproduce late PUT versus DELETE, S3 response loss, restart and multi-attempt cleanup. If a provider cannot support this contract, review alternatives explicitly rather than silently substituting it.
+
+### 7.3 Storage acceptance boundary
+
+The POC demonstrated interoperability for pinned SeaweedFS and AWS SDK versions, **not** end-to-end production correctness. The selected recovery direction follows [the POC's UNKNOWN-attempt options](https://github.com/krishna916/horizon/blob/9afce16dde1911f96933f13434b47fac3ce17165/server/poc/s3-compat/results/DECISION-OPTIONS.md), most closely Option 1, while rejecting the assumption that conditional PUT plus a one-time DELETE is sufficient. This document's **acceptance and source-document reconciliation remain explicit separate gates**. #77 owns the production worker and runtime correctness proof.
 
 ## 8. Consequences and alternatives
 
@@ -218,7 +230,7 @@ The POC supports the pinned SeaweedFS SDK integration, but **does not select a p
 
 **Not chosen for V1:** separate filesystem storage backend, File library/folders, cross-note sharing, direct browser S3/presigned uploads, user-selected backend, multipart/resumable transfers, per-user quotas, attachment filename/full-text search, Office conversion/editing, backup/import/export, public/blog sharing or distributed storage. Some are future product opportunities, not implementation tasks now.
 
-**Evidence-dependent alternatives still open:** The POC demonstrated that **stable key + conditional PUT + one DELETE/negative HEAD alone is unsafe**. A separate immutable key per transfer attempt with durable attempt tracking was successfully exercised as a **test-only model**, but its UNKNOWN-record retirement policy remains unproved. No production recovery strategy, File technical-state schema, worker lease/fencing, physical cleanup timing or request contract is selected. The POC pins are evidence inputs, not automatic production dependency policy.
+**Post-POC disposition:** Stable key + conditional PUT + one DELETE/negative HEAD is **rejected as an insufficient cleanup protocol** by the reported A14/A15 evidence. V1 selects **never-reused per-transfer-attempt keys, committed durable attempt tracking and conservative indefinite retention/reconciliation of UNKNOWN locators** where authoritative settlement cannot be proven (§7.2). The POC's B07 demonstrates feasibility for one late write but not a finite settlement bound. Exact File technical-state DDL, worker lease/fencing, retry cadence and request signatures remain to be reviewed in #76/#77; the POC pins are evidence inputs, not automatic production dependency policy.
 
 ## 9. Documentation conflicts and required dispositions
 
@@ -236,7 +248,7 @@ Current implementation already supports optional Note title and full-page editin
 
 ## 10. Implementation handoff and acceptance
 
-- **#75:** POC executed and linked; explicitly settle evidence-dependent UNKNOWN-attempt recovery protocol, reconcile authority conflicts through reviewed documentation changes, and **only then accept this ADR/close the gate**.
+- **#75:** POC executed and linked; post-POC conservative recovery direction documented in §7.2; review exact ADR acceptance and reconcile authority conflicts through reviewed document changes, and **only then close the gate**.
 - **#76:** File metadata, private provider configuration, validated staging/upload, atomic claim API and integration tests.
 - **#77:** PostgreSQL-backed durable retry worker, expiry, cleanup, tombstones and proven late-write safety.
 - **#78:** Note association, Note-first file upload, secure attachment routes and lifecycle tests.
@@ -250,10 +262,10 @@ Current implementation already supports optional Note title and full-page editin
 - [x] D-01–D-29 direction reviewed/approved in conversation and recorded in #75.
 - [x] **Draft** ADR stored in GitHub for review; **NOT accepted**.
 - [x] Run pinned SeaweedFS/AWS SDK POC and document A01–A16/B01–B13 in [the evidence summary](../validation/ISSUE-75-SEAWEEDFS-S3-POC-REPORT.md) (results reported; test harness available on PR #94).
-- [ ] Resolve UNKNOWN-attempt settlement/retention and the uncertain-PUT/cleanup **production** protocol with explicit user approval; POC Layer B feasibility is documented, not production proof.
+- [x] Select V1 **per-transfer-attempt keys + durable PostgreSQL tracking + indefinite UNKNOWN retention/reconciliation unless authoritative settlement is proven**; keep actual runtime and worker guarantees for #76/#77 implementation tests.
 - [ ] Approve exact minimum File API and invariant-enforcing schema before production stories use them.
 - [ ] Review/apply necessary PRD/Constitution updates (separate approval).
-- [ ] Review and **accept** ADR; cross-linking/evidence update complete, but close #75 only after outstanding decision and documentation gates pass.
+- [ ] Review and **accept** ADR; cross-linking/evidence and selected policy recorded, but close #75 only after review of source-document reconciliation and remaining contract gates.
 
 ## 11. References
 
