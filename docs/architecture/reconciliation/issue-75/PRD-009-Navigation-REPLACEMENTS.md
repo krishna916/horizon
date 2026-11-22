@@ -1,6 +1,6 @@
 # Proposed authoritative amendment — PRD-009 Navigation v1.0
 
-**Status:** WORDING APPROVED on 2026-11-22. Authoritative Navigation edits are staged in [knowledge-store draft PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1), **not yet merged**. This file does not replace the authoritative PRD.
+**Status:** WORDING APPROVED on 2026-11-22. Authoritative Navigation edits are staged in [knowledge-store draft PR #1](https://github.com/krishna916/horizon-knowledge-store/pull/1), **merged to `main`** (commit [`631e2a8`](https://github.com/krishna916/horizon-knowledge-store/commit/631e2a81e00f8816d983fdca3b289a903f2cc3b3)). This file does not replace the authoritative PRD.
 
 **Source inspected:** `PRD-009 Navigation.md`, project-provided Draft v1.0; SHA-256 `721043c4c2124347e0464da066931437a18c5505a0776214f9b92b5bf1a080ef`. Read the current knowledge-repository revision before applying.
 
