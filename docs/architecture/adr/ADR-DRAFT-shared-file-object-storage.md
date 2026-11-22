@@ -244,7 +244,7 @@ The approved Notes V1 design conflicts with historical sources. This ADR **recor
 | `HORIZON_CONSTITUTION` | BIGINT/Long identity norm, knowledge-repository ADR policy, shared module/job assumptions | Record **File UUID-only** exception, lightweight technical lifecycle/recovery, and **File ADR-only GitHub location** exception (D-04/D-24) |
 | `PRD-008 Trash` | Must preserve recoverable content | **No scope change**; archive/Trash retain bytes, future confirmed parent permanent deletion invokes cleanup |
 
-Current implementation already supports optional Note title and full-page editing, but source documentation must still be reconciled in its owning locations. **No broad migration of ADR authority is implied.** User approval is required before editing product or constitutional documents.
+Current implementation already supports optional Note title and full-page editing, but source documentation must still be reconciled in its owning locations. **Four section-anchored proposed amendments are prepared for review** in the [#75 source-document reconciliation package](../reconciliation/issue-75/README.md): [PRD-005 Notes](../reconciliation/issue-75/PRD-005-Notes-REPLACEMENTS.md), [PRD-000 V1 Scope](../reconciliation/issue-75/PRD-000-V1-Scope-REPLACEMENTS.md), [PRD-009 Navigation](../reconciliation/issue-75/PRD-009-Navigation-REPLACEMENTS.md) and [HORIZON_CONSTITUTION](../reconciliation/issue-75/HORIZON-CONSTITUTION-REPLACEMENTS.md). These are **proposals, not applied authoritative-source edits**, because the PRDs and Constitution live in Horizon's separate knowledge repository. **No broad migration of ADR authority is implied.** Final approval and source updates remain explicit review gates.
 
 ## 10. Implementation handoff and acceptance
 
