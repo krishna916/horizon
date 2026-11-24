@@ -86,7 +86,7 @@ These are **approved decisions**, not candidate alternatives. More detailed rati
 | ID | Approved outcome | Rationale / constraint |
 | --- | --- | --- |
 | D-01 | Central, atomic **one-time File claim** in caller's PG transaction | Cross-workspace exclusivity without coupling association repositories |
-| D-02 | Each binary is **strictly <20 MiB**, maximum **20,971,519 bytes** | Explicit non-inclusive boundary; no aggregate quota |
+| D-02 | Each binary has a known positive length no greater than the deployment limit: default **20,971,519 bytes**, configurable up to and including **104,857,600 bytes** (100 MiB) | Previously verified files remain valid when the limit is reduced; no aggregate quota |
 | D-03 | File association mutations participate in Note optimistic `version` | Autosave and attachment changes cannot silently race |
 | D-04 | This File ADR lives in Horizon's GitHub `docs/architecture/adr/` | Narrow documented exception to knowledge-repository policy |
 | D-05 | If first-file upload fails, keep the otherwise-empty persisted Note | Allow retry; untouched/tag-only drafts still create nothing |
@@ -170,7 +170,7 @@ These are architectural guarantees, **not approved HTTP route names or Java meth
 
 Allowed initial types: JPEG/JPG, PNG, WebP, GIF; PDF; DOCX, XLSX, PPTX; TXT, MD, CSV; standalone Mermaid (`.mmd`, `.mermaid`). Validate server-side signatures and format structure where meaningful, not merely extension or browser MIME. Reject active HTML/SVG, executables, macro-enabled Office formats, spoofed/malformed packages and unsafe payloads. Exact signature rules and selected validation libraries are #76 implementation-review details.
 
-Reject unknown-length streams, any observed/declaration length mismatch, file size **greater than or equal to 20,971,520 bytes**, and SHA-256 mismatch. Bound temporary storage, concurrency, permissions and memory; clean temporary files after success, failure and crash. Local capacity failures should be user-visible failures, not corruption or a loss of already-saved content.
+Reject unknown or nonpositive lengths, any observed/declaration length mismatch, new or unverified transfers above the effective deployment limit, and SHA-256 mismatch before PUT. The default limit is 20,971,519 bytes (strictly less than 20 MiB); deployments may configure it up to and including 104,857,600 bytes (100 MiB). Previously verified files remain valid when the limit is reduced. Bound temporary storage, concurrency, permissions and memory; clean temporary files after success, failure and crash. Local capacity failures should be user-visible failures, not corruption or a loss of already-saved content.
 
 ### 6.2 Download and preview authorization
 
