@@ -176,6 +176,7 @@ class FileRealRestartIntegrationTest {
                     assertThat(health.healthForPath("liveness").getStatus()).isEqualTo(Status.UP);
                 }
             } finally {
+                makeContainerDataRemovable(seaweed);
                 if (seaweed.isRunning()) seaweed.stop();
             }
         } finally {
@@ -243,6 +244,23 @@ class FileRealRestartIntegrationTest {
             for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
                 Files.deleteIfExists(path);
             }
+        }
+    }
+
+    private static void makeContainerDataRemovable(GenericContainer<?> container) {
+        try {
+            if (!container.isRunning()) container.start();
+            var result = container.execInContainer("sh", "-c", "chmod -R a+rwX /data");
+            if (result.getExitCode() != 0) {
+                throw new IllegalStateException(
+                        "Could not make temporary SeaweedFS data removable: " + result.getStderr());
+            }
+        } catch (java.io.IOException exception) {
+            throw new java.io.UncheckedIOException(exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrupted while preparing SeaweedFS cleanup", exception);
         }
     }
 

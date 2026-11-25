@@ -189,6 +189,7 @@ class FileRealProviderIntegrationTest {
                 }
             }
         } finally {
+            makeContainerDataRemovable(first);
             if (first.isRunning()) first.stop();
             makeRemovable(data);
             deleteTree(data);
@@ -240,6 +241,7 @@ class FileRealProviderIntegrationTest {
                 }
             }
         } finally {
+            makeContainerDataRemovable(seaweed);
             if (seaweed.isRunning()) seaweed.stop();
             makeRemovable(data);
             deleteTree(data);
@@ -261,11 +263,13 @@ class FileRealProviderIntegrationTest {
                 assertThat(health.health().getStatus()).isEqualTo(Status.UP);
                 assertThat(provider.listObjects().contents()).isEmpty();
 
+                makeContainerDataRemovable(seaweed);
                 seaweed.stop();
 
                 assertThat(health.health().getStatus()).isEqualTo(Status.DOWN);
             }
         } finally {
+            makeContainerDataRemovable(seaweed);
             if (seaweed.isRunning()) seaweed.stop();
             makeRemovable(data);
             deleteTree(data);
@@ -361,6 +365,7 @@ class FileRealProviderIntegrationTest {
                         realFiles, provider.storage());
             }
         } finally {
+            makeContainerDataRemovable(seaweed);
             if (seaweed.isRunning()) seaweed.stop();
             makeRemovable(data);
             deleteTree(data);
@@ -581,6 +586,23 @@ class FileRealProviderIntegrationTest {
             paths.forEach(path -> path.toFile().setWritable(true));
         } catch (java.io.IOException ignored) {
             // Cleanup continues; deleteTree reports any remaining owned temporary files.
+        }
+    }
+
+    private static void makeContainerDataRemovable(GenericContainer<?> container) {
+        try {
+            if (!container.isRunning()) container.start();
+            var result = container.execInContainer("sh", "-c", "chmod -R a+rwX /data");
+            if (result.getExitCode() != 0) {
+                throw new IllegalStateException(
+                        "Could not make temporary SeaweedFS data removable: " + result.getStderr());
+            }
+        } catch (java.io.IOException exception) {
+            throw new java.io.UncheckedIOException(exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrupted while preparing SeaweedFS cleanup", exception);
         }
     }
 
