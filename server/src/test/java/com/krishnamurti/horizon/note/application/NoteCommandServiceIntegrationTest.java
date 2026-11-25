@@ -295,7 +295,8 @@ class NoteCommandServiceIntegrationTest {
 
         Note archived = commandService.archive(note.getId(), 0L);
         assertThat(archived.getVersion()).isEqualTo(1L);
-        OffsetDateTime archivedAt = archived.getArchivedAt();
+        OffsetDateTime archivedAt =
+                noteRepository.findByIdAndUserId(note.getId(), owner).orElseThrow().getArchivedAt();
 
         Note deleted = commandService.softDelete(note.getId(), 1L);
         assertThat(deleted.getVersion()).isEqualTo(2L);
