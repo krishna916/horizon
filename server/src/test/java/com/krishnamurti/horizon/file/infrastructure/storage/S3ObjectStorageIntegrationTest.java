@@ -39,7 +39,8 @@ class S3ObjectStorageIntegrationTest {
     @Test
     void privatePutHeadGetDeleteRoundTripAndUnsignedRequestIsDenied() throws Exception {
         Path data = Files.createTempDirectory("horizon-seaweedfs-");
-        try (var seaweed = SeaweedFsTestConfiguration.container(data)) {
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        try (var seaweed = SeaweedFsTestConfiguration.container(volume)) {
             seaweed.start();
             S3ObjectStorage storage = storage(endpoint(seaweed));
             String keyValue = "test/" + UUID.randomUUID();
@@ -80,11 +81,12 @@ class S3ObjectStorageIntegrationTest {
     @Test
     void storagePersistsAcrossContainerRecreationWithTheSamePrivateVolume() throws Exception {
         Path data = Files.createTempDirectory("horizon-seaweedfs-persist-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
         byte[] payload = "survives container recreation".getBytes(StandardCharsets.UTF_8);
         Path staged = Files.createTempFile("horizon-staged-", ".txt");
         Files.write(staged, payload);
         ObjectKey key = new ObjectKey("persist/" + UUID.randomUUID());
-        try (var first = SeaweedFsTestConfiguration.container(data)) {
+        try (var first = SeaweedFsTestConfiguration.container(volume)) {
             first.start();
             S3ObjectStorage initial = storage(endpoint(first));
             assertThat(
@@ -95,7 +97,7 @@ class S3ObjectStorageIntegrationTest {
             initial.close();
             first.stop();
 
-            try (var recreated = SeaweedFsTestConfiguration.container(data)) {
+            try (var recreated = SeaweedFsTestConfiguration.container(volume)) {
                 recreated.start();
                 S3ObjectStorage afterRestart = storage(endpoint(recreated));
                 try (StoredObject object = afterRestart.get(key);
