@@ -43,7 +43,8 @@ public class ImageFileValidator implements FileValidator {
     }
 
     @Override
-    public ValidationResult validate(StagedFile stagedFile) throws IOException {
+    public ValidationResult validate(StagedFile stagedFile, FileFormat expectedFormat)
+            throws IOException {
         try (ImageInputStream input = ImageIO.createImageInputStream(stagedFile.path().toFile())) {
             if (input == null) {
                 throw invalid("Unsupported or malformed image");
@@ -56,6 +57,9 @@ public class ImageFileValidator implements FileValidator {
             try {
                 reader.setInput(input, false, false);
                 FileFormat format = imageFormat(reader.getFormatName());
+                if (format != expectedFormat) {
+                    throw invalid("Detected image does not match the requested format");
+                }
                 ContainerSummary summary =
                         format == FileFormat.WEBP
                                 ? webpSummary(stagedFile)

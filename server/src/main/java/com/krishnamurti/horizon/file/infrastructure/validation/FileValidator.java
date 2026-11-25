@@ -7,5 +7,5 @@ import java.io.IOException;
 public interface FileValidator {
     boolean supports(FileFormat format);
 
-    ValidationResult validate(StagedFile stagedFile) throws IOException;
+    ValidationResult validate(StagedFile stagedFile, FileFormat format) throws IOException;
 }

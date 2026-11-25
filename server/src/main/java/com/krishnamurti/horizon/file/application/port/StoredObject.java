@@ -10,9 +10,15 @@ public final class StoredObject implements AutoCloseable {
     private final InputStream content;
     private final long contentLength;
     private final String contentType;
+    private final Runnable abortAction;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     public StoredObject(InputStream content, long contentLength, String contentType) {
+        this(content, contentLength, contentType, () -> closeAfterAbort(content));
+    }
+
+    public StoredObject(
+            InputStream content, long contentLength, String contentType, Runnable abortAction) {
         this.content = Objects.requireNonNull(content, "content");
         if (contentLength < 0) {
             throw new IllegalArgumentException("contentLength must not be negative");
@@ -22,6 +28,7 @@ public final class StoredObject implements AutoCloseable {
         }
         this.contentLength = contentLength;
         this.contentType = contentType;
+        this.abortAction = Objects.requireNonNull(abortAction, "abortAction");
     }
 
     public InputStream content() {
@@ -39,10 +46,25 @@ public final class StoredObject implements AutoCloseable {
         return contentType;
     }
 
+    /** Aborts an incomplete provider response without requiring the unread body to be drained. */
+    public void abort() {
+        if (closed.compareAndSet(false, true)) {
+            abortAction.run();
+        }
+    }
+
     @Override
     public void close() throws IOException {
         if (closed.compareAndSet(false, true)) {
             content.close();
+        }
+    }
+
+    private static void closeAfterAbort(InputStream content) {
+        try {
+            content.close();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Unable to abort stored object stream", exception);
         }
     }
 }

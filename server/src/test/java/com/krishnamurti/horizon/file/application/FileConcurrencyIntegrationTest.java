@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.file.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.krishnamurti.horizon.TestcontainersConfiguration;
+import com.krishnamurti.horizon.file.api.FileOperationException;
 import com.krishnamurti.horizon.file.api.FileService;
 import com.krishnamurti.horizon.file.api.command.CleanupFileCommand;
 import com.krishnamurti.horizon.file.api.command.PrepareFileCommand;
@@ -205,7 +206,12 @@ class FileConcurrencyIntegrationTest {
     private void assertThatThrownByRead(FileReference reference) {
         org.assertj.core.api.Assertions.assertThatThrownBy(
                         () -> files.openRead(new ReadFileQuery(reference)))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                org.assertj.core.api.Assertions.assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.CONTENT_UNAVAILABLE));
     }
 
     private void await(CountDownLatch latch) {

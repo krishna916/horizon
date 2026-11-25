@@ -21,6 +21,18 @@ services:
     volumes:
       - file-object-data:/data
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl --fail --silent --show-error --output /dev/null --head
+          --aws-sigv4 'aws:amz:us-east-1:s3'
+          --user "$${AWS_ACCESS_KEY_ID}:$${AWS_SECRET_ACCESS_KEY}"
+          "http://127.0.0.1:8333/$${S3_BUCKET}"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   file-object-data:

@@ -23,7 +23,7 @@ class OfficeFileValidatorTest {
                         officePackage(
                                 "word/document.xml",
                                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"))) {
-            assertThat(new OfficeFileValidator().validate(fixture.file()).format())
+            assertThat(new OfficeFileValidator().validate(fixture.file(), FileFormat.DOCX).format())
                     .isEqualTo(FileFormat.DOCX);
         }
     }
@@ -52,7 +52,10 @@ class OfficeFileValidatorTest {
                     ValidationTestSupport.stage(
                             temporaryDirectory.resolve(item[2].toString()),
                             officePackage(item[0].toString(), item[1].toString()))) {
-                assertThat(new OfficeFileValidator().validate(fixture.file()).format())
+                assertThat(
+                                new OfficeFileValidator()
+                                        .validate(fixture.file(), (FileFormat) item[2])
+                                        .format())
                         .isEqualTo(item[2]);
             }
         }
@@ -70,7 +73,10 @@ class OfficeFileValidatorTest {
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("entry-count"),
                         ValidationTestSupport.zip(packageEntries))) {
-            assertThatThrownBy(() -> new OfficeFileValidator(limits).validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator(limits)
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -80,19 +86,73 @@ class OfficeFileValidatorTest {
         byte[] wrong =
                 officePackage(
                         "xl/workbook.xml",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml");
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+                        "<document"
+                            + " xmlns=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>");
         byte[] macro =
                 officePackage(
                         "word/document.xml",
                         "application/vnd.ms-word.document.macroEnabled.main+xml");
         try (ValidationTestSupport.StagedFixture fixture =
                 ValidationTestSupport.stage(temporaryDirectory.resolve("wrong-root"), wrong)) {
-            assertThat(new OfficeFileValidator().validate(fixture.file()).format())
-                    .isEqualTo(FileFormat.XLSX);
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
         try (ValidationTestSupport.StagedFixture fixture =
                 ValidationTestSupport.stage(temporaryDirectory.resolve("macro-root"), macro)) {
-            assertThatThrownBy(() -> new OfficeFileValidator().validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void externalNonHyperlinkPartRelationshipIsRejected() throws Exception {
+        Map<String, byte[]> entries =
+                officeEntries(
+                        "word/document.xml",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+        entries.put(
+                "word/_rels/document.xml.rels",
+                ("<Relationships"
+                     + " xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship"
+                     + " Id=\"rId1\""
+                     + " Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\""
+                     + " Target=\"http://127.0.0.1:1/must-not-fetch\" TargetMode=\"External\"/>"
+                     + "</Relationships>")
+                        .getBytes(StandardCharsets.UTF_8));
+        try (ValidationTestSupport.StagedFixture fixture =
+                ValidationTestSupport.stage(
+                        temporaryDirectory.resolve("external-part-target"),
+                        ValidationTestSupport.zip(entries))) {
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void disguisedEmbeddedExecutableIsRejectedByContent() throws Exception {
+        Map<String, byte[]> entries =
+                officeEntries(
+                        "word/document.xml",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+        entries.put("word/embeddings/object.bin", new byte[] {'M', 'Z', 0, 0, 1});
+        try (ValidationTestSupport.StagedFixture fixture =
+                ValidationTestSupport.stage(
+                        temporaryDirectory.resolve("disguised-executable"),
+                        ValidationTestSupport.zip(entries))) {
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -108,7 +168,10 @@ class OfficeFileValidatorTest {
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("traversal"),
                         ValidationTestSupport.zip(entries))) {
-            assertThatThrownBy(() -> new OfficeFileValidator().validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -126,7 +189,10 @@ class OfficeFileValidatorTest {
         try (ValidationTestSupport.StagedFixture fixture =
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("duplicate"), duplicatePaths)) {
-            assertThatThrownBy(() -> new OfficeFileValidator().validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -137,7 +203,10 @@ class OfficeFileValidatorTest {
         try (ValidationTestSupport.StagedFixture fixture =
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("xxe"), ValidationTestSupport.zip(valid))) {
-            assertThatThrownBy(() -> new OfficeFileValidator().validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -150,7 +219,10 @@ class OfficeFileValidatorTest {
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("executable"),
                         ValidationTestSupport.zip(valid))) {
-            assertThatThrownBy(() -> new OfficeFileValidator().validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -174,7 +246,7 @@ class OfficeFileValidatorTest {
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("hyperlink"),
                         ValidationTestSupport.zip(entries))) {
-            assertThat(new OfficeFileValidator().validate(fixture.file()).format())
+            assertThat(new OfficeFileValidator().validate(fixture.file(), FileFormat.DOCX).format())
                     .isEqualTo(FileFormat.DOCX);
         }
     }
@@ -190,7 +262,10 @@ class OfficeFileValidatorTest {
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("entry-bound"),
                         ValidationTestSupport.zip(tooLargeEntry))) {
-            assertThatThrownBy(() -> new OfficeFileValidator().validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -208,7 +283,9 @@ class OfficeFileValidatorTest {
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("false-header"), falseHeaderZip)) {
             assertThatThrownBy(
-                            () -> new OfficeFileValidator(smallEntryLimit).validate(fixture.file()))
+                            () ->
+                                    new OfficeFileValidator(smallEntryLimit)
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("expanded content exceeds");
         }
@@ -224,7 +301,10 @@ class OfficeFileValidatorTest {
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("total-bound"),
                         ValidationTestSupport.zip(totalOver))) {
-            assertThatThrownBy(() -> new OfficeFileValidator(limits).validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator(limits)
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -237,13 +317,23 @@ class OfficeFileValidatorTest {
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("ratio"),
                         ValidationTestSupport.zip(highlyCompressed))) {
-            assertThatThrownBy(() -> new OfficeFileValidator().validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
 
     private static byte[] officePackage(String mainPart, String contentType) throws Exception {
         return ValidationTestSupport.zip(officeEntries(mainPart, contentType));
+    }
+
+    private static byte[] officePackage(String mainPart, String contentType, String mainXml)
+            throws Exception {
+        Map<String, byte[]> entries = officeEntries(mainPart, contentType);
+        entries.put(mainPart, mainXml.getBytes(StandardCharsets.UTF_8));
+        return ValidationTestSupport.zip(entries);
     }
 
     private static void replaceAscii(byte[] bytes, String from, String to) {
@@ -341,11 +431,20 @@ class OfficeFileValidatorTest {
                                 + mainPart
                                 + "\"/></Relationships>")
                         .getBytes(StandardCharsets.UTF_8));
-        entries.put(
-                mainPart,
-                ("<?xml version=\"1.0\"?><document"
-                     + " xmlns=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>")
-                        .getBytes(StandardCharsets.UTF_8));
+        String rootXml =
+                switch (mainPart) {
+                    case "word/document.xml" ->
+                            "<?xml version=\"1.0\"?><w:document"
+                                + " xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>";
+                    case "xl/workbook.xml" ->
+                            "<?xml version=\"1.0\"?><workbook"
+                                + " xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"/>";
+                    case "ppt/presentation.xml" ->
+                            "<?xml version=\"1.0\"?><p:presentation"
+                                + " xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"/>";
+                    default -> throw new IllegalArgumentException("Unknown Office main part");
+                };
+        entries.put(mainPart, rootXml.getBytes(StandardCharsets.UTF_8));
         return entries;
     }
 }

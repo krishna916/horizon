@@ -25,7 +25,8 @@ class ImageFileValidatorTest {
             try (ValidationTestSupport.StagedFixture fixture =
                     ValidationTestSupport.stage(
                             temporaryDirectory.resolve(image[0].toString()), (byte[]) image[2])) {
-                assertThat(validator.validate(fixture.file()).format()).isEqualTo(image[1]);
+                assertThat(validator.validate(fixture.file(), (FileFormat) image[1]).format())
+                        .isEqualTo(image[1]);
             }
         }
     }
@@ -37,8 +38,9 @@ class ImageFileValidatorTest {
                     ValidationTestSupport.stage(
                             temporaryDirectory.resolve(name),
                             ValidationTestSupport.fixture(name))) {
-                assertThat(new ImageFileValidator().validate(fixture.file()).format())
-                        .isEqualTo(name.endsWith("gif") ? FileFormat.GIF : FileFormat.WEBP);
+                FileFormat expected = name.endsWith("gif") ? FileFormat.GIF : FileFormat.WEBP;
+                assertThat(new ImageFileValidator().validate(fixture.file(), expected).format())
+                        .isEqualTo(expected);
             }
         }
     }
@@ -49,14 +51,14 @@ class ImageFileValidatorTest {
         byte[] truncated = {(byte) 0xff, (byte) 0xd8, (byte) 0xff, (byte) 0xd9};
         try (ValidationTestSupport.StagedFixture fixture =
                 ValidationTestSupport.stage(temporaryDirectory.resolve("truncated"), truncated)) {
-            assertThatThrownBy(() -> validator.validate(fixture.file()))
+            assertThatThrownBy(() -> validator.validate(fixture.file(), FileFormat.JPEG))
                     .isInstanceOf(IllegalArgumentException.class);
         }
         try (ValidationTestSupport.StagedFixture fixture =
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("spoof"),
                         "MZ executable".getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
-            assertThatThrownBy(() -> validator.validate(fixture.file()))
+            assertThatThrownBy(() -> validator.validate(fixture.file(), FileFormat.JPEG))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -66,7 +68,8 @@ class ImageFileValidatorTest {
         byte[] oversized = oversizedPngHeader(8193, 1);
         try (ValidationTestSupport.StagedFixture fixture =
                 ValidationTestSupport.stage(temporaryDirectory.resolve("large"), oversized)) {
-            assertThatThrownBy(() -> new ImageFileValidator().validate(fixture.file()))
+            assertThatThrownBy(
+                            () -> new ImageFileValidator().validate(fixture.file(), FileFormat.PNG))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -79,7 +82,10 @@ class ImageFileValidatorTest {
                     ValidationTestSupport.stage(
                             temporaryDirectory.resolve(dimensions[0] + "x" + dimensions[1]),
                             bytes)) {
-                assertThat(new ImageFileValidator().validate(fixture.file()).format())
+                assertThat(
+                                new ImageFileValidator()
+                                        .validate(fixture.file(), FileFormat.PNG)
+                                        .format())
                         .isEqualTo(FileFormat.PNG);
             }
         }
@@ -90,7 +96,10 @@ class ImageFileValidatorTest {
         byte[] tooManyFrames = ValidationTestSupport.fixture("animated-101.webp");
         try (ValidationTestSupport.StagedFixture fixture =
                 ValidationTestSupport.stage(temporaryDirectory.resolve("frames"), tooManyFrames)) {
-            assertThatThrownBy(() -> new ImageFileValidator().validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new ImageFileValidator()
+                                            .validate(fixture.file(), FileFormat.WEBP))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -101,7 +110,10 @@ class ImageFileValidatorTest {
                 ValidationTestSupport.stage(
                         temporaryDirectory.resolve("cumulative"),
                         ValidationTestSupport.fixture("animated.webp"))) {
-            assertThatThrownBy(() -> new ImageFileValidator(limits).validate(fixture.file()))
+            assertThatThrownBy(
+                            () ->
+                                    new ImageFileValidator(limits)
+                                            .validate(fixture.file(), FileFormat.WEBP))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

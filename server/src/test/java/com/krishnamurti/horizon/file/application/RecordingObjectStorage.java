@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /** Test port for asserting transaction boundaries and deterministic remote outcomes. */
 public final class RecordingObjectStorage implements ObjectStorage {
@@ -29,6 +30,8 @@ public final class RecordingObjectStorage implements ObjectStorage {
             new AtomicReference<>(WriteResult.ACKNOWLEDGED);
     private final AtomicReference<Consumer<ObjectWriteRequest>> putHook = new AtomicReference<>();
     private final AtomicReference<byte[]> getOverride = new AtomicReference<>();
+    private final AtomicReference<Supplier<StoredObject>> getObjectOverride =
+            new AtomicReference<>();
     private final AtomicInteger gets = new AtomicInteger();
     private final AtomicInteger closedReadStreams = new AtomicInteger();
     private final AtomicBoolean storeNextPut = new AtomicBoolean(true);
@@ -64,6 +67,8 @@ public final class RecordingObjectStorage implements ObjectStorage {
         gets.incrementAndGet();
         StoredBytes object = objects.get(key.value());
         if (object == null) throw new ObjectStorageException("test object missing");
+        Supplier<StoredObject> response = getObjectOverride.getAndSet(null);
+        if (response != null) return response.get();
         byte[] override = getOverride.getAndSet(null);
         byte[] bytes = override == null ? object.bytes() : Arrays.copyOf(override, override.length);
         return new StoredObject(
@@ -114,6 +119,7 @@ public final class RecordingObjectStorage implements ObjectStorage {
         unavailable.set(false);
         putHook.set(null);
         getOverride.set(null);
+        getObjectOverride.set(null);
         gets.set(0);
         closedReadStreams.set(0);
     }
@@ -140,6 +146,10 @@ public final class RecordingObjectStorage implements ObjectStorage {
 
     public void nextGetBytes(byte[] bytes) {
         getOverride.set(Arrays.copyOf(bytes, bytes.length));
+    }
+
+    public void nextGetObject(Supplier<StoredObject> response) {
+        getObjectOverride.set(response);
     }
 
     private static final class StoredBytes {

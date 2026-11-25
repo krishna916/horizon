@@ -116,7 +116,8 @@ public class StagingCapacity {
 
     public final class Reservation implements AutoCloseable {
         private final long bytes;
-        private final AtomicBoolean released = new AtomicBoolean();
+        private final AtomicBoolean bytesReleased = new AtomicBoolean();
+        private final AtomicBoolean slotReleased = new AtomicBoolean();
 
         private Reservation(long bytes) {
             this.bytes = bytes;
@@ -124,8 +125,18 @@ public class StagingCapacity {
 
         @Override
         public void close() {
-            if (released.compareAndSet(false, true)) {
+            releaseRetainedBytes();
+            releaseSlot();
+        }
+
+        void releaseRetainedBytes() {
+            if (bytesReleased.compareAndSet(false, true)) {
                 reservedBytes.addAndGet(-bytes);
+            }
+        }
+
+        void releaseSlot() {
+            if (slotReleased.compareAndSet(false, true)) {
                 slots.release();
             }
         }

@@ -21,11 +21,7 @@ public class TextFileValidator implements FileValidator {
     }
 
     @Override
-    public ValidationResult validate(StagedFile stagedFile) throws IOException {
-        return validate(stagedFile, FileFormat.TXT);
-    }
-
-    ValidationResult validate(StagedFile stagedFile, FileFormat format) throws IOException {
+    public ValidationResult validate(StagedFile stagedFile, FileFormat format) throws IOException {
         if (!supports(format)) {
             throw invalid("Unsupported text format");
         }
@@ -98,7 +94,9 @@ public class TextFileValidator implements FileValidator {
 
         private final FileFormat format;
         private State state = State.LEADING;
-        private final StringBuilder token = new StringBuilder(16);
+        private final StringBuilder tagName = new StringBuilder(32);
+        private int declarationPrefixLength;
+        private boolean declarationMayBeComment;
         private int commentDashes;
         private boolean processingQuestion;
 
@@ -124,30 +122,37 @@ public class TextFileValidator implements FileValidator {
                 case AFTER_LT -> {
                     if (value == '!') {
                         state = State.DECLARATION;
-                        token.setLength(0);
+                        declarationPrefixLength = 0;
+                        declarationMayBeComment = true;
                     } else if (value == '?') {
                         state = State.PROCESSING_INSTRUCTION;
                     } else if (Character.isLetter(value)) {
-                        token.setLength(0);
-                        token.append(Character.toLowerCase(value));
+                        tagName.setLength(0);
+                        tagName.append(Character.toLowerCase(value));
                         state = State.TAG_NAME;
                     } else {
                         state = State.DONE;
                     }
                 }
                 case DECLARATION -> {
-                    if (value == '-' && token.isEmpty()) {
-                        token.append('-');
-                    } else if (value == '-' && token.toString().equals("-")) {
-                        state = State.COMMENT;
-                        commentDashes = 0;
-                    } else if (Character.isLetter(value)) {
-                        token.append(Character.toLowerCase(value));
-                        if (token.toString().equals("doctype")) {
+                    if (declarationMayBeComment && value == '-') {
+                        declarationMayBeComment = false;
+                        declarationPrefixLength = -1;
+                    } else if (declarationPrefixLength == -1) {
+                        if (value == '-') {
+                            state = State.COMMENT;
+                            commentDashes = 0;
+                        } else {
+                            state = State.DONE;
+                        }
+                    } else if (declarationPrefixLength < "doctype".length()
+                            && Character.toLowerCase(value)
+                                    == "doctype".charAt(declarationPrefixLength)) {
+                        declarationMayBeComment = false;
+                        declarationPrefixLength++;
+                        if (declarationPrefixLength == "doctype".length()) {
                             return true;
                         }
-                    } else if (Character.isWhitespace(value) || value == '>') {
-                        state = State.DONE;
                     } else {
                         state = State.DONE;
                     }
@@ -172,11 +177,11 @@ public class TextFileValidator implements FileValidator {
                 }
                 case TAG_NAME -> {
                     if (Character.isLetterOrDigit(value) || value == '-' || value == ':') {
-                        if (token.length() < 32) {
-                            token.append(Character.toLowerCase(value));
+                        if (tagName.length() < 32) {
+                            tagName.append(Character.toLowerCase(value));
                         }
                     } else {
-                        String root = token.toString();
+                        String root = tagName.toString();
                         if (root.equals("html")
                                 || root.equals("head")
                                 || root.equals("body")
@@ -196,11 +201,11 @@ public class TextFileValidator implements FileValidator {
 
         private boolean finish() {
             return state == State.TAG_NAME
-                    && (token.toString().equals("html")
-                            || token.toString().equals("head")
-                            || token.toString().equals("body")
-                            || token.toString().equals("svg")
-                            || (token.toString().equals("script") && format != FileFormat.MD));
+                    && (tagName.toString().equals("html")
+                            || tagName.toString().equals("head")
+                            || tagName.toString().equals("body")
+                            || tagName.toString().equals("svg")
+                            || (tagName.toString().equals("script") && format != FileFormat.MD));
         }
     }
 

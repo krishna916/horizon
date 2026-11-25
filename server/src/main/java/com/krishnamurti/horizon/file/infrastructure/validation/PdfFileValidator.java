@@ -5,7 +5,9 @@ import com.krishnamurti.horizon.file.infrastructure.FileProperties;
 import com.krishnamurti.horizon.file.infrastructure.staging.StagedFile;
 import com.krishnamurti.horizon.file.infrastructure.staging.StagingCapacity;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -48,7 +50,11 @@ public class PdfFileValidator implements FileValidator {
     }
 
     @Override
-    public ValidationResult validate(StagedFile stagedFile) throws IOException {
+    public ValidationResult validate(StagedFile stagedFile, FileFormat expectedFormat)
+            throws IOException {
+        if (!supports(expectedFormat)) {
+            throw invalid("Requested format is not PDF");
+        }
         long scratchLimit = limits.getMaxParserScratchSize().toBytes();
         StagingCapacity.ScratchReservation reservation = capacity.reserveScratch(scratchLimit);
         if (reservation == null) {
@@ -81,39 +87,50 @@ public class PdfFileValidator implements FileValidator {
 
     private static void rejectActiveOrEmbeddedContent(COSBase root) {
         Set<COSBase> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-        inspect(root, visited);
-    }
-
-    private static void inspect(COSBase value, Set<COSBase> visited) {
-        if (value == null || !visited.add(value)) {
-            return;
+        Deque<COSBase> pending = new ArrayDeque<>();
+        if (root != null) {
+            pending.push(root);
         }
-        if (value instanceof COSObject reference) {
-            inspect(reference.getObject(), visited);
-        } else if (value instanceof COSArray array) {
-            for (COSBase item : array) {
-                inspect(item, visited);
+        while (!pending.isEmpty()) {
+            COSBase value = pending.pop();
+            if (!visited.add(value)) {
+                continue;
             }
-        } else if (value instanceof COSDictionary dictionary) {
-            for (Map.Entry<COSName, COSBase> entry : dictionary.entrySet()) {
-                String key = entry.getKey().getName();
-                if (key.equals("JavaScript")
-                        || key.equals("JS")
-                        || key.equals("EmbeddedFiles")
-                        || key.equals("EF")
-                        || key.equals("RichMedia")) {
-                    throw invalid("PDF active or embedded content is not accepted");
+            if (value instanceof COSObject reference) {
+                COSBase child = reference.getObject();
+                if (child != null) {
+                    pending.push(child);
                 }
-                COSBase child = dereference(entry.getValue());
-                if (child instanceof COSDictionary action) {
-                    COSBase subtype = dereference(action.getItem(COSName.S));
-                    if (COSName.JAVA_SCRIPT.equals(subtype)
-                            || (subtype instanceof COSName actionType
-                                    && actionType.getName().equals("Launch"))) {
-                        throw invalid("PDF JavaScript and launch actions are not accepted");
+            } else if (value instanceof COSArray array) {
+                for (COSBase item : array) {
+                    if (item != null) {
+                        pending.push(item);
                     }
                 }
-                inspect(entry.getValue(), visited);
+            } else if (value instanceof COSDictionary dictionary) {
+                for (Map.Entry<COSName, COSBase> entry : dictionary.entrySet()) {
+                    String key = entry.getKey().getName();
+                    if (key.equals("JavaScript")
+                            || key.equals("JS")
+                            || key.equals("EmbeddedFiles")
+                            || key.equals("EF")
+                            || key.equals("RichMedia")) {
+                        throw invalid("PDF active or embedded content is not accepted");
+                    }
+                    COSBase child = dereference(entry.getValue());
+                    if (child instanceof COSDictionary action) {
+                        COSBase subtype = dereference(action.getItem(COSName.S));
+                        if (COSName.JAVA_SCRIPT.equals(subtype)
+                                || (subtype instanceof COSName actionType
+                                        && actionType.getName().equals("Launch"))) {
+                            throw invalid("PDF JavaScript and launch actions are not accepted");
+                        }
+                    }
+                    COSBase dictionaryChild = entry.getValue();
+                    if (dictionaryChild != null) {
+                        pending.push(dictionaryChild);
+                    }
+                }
             }
         }
     }

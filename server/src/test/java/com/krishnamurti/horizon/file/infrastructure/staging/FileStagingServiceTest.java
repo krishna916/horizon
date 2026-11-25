@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.file.infrastructure.staging;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.krishnamurti.horizon.file.api.FileOperationException;
 import com.krishnamurti.horizon.file.api.model.FileDescriptor;
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
 import java.io.ByteArrayInputStream;
@@ -13,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -124,7 +126,7 @@ class FileStagingServiceTest {
                                             unread,
                                             defaultLimit + 1,
                                             zeroDescriptor(defaultLimit + 1)))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(FileOperationException.class);
             assertThat(reads).hasValue(0);
         }
 
@@ -172,9 +174,9 @@ class FileStagingServiceTest {
                     };
             FileDescriptor descriptor = descriptor(CONTENT, "sample.txt");
             assertThatThrownBy(() -> service.stage(unread, -1, descriptor))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(FileOperationException.class);
             assertThatThrownBy(() -> service.stage(unread, 0, descriptor))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(FileOperationException.class);
             assertThat(reads).hasValue(0);
         }
     }
@@ -199,7 +201,7 @@ class FileStagingServiceTest {
                                             new ByteArrayInputStream(CONTENT),
                                             CONTENT.length,
                                             descriptor))
-                    .isInstanceOf(StagingCapacityException.class);
+                    .isInstanceOf(FileOperationException.class);
             for (StagedFile file : staged) file.close();
             try (StagedFile retry =
                     service.stage(new ByteArrayInputStream(CONTENT), CONTENT.length, descriptor)) {
@@ -259,6 +261,115 @@ class FileStagingServiceTest {
             assertThat(stageFiles(directory.path())).isEmpty();
             assertThat(capacity.activeSlots()).isZero();
             assertThat(capacity.reservedBytes()).isZero();
+        }
+    }
+
+    @Test
+    void failedCloseRetainsPayloadBudgetUntilLaterCleanup() throws Exception {
+        FileProperties properties = properties(temporaryDirectory.resolve("stage"), 100, 1);
+        properties.getStaging().setMaxTotalSize(DataSize.ofBytes(CONTENT.length));
+        try (StagingDirectory directory =
+                new StagingDirectory(Path.of(properties.getStaging().getDirectory()))) {
+            StagingCapacity capacity = new StagingCapacity(properties);
+            AtomicBoolean failDeletion = new AtomicBoolean(true);
+            FileStagingService service =
+                    new FileStagingService(
+                            properties,
+                            capacity,
+                            directory,
+                            Files::newOutputStream,
+                            path -> {
+                                if (failDeletion.get()) {
+                                    throw new IOException("injected delete failure");
+                                }
+                                return Files.deleteIfExists(path);
+                            });
+            FileDescriptor descriptor = descriptor(CONTENT, "sample.txt");
+            StagedFile staged =
+                    service.stage(new ByteArrayInputStream(CONTENT), CONTENT.length, descriptor);
+            Path retainedPath = staged.path();
+
+            assertThatThrownBy(staged::close).isInstanceOf(IOException.class);
+            assertThat(Files.exists(retainedPath)).isTrue();
+            assertThat(capacity.activeSlots()).isZero();
+            assertThat(capacity.reservedBytes()).isEqualTo(CONTENT.length);
+            assertThatThrownBy(
+                            () ->
+                                    service.stage(
+                                            new ByteArrayInputStream(CONTENT),
+                                            CONTENT.length,
+                                            descriptor))
+                    .isInstanceOf(FileOperationException.class);
+
+            failDeletion.set(false);
+            try (StagedFile retry =
+                    service.stage(new ByteArrayInputStream(CONTENT), CONTENT.length, descriptor)) {
+                assertThat(retry.sizeBytes()).isEqualTo(CONTENT.length);
+            }
+            assertThat(Files.exists(retainedPath)).isFalse();
+            assertThat(capacity.reservedBytes()).isZero();
+            assertThat(capacity.activeSlots()).isZero();
+        }
+    }
+
+    @Test
+    void failedStageDeletionRetainsBytesAndReleasesOnlyAfterConfirmedRemoval() throws Exception {
+        FileProperties properties = properties(temporaryDirectory.resolve("stage"), 100, 1);
+        properties.getStaging().setMaxTotalSize(DataSize.ofBytes(CONTENT.length));
+        try (StagingDirectory directory =
+                new StagingDirectory(Path.of(properties.getStaging().getDirectory()))) {
+            StagingCapacity capacity = new StagingCapacity(properties);
+            AtomicBoolean failDeletion = new AtomicBoolean(true);
+            AtomicBoolean failWrite = new AtomicBoolean(true);
+            FileStagingService service =
+                    new FileStagingService(
+                            properties,
+                            capacity,
+                            directory,
+                            path -> {
+                                if (!failWrite.get()) {
+                                    return Files.newOutputStream(path);
+                                }
+                                return new OutputStream() {
+                                    @Override
+                                    public void write(int value) throws IOException {
+                                        throw new IOException("injected write failure");
+                                    }
+
+                                    @Override
+                                    public void write(byte[] bytes, int offset, int length)
+                                            throws IOException {
+                                        throw new IOException("injected write failure");
+                                    }
+                                };
+                            },
+                            path -> {
+                                if (failDeletion.get()) {
+                                    throw new IOException("injected delete failure");
+                                }
+                                return Files.deleteIfExists(path);
+                            });
+            FileDescriptor descriptor = descriptor(CONTENT, "sample.txt");
+
+            assertThatThrownBy(
+                            () ->
+                                    service.stage(
+                                            new ByteArrayInputStream(CONTENT),
+                                            CONTENT.length,
+                                            descriptor))
+                    .isInstanceOf(IOException.class);
+            assertThat(stageFiles(directory.path())).hasSize(1);
+            assertThat(capacity.activeSlots()).isZero();
+            assertThat(capacity.reservedBytes()).isEqualTo(CONTENT.length);
+
+            failDeletion.set(false);
+            failWrite.set(false);
+            try (StagedFile retry =
+                    service.stage(new ByteArrayInputStream(CONTENT), CONTENT.length, descriptor)) {
+                assertThat(retry.sizeBytes()).isEqualTo(CONTENT.length);
+            }
+            assertThat(capacity.reservedBytes()).isZero();
+            assertThat(capacity.activeSlots()).isZero();
         }
     }
 

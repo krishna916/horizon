@@ -8,3 +8,11 @@ spring:
     enabled: true
 server:
   port: 8081
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,fileStorage

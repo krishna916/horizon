@@ -75,4 +75,16 @@ class TextFileValidatorTest {
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
+
+    @Test
+    void longNonDoctypeDeclarationPrefixRemainsOrdinaryText() throws Exception {
+        byte[] bytes =
+                ("<!" + "x".repeat(8_192) + ">ordinary text").getBytes(StandardCharsets.UTF_8);
+        try (ValidationTestSupport.StagedFixture fixture =
+                ValidationTestSupport.stage(
+                        temporaryDirectory.resolve("long-declaration"), bytes)) {
+            assertThat(new TextFileValidator().validate(fixture.file(), FileFormat.TXT).format())
+                    .isEqualTo(FileFormat.TXT);
+        }
+    }
 }

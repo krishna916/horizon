@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krishnamurti.horizon.TestcontainersConfiguration;
+import com.krishnamurti.horizon.file.api.FileOperationException;
 import com.krishnamurti.horizon.file.api.FileService;
 import com.krishnamurti.horizon.file.api.command.ClaimFileCommand;
 import com.krishnamurti.horizon.file.api.command.CleanupFileCommand;
@@ -75,8 +76,12 @@ class FileOwnershipIntegrationTest {
         FileScope scope = scope(94L, "note-94");
         FileReference reference = verifiedFile(scope);
         assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("File content is not available");
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.CONTENT_UNAVAILABLE));
         assertThat(storage.getCount()).isZero();
 
         assertThat(owner.inTransaction(() -> files.claim(new ClaimFileCommand(reference))))
@@ -98,7 +103,12 @@ class FileOwnershipIntegrationTest {
         FileScope scope = scope(95L, "note-95");
         FileReference prepared = preparedFile(scope);
         assertThatThrownBy(() -> files.openRead(new ReadFileQuery(prepared)))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.CONTENT_UNAVAILABLE));
         assertThatThrownBy(
                         () ->
                                 files.openRead(
@@ -106,20 +116,34 @@ class FileOwnershipIntegrationTest {
                                                 new FileReference(
                                                         prepared.fileId(),
                                                         scope(95L, "wrong-owner-binding")))))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("File not found");
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason
+                                                        .NOT_FOUND_OR_FORBIDDEN));
         assertThat(storage.getCount()).isZero();
 
         FileScope verifiedScope = scope(96L, "note-96");
         FileReference verified = verifiedFile(verifiedScope);
         assertThatThrownBy(() -> files.openRead(new ReadFileQuery(verified)))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.CONTENT_UNAVAILABLE));
         jdbc.update("update file_metadata set expires_at = now() where id = ?", verified.fileId());
         assertThatThrownBy(
                         () ->
                                 owner.inTransaction(
                                         () -> files.claim(new ClaimFileCommand(verified))))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.CONFLICT));
         assertThat(storage.getCount()).isZero();
     }
 
@@ -224,7 +248,12 @@ class FileOwnershipIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from test_file_association", Long.class))
                 .isZero();
         assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.CONTENT_UNAVAILABLE));
         assertThat(storage.getCount()).isZero();
     }
 
@@ -250,8 +279,12 @@ class FileOwnershipIntegrationTest {
         assertThat(cleanupTimestamp(reference.fileId())).isEqualTo(first);
         assertThat(storage.head(storageKey(reference.fileId())).found()).isTrue();
         assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("File content is not available");
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.CONTENT_UNAVAILABLE));
         assertThat(storage.getCount()).isEqualTo(1);
 
         assertThat(content.stream().readAllBytes()).containsExactly(VALID_WEBP);

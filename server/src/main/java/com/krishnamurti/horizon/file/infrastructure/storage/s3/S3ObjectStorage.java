@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.file.infrastructure.storage.s3;
 import com.krishnamurti.horizon.file.application.port.DeleteResult;
 import com.krishnamurti.horizon.file.application.port.ObjectKey;
 import com.krishnamurti.horizon.file.application.port.ObjectMetadata;
+import com.krishnamurti.horizon.file.application.port.ObjectNotFoundException;
 import com.krishnamurti.horizon.file.application.port.ObjectStorage;
 import com.krishnamurti.horizon.file.application.port.ObjectStorageException;
 import com.krishnamurti.horizon.file.application.port.ObjectWriteRequest;
@@ -98,8 +99,10 @@ public final class S3ObjectStorage implements ObjectStorage, AutoCloseable {
             return new StoredObject(
                     response,
                     response.response().contentLength(),
-                    contentType(response.response().contentType()));
+                    contentType(response.response().contentType()),
+                    response::abort);
         } catch (S3Exception e) {
+            if (isMissingKey(e)) throw new ObjectNotFoundException("S3 object is missing", e);
             throw new ObjectStorageException("S3 GET failed", e);
         } catch (RuntimeException e) {
             throw new ObjectStorageException("S3 GET failed", e);

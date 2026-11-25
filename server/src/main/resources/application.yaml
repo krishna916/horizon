@@ -19,6 +19,14 @@ spring:
       initialize-schema: never
 server:
   port: 8081
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,fileStorage
 horizon:
   file:
     max-file-size: ${HORIZON_FILE_MAX_FILE_SIZE:20971519B}

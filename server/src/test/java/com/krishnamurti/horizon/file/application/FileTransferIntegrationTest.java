@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krishnamurti.horizon.TestcontainersConfiguration;
+import com.krishnamurti.horizon.file.api.FileOperationException;
 import com.krishnamurti.horizon.file.api.FileService;
 import com.krishnamurti.horizon.file.api.command.ClaimFileCommand;
 import com.krishnamurti.horizon.file.api.command.CleanupFileCommand;
@@ -13,6 +14,7 @@ import com.krishnamurti.horizon.file.api.model.FileReference;
 import com.krishnamurti.horizon.file.api.model.FileScope;
 import com.krishnamurti.horizon.file.api.model.TransferDisposition;
 import com.krishnamurti.horizon.file.api.query.ReadFileQuery;
+import com.krishnamurti.horizon.file.application.port.StoredObject;
 import com.krishnamurti.horizon.file.application.port.WriteResult;
 import com.krishnamurti.horizon.file.domain.FileTransferAttemptEntity;
 import com.krishnamurti.horizon.file.domain.TransferOutcome;
@@ -25,6 +27,7 @@ import java.security.MessageDigest;
 import java.sql.Timestamp;
 import java.util.HexFormat;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -93,7 +96,11 @@ class FileTransferIntegrationTest {
         byte[] invalid = "not a webp".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         var malformed = prepare(scope(82L, "note-a"), invalid, "chart.webp");
         assertThatThrownBy(() -> transfer(malformed.fileId(), scope(82L, "note-a"), invalid))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.INVALID_CONTENT));
         assertThat(storage.putCount()).isZero();
         assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(malformed.fileId())).isEmpty();
 
@@ -101,7 +108,12 @@ class FileTransferIntegrationTest {
         properties.setMaxFileSize(
                 org.springframework.util.unit.DataSize.ofBytes(VALID_WEBP.length - 1L));
         assertThatThrownBy(() -> transfer(oversized.fileId(), scope(83L, "note-a"), VALID_WEBP))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.SIZE_LIMIT_EXCEEDED));
         assertThat(storage.putCount()).isZero();
         assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(oversized.fileId())).isEmpty();
     }
@@ -131,6 +143,111 @@ class FileTransferIntegrationTest {
                             assertThat(attempt.getWriteSettledAt()).isNotNull();
                             assertThat(attempt.getCleanupRequestedAt()).isNotNull();
                         });
+    }
+
+    @Test
+    void slowProgressVerificationIsAbortedAtOverallOperationDeadline() {
+        var prepared = prepare(scope(89L, "slow-read"), VALID_WEBP, "chart.webp");
+        properties.getStorage().getS3().setOperationTimeout(java.time.Duration.ofMillis(100));
+        AtomicBoolean aborted = new AtomicBoolean();
+        AtomicInteger abortCount = new AtomicInteger();
+        storage.nextGetObject(
+                () ->
+                        new StoredObject(
+                                new InputStream() {
+                                    private int offset;
+
+                                    @Override
+                                    public int read() throws IOException {
+                                        byte[] one = new byte[1];
+                                        int read = read(one, 0, 1);
+                                        return read < 0 ? -1 : Byte.toUnsignedInt(one[0]);
+                                    }
+
+                                    @Override
+                                    public int read(byte[] bytes, int start, int length)
+                                            throws IOException {
+                                        if (aborted.get()) {
+                                            throw new IOException("stream aborted");
+                                        }
+                                        try {
+                                            Thread.sleep(15);
+                                        } catch (InterruptedException exception) {
+                                            Thread.currentThread().interrupt();
+                                            throw new IOException("read interrupted", exception);
+                                        }
+                                        if (aborted.get()) {
+                                            throw new IOException("stream aborted");
+                                        }
+                                        if (offset == VALID_WEBP.length) return -1;
+                                        bytes[start] = VALID_WEBP[offset++];
+                                        return 1;
+                                    }
+                                },
+                                VALID_WEBP.length,
+                                "image/webp",
+                                () -> {
+                                    abortCount.incrementAndGet();
+                                    aborted.set(true);
+                                }));
+
+        var result = transfer(prepared.fileId(), scope(89L, "slow-read"), VALID_WEBP);
+
+        assertThat(result.disposition()).isEqualTo(TransferDisposition.RETRYABLE_FAILURE);
+        assertThat(abortCount).hasValue(1);
+        assertThat(result.file().metadata().validatedFormat()).isNull();
+        assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()))
+                .singleElement()
+                .satisfies(
+                        attempt -> {
+                            assertThat(attempt.getOutcome()).isEqualTo(TransferOutcome.FAILED);
+                            assertThat(attempt.getWriteSettledAt()).isNotNull();
+                        });
+    }
+
+    @Test
+    void verifiedReplayChecksDeclaredLengthWithoutConsumingContentAfterLimitReduction() {
+        var prepared = prepare(scope(89L, "replay"), VALID_WEBP, "chart.webp");
+        assertThat(transfer(prepared.fileId(), scope(89L, "replay"), VALID_WEBP).disposition())
+                .isEqualTo(TransferDisposition.VERIFIED);
+        properties.setMaxFileSize(
+                org.springframework.util.unit.DataSize.ofBytes(VALID_WEBP.length - 1L));
+        AtomicInteger replayReads = new AtomicInteger();
+        InputStream replayContent =
+                new InputStream() {
+                    @Override
+                    public int read() {
+                        replayReads.incrementAndGet();
+                        return -1;
+                    }
+
+                    @Override
+                    public int read(byte[] bytes, int offset, int length) {
+                        replayReads.incrementAndGet();
+                        return -1;
+                    }
+                };
+        FileReference reference = new FileReference(prepared.fileId(), scope(89L, "replay"));
+
+        var replay =
+                files.transfer(
+                        new TransferFileCommand(reference, VALID_WEBP.length, replayContent));
+        assertThat(replay.disposition()).isEqualTo(TransferDisposition.ALREADY_VERIFIED);
+        assertThat(replayReads).hasValue(0);
+        assertThat(storage.putCount()).isEqualTo(1);
+
+        assertThatThrownBy(
+                        () ->
+                                files.transfer(
+                                        new TransferFileCommand(
+                                                reference, VALID_WEBP.length - 1L, replayContent)))
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.INVALID_METADATA));
+        assertThat(replayReads).hasValue(0);
+        assertThat(storage.putCount()).isEqualTo(1);
     }
 
     @Test
@@ -203,7 +320,12 @@ class FileTransferIntegrationTest {
         properties.setMaxFileSize(
                 org.springframework.util.unit.DataSize.ofBytes(VALID_WEBP.length - 1L));
         assertThatThrownBy(() -> transfer(limited.fileId(), scope(88L, "note-a"), VALID_WEBP))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.SIZE_LIMIT_EXCEEDED));
         assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(limited.fileId())).isEmpty();
         properties.setMaxFileSize(org.springframework.util.unit.DataSize.ofBytes(20_971_519L));
 
@@ -235,7 +357,11 @@ class FileTransferIntegrationTest {
                                                         expired.fileId(), scope(89L, "note-a")),
                                                 VALID_WEBP.length,
                                                 unread)))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.CONFLICT));
         assertThat(reads).hasValue(0);
         assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(expired.fileId())).isEmpty();
         assertThat(storage.putCount()).isZero();
@@ -251,9 +377,18 @@ class FileTransferIntegrationTest {
                         () ->
                                 owner.inTransaction(
                                         () -> files.claim(new ClaimFileCommand(reference))))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.CONFLICT));
         assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.CONTENT_UNAVAILABLE));
         assertThat(storage.getCount()).isZero();
 
         assertThat(transfer(prepared.fileId(), scope, VALID_WEBP).disposition())
@@ -354,8 +489,12 @@ class FileTransferIntegrationTest {
         assertThat(attempts.findById(selected.getId()).orElseThrow().getCleanupRequestedAt())
                 .isNotNull();
         assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("File content is not available");
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.CONTENT_UNAVAILABLE));
         assertThat(storage.getCount()).isZero();
         assertThat(
                         storage.head(
@@ -379,7 +518,11 @@ class FileTransferIntegrationTest {
                         () ->
                                 owner.inTransaction(
                                         () -> files.claim(new ClaimFileCommand(reference))))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.CONFLICT));
         assertThatThrownBy(
                         () ->
                                 files.openRead(
@@ -387,8 +530,13 @@ class FileTransferIntegrationTest {
                                                 new FileReference(
                                                         prepared.fileId(),
                                                         scope(93L, "different-note")))))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("File not found");
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason
+                                                        .NOT_FOUND_OR_FORBIDDEN));
         assertThat(storage.getCount()).isZero();
     }
 

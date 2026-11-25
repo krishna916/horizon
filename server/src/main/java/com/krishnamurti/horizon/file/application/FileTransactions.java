@@ -1,5 +1,6 @@
 package com.krishnamurti.horizon.file.application;
 
+import com.krishnamurti.horizon.file.api.FileOperationException;
 import com.krishnamurti.horizon.file.api.model.ClaimResult;
 import com.krishnamurti.horizon.file.api.model.FileFormat;
 import com.krishnamurti.horizon.file.api.model.FileLifecycle;
@@ -89,7 +90,10 @@ public class FileTransactions {
         boolean selected = false;
         if (result.verified()) {
             FileLifecycle lifecycle = lifecycle(file, now);
-            if (file.getSelectedAttemptId() == null
+            boolean cleanupRequested =
+                    file.getCleanupRequestedAt() != null || file.getPurgedAt() != null;
+            if (!cleanupRequested
+                    && file.getSelectedAttemptId() == null
                     && (lifecycle == FileLifecycle.PREPARED
                             || lifecycle == FileLifecycle.VERIFIED)) {
                 file.setSelectedAttemptId(attemptId);
@@ -116,7 +120,8 @@ public class FileTransactions {
         FileLifecycle lifecycle = lifecycle(file, now);
         if (lifecycle == FileLifecycle.CLAIMED) return ClaimResult.ALREADY_CLAIMED;
         if (lifecycle != FileLifecycle.VERIFIED || file.getSelectedAttemptId() == null) {
-            throw new IllegalStateException("File is not eligible to be claimed");
+            throw failure(
+                    FileOperationException.Reason.CONFLICT, "File is not eligible to be claimed");
         }
         FileTransferAttemptEntity selected =
                 attempts.lockByFileIdAndId(file.getId(), file.getSelectedAttemptId())
@@ -125,7 +130,8 @@ public class FileTransactions {
                 || selected.getObjectKey() == null
                 || !Objects.equals(selected.getVerifiedSizeBytes(), file.getExpectedSizeBytes())
                 || !Objects.equals(selected.getVerifiedSha256(), file.getExpectedSha256())) {
-            throw new IllegalStateException("File is not eligible to be claimed");
+            throw failure(
+                    FileOperationException.Reason.CONFLICT, "File is not eligible to be claimed");
         }
         file.setClaimedAt(now);
         file.setUpdatedAt(now);
@@ -140,7 +146,9 @@ public class FileTransactions {
         if (lifecycle(file, now) != FileLifecycle.CLAIMED
                 || file.getClaimedAt() == null
                 || file.getSelectedAttemptId() == null) {
-            throw new IllegalStateException("File content is not available");
+            throw failure(
+                    FileOperationException.Reason.CONTENT_UNAVAILABLE,
+                    "File content is not available");
         }
         FileTransferAttemptEntity selected =
                 attempts.findByFileIdAndId(file.getId(), file.getSelectedAttemptId())
@@ -149,7 +157,9 @@ public class FileTransactions {
                 || selected.getObjectKey() == null
                 || !Objects.equals(selected.getVerifiedSizeBytes(), file.getExpectedSizeBytes())
                 || !Objects.equals(selected.getVerifiedSha256(), file.getExpectedSha256())) {
-            throw new IllegalStateException("File content is not available");
+            throw failure(
+                    FileOperationException.Reason.CONTENT_UNAVAILABLE,
+                    "File content is not available");
         }
         FileMetadata metadata =
                 new FileMetadata(
@@ -204,7 +214,7 @@ public class FileTransactions {
 
     private static void requirePrepared(FileMetadataEntity file, FileLifecycle lifecycle) {
         if (lifecycle != FileLifecycle.PREPARED || file.getExpectedSizeBytes() == null) {
-            throw new IllegalStateException("File transfer is not eligible");
+            throw failure(FileOperationException.Reason.CONFLICT, "File transfer is not eligible");
         }
     }
 
@@ -239,8 +249,14 @@ public class FileTransactions {
                 file.getCleanupRequestedAt());
     }
 
-    private static IllegalArgumentException notFound() {
-        return new IllegalArgumentException("File not found");
+    private static FileOperationException notFound() {
+        return failure(
+                FileOperationException.Reason.NOT_FOUND_OR_FORBIDDEN, "File is not available");
+    }
+
+    private static FileOperationException failure(
+            FileOperationException.Reason reason, String message) {
+        return new FileOperationException(reason, message);
     }
 
     public record Registration(

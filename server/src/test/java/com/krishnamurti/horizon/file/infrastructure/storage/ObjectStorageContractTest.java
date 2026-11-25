@@ -54,6 +54,31 @@ class ObjectStorageContractTest {
     }
 
     @Test
+    void abortingStoredObjectDoesNotRunNormalCloseAgain() {
+        AtomicInteger closes = new AtomicInteger();
+        AtomicInteger aborts = new AtomicInteger();
+        StoredObject stored =
+                new StoredObject(
+                        new ByteArrayInputStream(new byte[] {1}) {
+                            @Override
+                            public void close() throws IOException {
+                                closes.incrementAndGet();
+                                super.close();
+                            }
+                        },
+                        1,
+                        "application/octet-stream",
+                        aborts::incrementAndGet);
+
+        stored.abort();
+        stored.abort();
+
+        assertThat(aborts).hasValue(1);
+        assertThat(closes).hasValue(0);
+        assertThatThrownBy(stored::content).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void awsSdkTypesAreConfinedToTheS3InfrastructureAdapter() throws IOException {
         Path fileRoot = Path.of("src/main/java/com/krishnamurti/horizon/file");
         try (var paths = Files.walk(fileRoot)) {

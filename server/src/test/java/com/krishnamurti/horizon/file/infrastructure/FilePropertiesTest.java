@@ -5,7 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Binder;
-import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.util.unit.DataSize;
 
 class FilePropertiesTest {
@@ -26,10 +27,13 @@ class FilePropertiesTest {
 
     @Test
     void supportsEnvironmentStyleOverrideAndInclusiveCeiling() {
-        MapConfigurationPropertySource source = new MapConfigurationPropertySource();
-        source.put("horizon.file.max-file-size", DataSize.ofMegabytes(50));
+        SystemEnvironmentPropertySource source =
+                new SystemEnvironmentPropertySource(
+                        "test-environment", java.util.Map.of("HORIZON_FILE_MAX_FILE_SIZE", "50MB"));
         FileProperties overridden =
-                new Binder(source).bind("horizon.file", FileProperties.class).get();
+                new Binder(ConfigurationPropertySources.from(source))
+                        .bind("horizon.file", FileProperties.class)
+                        .get();
         assertThat(overridden.getMaxFileSizeBytes()).isEqualTo(52_428_800L);
 
         FileProperties ceiling = new FileProperties();

@@ -194,6 +194,104 @@ class FilePersistenceIntegrationTest {
     }
 
     @Test
+    void verifiedAttemptRequiresNonNullMatchingVerificationFacts() {
+        OffsetDateTime now = now();
+        for (String assignment :
+                new String[] {
+                    "verified_size_bytes=NULL",
+                    "verified_sha256=NULL",
+                    "verified_size_bytes=NULL, verified_sha256=NULL",
+                    "verified_size_bytes=2",
+                    "verified_sha256='b" + "b".repeat(63) + "'"
+                }) {
+            UUID file = UUID.randomUUID();
+            insertFile(file, newUser(), UUID.randomUUID(), "a.txt", 1);
+            UUID attempt = UUID.randomUUID();
+            insertAttempt(attempt, file, "users/1/notes/" + attempt, now);
+            jdbc.update(
+                    "UPDATE file_transfer_attempt SET outcome='VERIFIED', verified_size_bytes=1,"
+                            + " verified_sha256=?, verified_at=?, write_settled_at=?, updated_at=?"
+                            + " WHERE id=?",
+                    DIGEST,
+                    now,
+                    now,
+                    now,
+                    attempt);
+
+            assertThatThrownBy(
+                            () ->
+                                    jdbc.update(
+                                            "UPDATE file_transfer_attempt SET "
+                                                    + assignment
+                                                    + " WHERE id=?",
+                                            attempt))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+    }
+
+    @Test
+    void claimedVerifiedAttemptCanBePurgedOnlyAsSettledHistoryTombstone() {
+        UUID file = UUID.randomUUID();
+        long user = newUser();
+        UUID attempt = UUID.randomUUID();
+        insertFile(file, user, UUID.randomUUID(), "a.txt", 1);
+        OffsetDateTime now = now().plusSeconds(2);
+        insertAttempt(attempt, file, "users/1/notes/" + attempt, now);
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET outcome='VERIFIED', verified_size_bytes=1,"
+                        + " verified_sha256=?, verified_at=?, write_settled_at=?, updated_at=?"
+                        + " WHERE id=?",
+                DIGEST,
+                now,
+                now,
+                now,
+                attempt);
+        jdbc.update(
+                "UPDATE file_metadata SET selected_attempt_id=?, validated_format='TEXT',"
+                        + " claimed_at=?, updated_at=? WHERE id=?",
+                attempt,
+                now,
+                now,
+                file);
+
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET cleanup_requested_at=?,"
+                        + " cleanup_confirmed_at=?, object_key=NULL, expected_size_bytes=NULL,"
+                        + " expected_sha256=NULL, verified_size_bytes=NULL, verified_sha256=NULL,"
+                        + " updated_at=? WHERE id=?",
+                now,
+                now,
+                now,
+                attempt);
+        jdbc.update(
+                "UPDATE file_metadata SET original_filename=NULL, declared_content_type=NULL,"
+                        + " validated_format=NULL, expected_size_bytes=NULL, expected_sha256=NULL,"
+                        + " selected_attempt_id=NULL, purged_at=?, updated_at=? WHERE id=?",
+                now,
+                now,
+                file);
+
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT claimed_at IS NOT NULL AND purged_at IS NOT NULL"
+                                        + " FROM file_metadata WHERE id=?",
+                                Boolean.class,
+                                file))
+                .isTrue();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT outcome='VERIFIED' AND object_key IS NULL"
+                                        + " AND expected_size_bytes IS NULL"
+                                        + " AND verified_size_bytes IS NULL"
+                                        + " FROM file_transfer_attempt WHERE id=?",
+                                Boolean.class,
+                                attempt))
+                .isTrue();
+        assertThatThrownBy(() -> insertAttempt(attempt, file, "users/1/notes/reused", now))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     void userDeletionDoesNotCascade() {
         long user = newUser();
         insertFile(UUID.randomUUID(), user, UUID.randomUUID(), "a.txt", 1);

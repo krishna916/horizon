@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krishnamurti.horizon.TestcontainersConfiguration;
+import com.krishnamurti.horizon.file.api.FileOperationException;
 import com.krishnamurti.horizon.file.api.FileService;
 import com.krishnamurti.horizon.file.api.command.PrepareFileCommand;
 import com.krishnamurti.horizon.file.api.model.FileDescriptor;
@@ -63,14 +64,23 @@ class FilePrepareIntegrationTest {
         owner.prepare(command(key, scope(71L, "note-a"), "chart.webp"));
 
         assertThatThrownBy(() -> owner.prepare(command(key, scope(72L, "note-a"), "chart.webp")))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Conflicting file reservation");
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.CONFLICT));
         assertThatThrownBy(() -> owner.prepare(command(key, scope(71L, "note-b"), "chart.webp")))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Conflicting file reservation");
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.CONFLICT));
         assertThatThrownBy(() -> owner.prepare(command(key, scope(71L, "note-a"), "other.webp")))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Conflicting file reservation");
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.CONFLICT));
     }
 
     @Test
@@ -135,7 +145,13 @@ class FilePrepareIntegrationTest {
                                                 new com.krishnamurti.horizon.file.api.model
                                                         .FileReference(
                                                         prepared.fileId(), scope(76L, "note-b")))))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason
+                                                        .NOT_FOUND_OR_FORBIDDEN));
         assertThat(storage.putCount()).isZero();
     }
 
@@ -171,7 +187,12 @@ class FilePrepareIntegrationTest {
                                                 UUID.randomUUID(),
                                                 scope(78L, "note-a"),
                                                 "chart.webp")))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.SIZE_LIMIT_EXCEEDED));
     }
 
     private com.krishnamurti.horizon.file.api.model.FileSnapshot prepareAfterGate(

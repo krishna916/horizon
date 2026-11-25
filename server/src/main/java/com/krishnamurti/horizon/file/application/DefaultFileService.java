@@ -1,5 +1,6 @@
 package com.krishnamurti.horizon.file.application;
 
+import com.krishnamurti.horizon.file.api.FileOperationException;
 import com.krishnamurti.horizon.file.api.FileService;
 import com.krishnamurti.horizon.file.api.command.ClaimFileCommand;
 import com.krishnamurti.horizon.file.api.command.CleanupFileCommand;
@@ -15,6 +16,7 @@ import com.krishnamurti.horizon.file.api.model.TransferDisposition;
 import com.krishnamurti.horizon.file.api.model.TransferResult;
 import com.krishnamurti.horizon.file.api.query.InspectFileQuery;
 import com.krishnamurti.horizon.file.api.query.ReadFileQuery;
+import com.krishnamurti.horizon.file.application.port.ObjectNotFoundException;
 import com.krishnamurti.horizon.file.application.port.ObjectStorage;
 import com.krishnamurti.horizon.file.application.port.ObjectWriteRequest;
 import com.krishnamurti.horizon.file.application.port.StoredObject;
@@ -40,6 +42,11 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +57,12 @@ import org.springframework.transaction.annotation.Transactional;
         value = "EI_EXPOSE_REP2",
         justification = "Dependencies are private, final Spring-managed collaborators.")
 public class DefaultFileService implements FileService {
+    private static final ScheduledExecutorService VERIFICATION_DEADLINES =
+            Executors.newSingleThreadScheduledExecutor(
+                    Thread.ofPlatform()
+                            .daemon()
+                            .name("horizon-file-verification-deadline")
+                            .factory());
     private static final short FINGERPRINT_VERSION = 1;
     private final FileMetadataPersistence metadataPersistence;
     private final FileMetadataRepository metadataRepository;
@@ -89,7 +102,9 @@ public class DefaultFileService implements FileService {
             return requireSameRequest(existing.get(), command, fingerprint);
         }
         if (command.descriptor().expectedSize() > properties.getMaxFileSizeBytes()) {
-            throw new IllegalArgumentException("File exceeds the effective upload limit");
+            throw failure(
+                    FileOperationException.Reason.SIZE_LIMIT_EXCEEDED,
+                    "File exceeds the effective upload limit");
         }
 
         Instant createdAt = Instant.now();
@@ -128,15 +143,23 @@ public class DefaultFileService implements FileService {
         Instant now = Instant.now();
         FileLifecycle lifecycle = lifecycle(file, now);
         if (lifecycle == FileLifecycle.VERIFIED && file.getSelectedAttemptId() != null) {
+            if (command.contentLength() <= 0
+                    || !Objects.equals(command.contentLength(), file.getExpectedSizeBytes())) {
+                throw failure(
+                        FileOperationException.Reason.INVALID_METADATA,
+                        "File content length does not match the verified file");
+            }
             return new TransferResult(
                     TransferDisposition.ALREADY_VERIFIED, FileTransactions.snapshot(file, now));
         }
         if (lifecycle != FileLifecycle.PREPARED) {
-            throw new IllegalStateException("File transfer is not eligible");
+            throw failure(FileOperationException.Reason.CONFLICT, "File transfer is not eligible");
         }
         if (file.getExpectedSizeBytes() == null
                 || file.getExpectedSizeBytes() > properties.getMaxFileSizeBytes()) {
-            throw new IllegalArgumentException("File exceeds the effective upload limit");
+            throw failure(
+                    FileOperationException.Reason.SIZE_LIMIT_EXCEEDED,
+                    "File exceeds the effective upload limit");
         }
         FileDescriptor descriptor = descriptor(file);
 
@@ -217,9 +240,13 @@ public class DefaultFileService implements FileService {
                             : TransferDisposition.RETRYABLE_FAILURE,
                     completion.snapshot());
         } catch (IllegalArgumentException e) {
-            throw e;
+            throw failure(
+                    FileOperationException.Reason.INVALID_CONTENT, "File content is invalid", e);
         } catch (IOException e) {
-            throw new IllegalArgumentException("File content could not be staged or validated", e);
+            throw failure(
+                    FileOperationException.Reason.STORAGE_UNAVAILABLE,
+                    "File content could not be staged or validated",
+                    e);
         }
     }
 
@@ -245,14 +272,25 @@ public class DefaultFileService implements FileService {
         StoredObject stored;
         try {
             stored = storage.get(snapshot.key());
+        } catch (ObjectNotFoundException e) {
+            metrics.storageError("get");
+            throw failure(
+                    FileOperationException.Reason.CONTENT_UNAVAILABLE,
+                    "File content is unavailable",
+                    e);
         } catch (RuntimeException e) {
             metrics.storageError("get");
-            throw new IllegalStateException("File content is unavailable");
+            throw failure(
+                    FileOperationException.Reason.STORAGE_UNAVAILABLE,
+                    "File content is unavailable",
+                    e);
         }
         if (stored.contentLength() != snapshot.verifiedSizeBytes()) {
             metrics.storageError("get");
             closeQuietly(stored);
-            throw new IllegalStateException("File content is unavailable");
+            throw failure(
+                    FileOperationException.Reason.CONTENT_UNAVAILABLE,
+                    "File content is unavailable");
         }
         InputStream stream =
                 new FilterInputStream(stored.content()) {
@@ -291,7 +329,7 @@ public class DefaultFileService implements FileService {
                 || !existing.getUserId().equals(command.scope().userId())
                 || !existing.getWorkspace().equals(command.scope().workspace())
                 || !existing.getBindingFingerprint().equals(command.scope().bindingFingerprint())) {
-            throw new IllegalStateException("Conflicting file reservation");
+            throw failure(FileOperationException.Reason.CONFLICT, "Conflicting file reservation");
         }
         return FileTransactions.snapshot(existing, Instant.now());
     }
@@ -323,28 +361,47 @@ public class DefaultFileService implements FileService {
         long total = 0;
         byte[] buffer = new byte[properties.getStaging().getCopyBufferSize()];
         try (StoredObject remote = storage.get(key)) {
-            if (remote.contentLength() != expectedSize) {
-                throw new IOException("Remote object length does not match the staged file");
-            }
-            InputStream content = remote.content();
-            while (total < expectedSize) {
-                int requested = (int) Math.min(buffer.length, expectedSize - total);
-                int read = content.read(buffer, 0, requested);
-                if (read < 0)
-                    throw new IOException("Remote object ended before the expected length");
-                if (read == 0) {
-                    int oneByte = content.read();
-                    if (oneByte < 0)
-                        throw new IOException("Remote object ended before the expected length");
-                    digest.update((byte) oneByte);
-                    total++;
-                    continue;
+            AtomicBoolean deadlineExceeded = new AtomicBoolean();
+            long timeoutNanos = properties.getStorage().getS3().getOperationTimeout().toNanos();
+            long deadlineNanos = System.nanoTime() + timeoutNanos;
+            ScheduledFuture<?> abortTask =
+                    VERIFICATION_DEADLINES.schedule(
+                            () -> {
+                                deadlineExceeded.set(true);
+                                remote.abort();
+                            },
+                            timeoutNanos,
+                            TimeUnit.NANOSECONDS);
+            try {
+                if (remote.contentLength() != expectedSize) {
+                    throw new IOException("Remote object length does not match the staged file");
                 }
-                digest.update(buffer, 0, read);
-                total = Math.addExact(total, read);
+                InputStream content = remote.content();
+                while (total < expectedSize) {
+                    int requested = (int) Math.min(buffer.length, expectedSize - total);
+                    int read = content.read(buffer, 0, requested);
+                    if (read < 0)
+                        throw new IOException("Remote object ended before the expected length");
+                    if (read == 0) {
+                        int oneByte = content.read();
+                        if (oneByte < 0)
+                            throw new IOException("Remote object ended before the expected length");
+                        digest.update((byte) oneByte);
+                        total++;
+                        continue;
+                    }
+                    digest.update(buffer, 0, read);
+                    total = Math.addExact(total, read);
+                }
+                if (content.read() >= 0)
+                    throw new IOException("Remote object exceeds the expected length");
+                if (deadlineExceeded.get() || System.nanoTime() - deadlineNanos >= 0) {
+                    throw new IOException(
+                            "Remote object verification exceeded its operation deadline");
+                }
+            } finally {
+                abortTask.cancel(false);
             }
-            if (content.read() >= 0)
-                throw new IOException("Remote object exceeds the expected length");
         }
         String actualSha256 = HexFormat.of().formatHex(digest.digest());
         if (!MessageDigest.isEqual(
@@ -361,6 +418,16 @@ public class DefaultFileService implements FileService {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is unavailable", e);
         }
+    }
+
+    private static FileOperationException failure(
+            FileOperationException.Reason reason, String message) {
+        return new FileOperationException(reason, message);
+    }
+
+    private static FileOperationException failure(
+            FileOperationException.Reason reason, String message, Throwable cause) {
+        return new FileOperationException(reason, message, cause);
     }
 
     private record Verification(long sizeBytes, String sha256) {}

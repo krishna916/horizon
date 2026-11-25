@@ -27,7 +27,11 @@ CREATE TABLE file_metadata (
     CONSTRAINT ck_file_metadata_expected_sha256 CHECK (expected_sha256 IS NULL OR expected_sha256 ~ '^[0-9a-f]{64}$'),
     CONSTRAINT ck_file_metadata_expected_size CHECK (expected_size_bytes IS NULL OR expected_size_bytes BETWEEN 1 AND 104857600),
     CONSTRAINT ck_file_metadata_lifetime CHECK (expires_at > created_at AND updated_at >= created_at),
-    CONSTRAINT ck_file_metadata_claimed_at CHECK (claimed_at IS NULL OR (claimed_at >= created_at AND selected_attempt_id IS NOT NULL AND validated_format IS NOT NULL)),
+    CONSTRAINT ck_file_metadata_claimed_at CHECK (
+        claimed_at IS NULL
+        OR (claimed_at >= created_at
+            AND (purged_at IS NOT NULL OR (selected_attempt_id IS NOT NULL AND validated_format IS NOT NULL)))
+    ),
     CONSTRAINT ck_file_metadata_cleanup_at CHECK (cleanup_requested_at IS NULL OR cleanup_requested_at >= created_at),
     CONSTRAINT ck_file_metadata_purged_at CHECK (purged_at IS NULL OR (purged_at >= created_at AND original_filename IS NULL AND declared_content_type IS NULL AND validated_format IS NULL AND expected_size_bytes IS NULL AND expected_sha256 IS NULL AND selected_attempt_id IS NULL)),
     CONSTRAINT ck_file_metadata_active_descriptor CHECK (purged_at IS NOT NULL OR (original_filename IS NOT NULL AND declared_content_type IS NOT NULL AND expected_size_bytes IS NOT NULL AND expected_sha256 IS NOT NULL))
@@ -70,9 +74,15 @@ CREATE TABLE file_transfer_attempt (
     ),
     CONSTRAINT ck_file_transfer_attempt_verified CHECK (
         outcome <> 'VERIFIED'
-        OR (expected_size_bytes IS NOT NULL AND expected_sha256 IS NOT NULL
-            AND verified_size_bytes = expected_size_bytes AND verified_sha256 = expected_sha256
-            AND verified_at IS NOT NULL AND write_settled_at IS NOT NULL)
+        OR (
+            (expected_size_bytes IS NOT NULL AND expected_sha256 IS NOT NULL
+                AND verified_size_bytes IS NOT NULL AND verified_sha256 IS NOT NULL
+                AND verified_size_bytes = expected_size_bytes AND verified_sha256 = expected_sha256
+                AND verified_at IS NOT NULL AND write_settled_at IS NOT NULL)
+            OR (write_settled_at IS NOT NULL AND cleanup_confirmed_at IS NOT NULL
+                AND object_key IS NULL AND expected_size_bytes IS NULL AND expected_sha256 IS NULL
+                AND verified_size_bytes IS NULL AND verified_sha256 IS NULL)
+        )
     ),
     CONSTRAINT ck_file_transfer_attempt_failed_settled CHECK (outcome <> 'FAILED' OR write_settled_at IS NOT NULL),
     CONSTRAINT ck_file_transfer_attempt_locator_retained CHECK (

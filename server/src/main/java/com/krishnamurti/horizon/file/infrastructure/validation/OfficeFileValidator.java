@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import javax.xml.namespace.QName;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
@@ -34,6 +35,8 @@ public class OfficeFileValidator implements FileValidator {
     private static final long POI_DEFAULT_GRACE_SIZE = 100L * 1024;
     private static final String OFFICE_DOCUMENT_RELATIONSHIP =
             "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+    private static final String PACKAGE_RELATIONSHIPS_NAMESPACE =
+            "http://schemas.openxmlformats.org/package/2006/relationships";
     private final FileProperties.Validation limits;
 
     static {
@@ -62,13 +65,17 @@ public class OfficeFileValidator implements FileValidator {
     }
 
     @Override
-    public ValidationResult validate(StagedFile stagedFile) throws IOException {
+    public ValidationResult validate(StagedFile stagedFile, FileFormat expectedFormat)
+            throws IOException {
+        if (!supports(expectedFormat)) {
+            throw invalid("Requested format is not a supported Office format");
+        }
         try {
             preflightZip(stagedFile);
             try (OPCPackage officePackage =
                     OPCPackage.open(stagedFile.path().toFile(), PackageAccess.READ)) {
                 FileFormat format = validateRootPart(officePackage);
-                if (!supports(format)) {
+                if (format != expectedFormat) {
                     throw invalid("Office package type is not supported");
                 }
                 scanPackageParts(officePackage);
@@ -212,22 +219,24 @@ public class OfficeFileValidator implements FileValidator {
         PackagePart mainPart = officePackage.getPart(officeRelationship);
         String name = mainPart.getPartName().getName();
         String type = mainPart.getContentType();
+        FileFormat format;
         if (name.equals("/word/document.xml")
                 && type.equals(
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml")) {
-            return FileFormat.DOCX;
-        }
-        if (name.equals("/xl/workbook.xml")
+            format = FileFormat.DOCX;
+        } else if (name.equals("/xl/workbook.xml")
                 && type.equals(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml")) {
-            return FileFormat.XLSX;
-        }
-        if (name.equals("/ppt/presentation.xml")
+            format = FileFormat.XLSX;
+        } else if (name.equals("/ppt/presentation.xml")
                 && type.equals(
                         "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml")) {
-            return FileFormat.PPTX;
+            format = FileFormat.PPTX;
+        } else {
+            throw invalid("Office package root content type does not match DOCX, XLSX or PPTX");
         }
-        throw invalid("Office package root content type does not match DOCX, XLSX or PPTX");
+        validateMainXml(mainPart, format);
+        return format;
     }
 
     private void scanPackageParts(OPCPackage officePackage) throws Exception {
@@ -246,11 +255,61 @@ public class OfficeFileValidator implements FileValidator {
                     || contentType.contains("oleobject")) {
                 throw invalid("Office macros and executable embedded objects are not accepted");
             }
+            if (name.contains("/embeddings/") && hasExecutableSignature(part)) {
+                throw invalid("Office embedded executable content is not accepted");
+            }
             if (contentType.endsWith("+xml") || contentType.equals("application/xml")) {
                 try (InputStream input = part.getInputStream()) {
                     scanXml(secureXmlFactory(), input);
                 }
             }
+        }
+    }
+
+    private static void validateMainXml(PackagePart mainPart, FileFormat format) throws Exception {
+        QName expected =
+                switch (format) {
+                    case DOCX ->
+                            new QName(
+                                    "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                                    "document");
+                    case XLSX ->
+                            new QName(
+                                    "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+                                    "workbook");
+                    case PPTX ->
+                            new QName(
+                                    "http://schemas.openxmlformats.org/presentationml/2006/main",
+                                    "presentation");
+                    default -> throw invalid("Office package type is not supported");
+                };
+        try (InputStream input = mainPart.getInputStream()) {
+            XMLStreamReader reader = secureXmlFactory().createXMLStreamReader(input);
+            try {
+                while (reader.hasNext()) {
+                    if (reader.next() == XMLStreamConstants.START_ELEMENT) {
+                        if (!expected.equals(reader.getName())) {
+                            throw invalid("Office main XML root does not match its package type");
+                        }
+                        return;
+                    }
+                }
+                throw invalid("Office main XML has no document root");
+            } finally {
+                reader.close();
+            }
+        }
+    }
+
+    private static boolean hasExecutableSignature(PackagePart part) throws IOException {
+        try (InputStream input = part.getInputStream()) {
+            int first = input.read();
+            int second = input.read();
+            int third = input.read();
+            int fourth = input.read();
+            return (first == 'M' && second == 'Z')
+                    || (first == 0x7f && second == 'E' && third == 'L' && fourth == 'F')
+                    || (first == '#' && second == '!');
         }
     }
 
@@ -276,6 +335,17 @@ public class OfficeFileValidator implements FileValidator {
                 if (event == XMLStreamConstants.DTD
                         || event == XMLStreamConstants.ENTITY_REFERENCE) {
                     throw new XMLStreamException("DTD and entity references are disabled");
+                }
+                if (event == XMLStreamConstants.START_ELEMENT
+                        && "Relationship".equals(reader.getLocalName())
+                        && PACKAGE_RELATIONSHIPS_NAMESPACE.equals(reader.getNamespaceURI())) {
+                    String targetMode = reader.getAttributeValue(null, "TargetMode");
+                    String type = reader.getAttributeValue(null, "Type");
+                    if ("External".equals(targetMode)
+                            && (type == null || !type.endsWith("/hyperlink"))) {
+                        throw new XMLStreamException(
+                                "External Office part relationships are not accepted");
+                    }
                 }
             }
         } finally {
