@@ -58,6 +58,7 @@ class ObjectStorageContractTest {
         Path fileRoot = Path.of("src/main/java/com/krishnamurti/horizon/file");
         try (var paths = Files.walk(fileRoot)) {
             assertThat(paths.filter(path -> path.toString().endsWith(".java")))
+                    .isNotEmpty()
                     .allSatisfy(
                             path -> {
                                 try {
