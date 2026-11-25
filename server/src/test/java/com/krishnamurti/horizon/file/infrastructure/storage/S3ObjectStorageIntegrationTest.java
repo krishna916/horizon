@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.GenericContainer;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 
@@ -69,6 +70,8 @@ class S3ObjectStorageIntegrationTest {
                 storage.close();
                 Files.deleteIfExists(staged);
             }
+            makeContainerOwnedDirectoryReadOnly(seaweed);
+            makeContainerDataRemovable(seaweed);
         } finally {
             deleteTree(data);
         }
@@ -102,6 +105,8 @@ class S3ObjectStorageIntegrationTest {
                 } finally {
                     afterRestart.close();
                 }
+                makeContainerOwnedDirectoryReadOnly(recreated);
+                makeContainerDataRemovable(recreated);
             }
         } finally {
             Files.deleteIfExists(staged);
@@ -377,6 +382,23 @@ class S3ObjectStorageIntegrationTest {
             for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList())
                 Files.deleteIfExists(path);
         }
+    }
+
+    private static void makeContainerOwnedDirectoryReadOnly(GenericContainer<?> container)
+            throws IOException, InterruptedException {
+        var result =
+                container.execInContainer(
+                        "sh",
+                        "-c",
+                        "mkdir -p /data/cleanup-test && touch /data/cleanup-test/object && chmod"
+                                + " 0555 /data/cleanup-test");
+        assertThat(result.getExitCode()).isZero();
+    }
+
+    private static void makeContainerDataRemovable(GenericContainer<?> container)
+            throws IOException, InterruptedException {
+        var result = container.execInContainer("sh", "-c", "chmod -R a+rwX /data");
+        assertThat(result.getExitCode()).isZero();
     }
 
     private static final class OutputStreamSink extends java.io.OutputStream {
