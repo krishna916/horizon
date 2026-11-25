@@ -17,6 +17,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -114,6 +115,15 @@ public final class S3ObjectStorage implements ObjectStorage, AutoCloseable {
             return DeleteResult.ACKNOWLEDGED;
         } catch (RuntimeException e) {
             throw new ObjectStorageException("S3 DELETE failed", e);
+        }
+    }
+
+    @Override
+    public void checkAvailability() {
+        try {
+            readClient.headBucket(HeadBucketRequest.builder().bucket(bucket).build());
+        } catch (RuntimeException e) {
+            throw new ObjectStorageException("S3 availability check failed", e);
         }
     }
 

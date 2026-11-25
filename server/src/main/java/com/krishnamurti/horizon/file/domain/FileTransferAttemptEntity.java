@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
@@ -71,4 +72,23 @@ public class FileTransferAttemptEntity {
     private Instant updatedAt;
 
     protected FileTransferAttemptEntity() {}
+
+    public static FileTransferAttemptEntity createPending(
+            UUID id,
+            UUID fileId,
+            String objectKey,
+            long expectedSizeBytes,
+            String expectedSha256,
+            Instant createdAt) {
+        FileTransferAttemptEntity attempt = new FileTransferAttemptEntity();
+        attempt.id = Objects.requireNonNull(id);
+        attempt.fileId = Objects.requireNonNull(fileId);
+        attempt.objectKey = Objects.requireNonNull(objectKey);
+        attempt.expectedSizeBytes = expectedSizeBytes;
+        attempt.expectedSha256 = Objects.requireNonNull(expectedSha256);
+        attempt.outcome = TransferOutcome.PENDING;
+        attempt.createdAt = Objects.requireNonNull(createdAt);
+        attempt.updatedAt = createdAt;
+        return attempt;
+    }
 }

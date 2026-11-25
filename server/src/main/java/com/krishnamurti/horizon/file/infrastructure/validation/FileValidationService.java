@@ -3,6 +3,7 @@ package com.krishnamurti.horizon.file.infrastructure.validation;
 import com.krishnamurti.horizon.file.api.model.FileDescriptor;
 import com.krishnamurti.horizon.file.api.model.FileFormat;
 import com.krishnamurti.horizon.file.infrastructure.staging.StagedFile;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.IOException;
 import java.util.EnumMap;
 import java.util.List;
@@ -11,6 +12,11 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
+@SuppressFBWarnings(
+        value = "CT_CONSTRUCTOR_THROW",
+        justification =
+                "Duplicate validator registration is invalid startup configuration and is rejected"
+                        + " before service use.")
 public class FileValidationService {
     private static final Map<String, FileFormat> EXTENSIONS = extensions();
     private static final Map<FileFormat, String> MEDIA_TYPES = mediaTypes();

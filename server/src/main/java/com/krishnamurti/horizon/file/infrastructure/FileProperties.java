@@ -1,5 +1,6 @@
 package com.krishnamurti.horizon.file.infrastructure;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.Objects;
@@ -9,6 +10,11 @@ import org.springframework.util.unit.DataSize;
 
 @Component
 @ConfigurationProperties("horizon.file")
+@SuppressFBWarnings(
+        value = "EI_EXPOSE_REP",
+        justification =
+                "Mutable nested objects are intentionally exposed to Spring Boot configuration"
+                        + " binding.")
 public class FileProperties {
 
     public static final long DEFAULT_MAX_FILE_SIZE_BYTES = 20_971_519L;

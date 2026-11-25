@@ -1,6 +1,7 @@
 package com.krishnamurti.horizon.file.infrastructure.staging;
 
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -22,6 +23,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
+@SuppressFBWarnings(
+        value = "CT_CONSTRUCTOR_THROW",
+        justification =
+                "Startup must fail if private staging cannot be secured or exclusively locked;"
+                        + " acquired resources are closed before throwing.")
 public class StagingDirectory implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(StagingDirectory.class);
     private static final String PREFIX = "horizon-file-";
@@ -118,7 +124,9 @@ public class StagingDirectory implements AutoCloseable {
     private void cleanAbandonedFiles() throws IOException {
         try (DirectoryStream<Path> files = Files.newDirectoryStream(directory)) {
             for (Path path : files) {
-                String name = path.getFileName().toString();
+                Path fileName = path.getFileName();
+                if (fileName == null) continue;
+                String name = fileName.toString();
                 if (isOwnedStageFile(name)
                         && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
                     Files.deleteIfExists(path);

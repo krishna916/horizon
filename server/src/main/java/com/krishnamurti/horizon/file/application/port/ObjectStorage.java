@@ -9,4 +9,7 @@ public interface ObjectStorage {
     StoredObject get(ObjectKey key);
 
     DeleteResult delete(ObjectKey key);
+
+    /** Performs an authenticated, read-only provider availability check. */
+    void checkAvailability();
 }

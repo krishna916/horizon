@@ -4,10 +4,14 @@ import com.krishnamurti.horizon.file.api.FileCapabilities;
 import com.krishnamurti.horizon.file.api.model.FileFormat;
 import com.krishnamurti.horizon.file.api.model.FileUploadPolicy;
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 
 @Component
+@SuppressFBWarnings(
+        value = "EI_EXPOSE_REP2",
+        justification = "FileProperties is a private, final Spring-managed configuration bean.")
 public class DefaultFileCapabilities implements FileCapabilities {
 
     private static final Set<FileFormat> FORMATS = Set.of(FileFormat.values());

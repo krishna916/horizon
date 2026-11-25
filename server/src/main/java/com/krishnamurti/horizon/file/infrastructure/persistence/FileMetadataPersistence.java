@@ -1,6 +1,7 @@
 package com.krishnamurti.horizon.file.infrastructure.persistence;
 
 import com.krishnamurti.horizon.file.domain.FileMetadataEntity;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -9,6 +10,10 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
+@SuppressFBWarnings(
+        value = "EI_EXPOSE_REP2",
+        justification =
+                "JDBC and repository dependencies are private, final Spring-managed collaborators.")
 public class FileMetadataPersistence {
     private final JdbcTemplate jdbc;
     private final FileMetadataRepository repository;

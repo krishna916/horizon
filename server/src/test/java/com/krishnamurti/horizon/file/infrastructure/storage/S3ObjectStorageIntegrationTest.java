@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -51,6 +52,7 @@ class S3ObjectStorageIntegrationTest {
                                         new ObjectWriteRequest(
                                                 key, staged, payload.length, "text/plain")))
                         .isEqualTo(WriteResult.ACKNOWLEDGED);
+                storage.checkAvailability();
                 ObjectMetadata metadata = storage.head(key);
                 assertThat(metadata.found()).isTrue();
                 assertThat(metadata.contentLength()).isEqualTo(payload.length);
@@ -147,6 +149,66 @@ class S3ObjectStorageIntegrationTest {
     }
 
     @Test
+    void lostSuccessfulPutResponseIsUnknownButIndependentGetFindsCommittedBytes() throws Exception {
+        AtomicInteger puts = new AtomicInteger();
+        java.util.Map<String, byte[]> committedObjects = new ConcurrentHashMap<>();
+        HttpServer server =
+                HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.setExecutor(Runnable::run);
+        server.createContext(
+                "/",
+                exchange -> {
+                    String key = exchange.getRequestURI().getPath();
+                    if ("PUT".equals(exchange.getRequestMethod())) {
+                        puts.incrementAndGet();
+                        byte[] requestBytes =
+                                decodeAwsChunked(exchange.getRequestBody().readAllBytes());
+                        committedObjects.put(key, requestBytes);
+                        // Model the provider committing the object before its 200 response is lost.
+                        exchange.getResponseBody().close();
+                        exchange.close();
+                    } else if ("GET".equals(exchange.getRequestMethod())) {
+                        byte[] bytes = committedObjects.get(key);
+                        if (bytes == null) {
+                            exchange.sendResponseHeaders(404, -1);
+                        } else {
+                            exchange.getResponseHeaders().add("Content-Type", "image/webp");
+                            exchange.sendResponseHeaders(200, bytes.length);
+                            exchange.getResponseBody().write(bytes);
+                        }
+                        exchange.close();
+                    } else {
+                        exchange.sendResponseHeaders(405, -1);
+                        exchange.close();
+                    }
+                });
+        server.start();
+
+        Path staged = Files.createTempFile("horizon-lost-response-", ".webp");
+        byte[] payload = "committed-before-response-loss".getBytes(StandardCharsets.UTF_8);
+        Files.write(staged, payload);
+        try (S3ObjectStorage storage = storage(endpoint(server))) {
+            ObjectKey key = new ObjectKey("lost-response/" + UUID.randomUUID());
+
+            assertThat(
+                            storage.put(
+                                    new ObjectWriteRequest(
+                                            key, staged, payload.length, "image/webp")))
+                    .isEqualTo(WriteResult.UNKNOWN);
+            assertThat(puts).hasValue(1);
+            byte[] committed = committedObjects.values().iterator().next();
+            assertThat(committed).containsExactly(payload);
+            try (StoredObject object = storage.get(key)) {
+                assertThat(object.contentLength()).isEqualTo(payload.length);
+                assertThat(object.content().readAllBytes()).containsExactly(payload);
+            }
+        } finally {
+            server.stop(0);
+            Files.deleteIfExists(staged);
+        }
+    }
+
+    @Test
     void putDoesNotFollowProviderRedirectOrReplayTheRequest() throws Exception {
         AtomicInteger puts = new AtomicInteger();
         HttpServer server = fakeS3(puts, 301, 0);
@@ -208,6 +270,10 @@ class S3ObjectStorageIntegrationTest {
 
     private static URI endpoint(org.testcontainers.containers.GenericContainer<?> seaweed) {
         return URI.create("http://" + seaweed.getHost() + ":" + seaweed.getMappedPort(8333));
+    }
+
+    private static URI endpoint(HttpServer server) {
+        return URI.create("http://127.0.0.1:" + server.getAddress().getPort());
     }
 
     private static FileProperties properties(URI endpoint) {
@@ -277,6 +343,33 @@ class S3ObjectStorageIntegrationTest {
                 });
         server.start();
         return server;
+    }
+
+    private static byte[] decodeAwsChunked(byte[] encoded) throws IOException {
+        ByteArrayOutputStream decoded = new ByteArrayOutputStream();
+        int cursor = 0;
+        while (cursor < encoded.length) {
+            int lineEnd = findCrlf(encoded, cursor);
+            String chunkHeader =
+                    new String(encoded, cursor, lineEnd - cursor, StandardCharsets.US_ASCII);
+            int chunkLength = Integer.parseInt(chunkHeader.split(";", 2)[0], 16);
+            cursor = lineEnd + 2;
+            if (chunkLength == 0) break;
+            decoded.write(encoded, cursor, chunkLength);
+            cursor += chunkLength;
+            if (encoded[cursor] != '\r' || encoded[cursor + 1] != '\n') {
+                throw new IOException("Malformed AWS chunk framing in test request");
+            }
+            cursor += 2;
+        }
+        return decoded.toByteArray();
+    }
+
+    private static int findCrlf(byte[] bytes, int start) throws IOException {
+        for (int index = start; index < bytes.length - 1; index++) {
+            if (bytes[index] == '\r' && bytes[index + 1] == '\n') return index;
+        }
+        throw new IOException("Malformed AWS chunk header in test request");
     }
 
     private static void deleteTree(Path root) throws IOException {

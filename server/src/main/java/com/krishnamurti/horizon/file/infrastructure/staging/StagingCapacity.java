@@ -1,12 +1,18 @@
 package com.krishnamurti.horizon.file.infrastructure.staging;
 
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
+@SuppressFBWarnings(
+        value = "CT_CONSTRUCTOR_THROW",
+        justification =
+                "Invalid staging capacities must fail fast before a limiter instance is published.")
 public class StagingCapacity {
     private final Semaphore slots;
     private final int maximumSlots;
@@ -16,6 +22,7 @@ public class StagingCapacity {
     private final long maximumBytes;
     private final long maximumScratchBytes;
 
+    @Autowired
     public StagingCapacity(FileProperties properties) {
         this(
                 properties.getStaging().getMaxConcurrentTransfers(),

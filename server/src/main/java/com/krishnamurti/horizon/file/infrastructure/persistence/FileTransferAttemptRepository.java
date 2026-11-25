@@ -14,6 +14,8 @@ public interface FileTransferAttemptRepository
         extends JpaRepository<FileTransferAttemptEntity, UUID> {
     List<FileTransferAttemptEntity> findAllByFileIdOrderByCreatedAtAsc(UUID fileId);
 
+    Optional<FileTransferAttemptEntity> findByFileIdAndId(UUID fileId, UUID id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query(
             "select attempt from FileTransferAttemptEntity attempt where attempt.fileId = :fileId"
