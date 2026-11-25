@@ -9,3 +9,19 @@ services:
       - '5433:5432'
     volumes:
       - ./database/postgres:/var/lib/postgresql/data
+  seaweedfs:
+    platform: linux/amd64
+    image: ghcr.io/chrislusf/seaweedfs:4.54@sha256:e7d4b80af9bd49b2630a60ac6fbb7ffb620ac6a2c501f689c22a71b9f89f0203
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-horizon-local-access}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-horizon-local-secret-only}
+      S3_BUCKET: ${HORIZON_S3_BUCKET:-horizon-files}
+    ports:
+      - "127.0.0.1:${HORIZON_S3_PORT:-8333}:8333"
+    volumes:
+      - file-object-data:/data
+    restart: unless-stopped
+
+volumes:
+  file-object-data:
+    name: ${HORIZON_S3_VOLUME:-horizon-file-object-data}

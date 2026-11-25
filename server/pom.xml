@@ -33,6 +33,7 @@
 		<spotbugs-maven-plugin.version>4.10.2.0</spotbugs-maven-plugin.version>
 		<jacoco.version>0.8.16</jacoco.version>
 		<error-prone.version>2.50.0</error-prone.version>
+		<aws.sdk.version>2.59.2</aws.sdk.version>
 		<file.pdfbox.version>3.0.8</file.pdfbox.version>
 		<file.poi.version>6.0.0</file.poi.version>
 		<file.twelvemonkeys.version>3.15.3</file.twelvemonkeys.version>
@@ -92,6 +93,14 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-session-jdbc</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>apache-client</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.pdfbox</groupId>
@@ -188,6 +197,13 @@
 				<groupId>org.springframework.cloud</groupId>
 				<artifactId>spring-cloud-dependencies</artifactId>
 				<version>${spring-cloud.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>software.amazon.awssdk</groupId>
+				<artifactId>bom</artifactId>
+				<version>${aws.sdk.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>

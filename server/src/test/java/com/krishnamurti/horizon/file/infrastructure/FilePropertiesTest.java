@@ -67,4 +67,19 @@ class FilePropertiesTest {
         validation.setMaxImagePixels(16_000_001L);
         assertThatThrownBy(properties::validate).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void s3ConfigurationRequiresBoundedOperationSettings() {
+        FileProperties missingBucket = new FileProperties();
+        missingBucket.getStorage().getS3().setBucket(" ");
+        assertThatThrownBy(missingBucket::validate).isInstanceOf(IllegalStateException.class);
+
+        FileProperties invalidRetryCount = new FileProperties();
+        invalidRetryCount.getStorage().getS3().setReadMaxAttempts(0);
+        assertThatThrownBy(invalidRetryCount::validate).isInstanceOf(IllegalStateException.class);
+
+        FileProperties invalidEndpoint = new FileProperties();
+        invalidEndpoint.getStorage().getS3().setEndpoint("file:///tmp/objects");
+        assertThatThrownBy(invalidEndpoint::validate).isInstanceOf(IllegalStateException.class);
+    }
 }

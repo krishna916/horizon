@@ -72,6 +72,7 @@ public class FileProperties {
                     "File staging capacity must fit at least one maximum-size file");
         }
         validation.validate();
+        storage.s3.validate();
     }
 
     public static class Staging {
@@ -319,6 +320,37 @@ public class FileProperties {
 
         public void setReadMaxAttempts(int readMaxAttempts) {
             this.readMaxAttempts = readMaxAttempts;
+        }
+
+        private void validate() {
+            if (bucket == null || bucket.isBlank() || region == null || region.isBlank()) {
+                throw new IllegalStateException("S3 bucket and region must be configured");
+            }
+            if (!positive(connectionTimeout)
+                    || !positive(socketTimeout)
+                    || !positive(operationTimeout)
+                    || readMaxAttempts <= 0) {
+                throw new IllegalStateException("S3 timeouts and read attempts must be positive");
+            }
+            if (endpoint != null && !endpoint.isBlank()) {
+                try {
+                    java.net.URI uri = java.net.URI.create(endpoint);
+                    if (!uri.isAbsolute()
+                            || uri.getHost() == null
+                            || !("http".equalsIgnoreCase(uri.getScheme())
+                                    || "https".equalsIgnoreCase(uri.getScheme()))) {
+                        throw new IllegalStateException(
+                                "S3 endpoint must be an absolute HTTP(S) URL");
+                    }
+                } catch (IllegalArgumentException e) {
+                    throw new IllegalStateException(
+                            "S3 endpoint must be an absolute HTTP(S) URL", e);
+                }
+            }
+        }
+
+        private static boolean positive(Duration duration) {
+            return duration != null && !duration.isZero() && !duration.isNegative();
         }
     }
 }
