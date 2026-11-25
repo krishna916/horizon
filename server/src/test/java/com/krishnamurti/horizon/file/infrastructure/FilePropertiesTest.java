@@ -48,4 +48,23 @@ class FilePropertiesTest {
         tooSmallCapacity.getStaging().setMaxTotalSize(DataSize.ofBytes(1));
         assertThatThrownBy(tooSmallCapacity::validate).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void parserLimitsMatchApprovedBoundsAndCannotBeRaised() {
+        FileProperties properties = new FileProperties();
+        var validation = properties.getValidation();
+        assertThat(validation.getMaxImageWidth()).isEqualTo(8_192);
+        assertThat(validation.getMaxImageHeight()).isEqualTo(8_192);
+        assertThat(validation.getMaxImagePixels()).isEqualTo(16_000_000L);
+        assertThat(validation.getMaxImageFrames()).isEqualTo(100);
+        assertThat(validation.getMaxCumulativeImagePixels()).isEqualTo(64_000_000L);
+        assertThat(validation.getMaxPdfPages()).isEqualTo(1_000);
+        assertThat(validation.getMaxOfficeEntries()).isEqualTo(2_048);
+        assertThat(validation.getMaxOfficeEntrySize().toBytes()).isEqualTo(33_554_432L);
+        assertThat(validation.getMaxOfficeExpandedSize().toBytes()).isEqualTo(134_217_728L);
+        assertThat(validation.getMaxParserScratchSize().toBytes()).isEqualTo(134_217_728L);
+
+        validation.setMaxImagePixels(16_000_001L);
+        assertThatThrownBy(properties::validate).isInstanceOf(IllegalStateException.class);
+    }
 }

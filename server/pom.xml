@@ -33,6 +33,9 @@
 		<spotbugs-maven-plugin.version>4.10.2.0</spotbugs-maven-plugin.version>
 		<jacoco.version>0.8.16</jacoco.version>
 		<error-prone.version>2.50.0</error-prone.version>
+		<file.pdfbox.version>3.0.8</file.pdfbox.version>
+		<file.poi.version>6.0.0</file.poi.version>
+		<file.twelvemonkeys.version>3.15.3</file.twelvemonkeys.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -89,6 +92,21 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-session-jdbc</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>${file.pdfbox.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>${file.poi.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.twelvemonkeys.imageio</groupId>
+			<artifactId>imageio-webp</artifactId>
+			<version>${file.twelvemonkeys.version}</version>
 		</dependency>
 
 		<dependency>

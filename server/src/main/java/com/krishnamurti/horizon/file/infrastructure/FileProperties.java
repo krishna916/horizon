@@ -17,6 +17,7 @@ public class FileProperties {
     private DataSize maxFileSize = DataSize.ofBytes(DEFAULT_MAX_FILE_SIZE_BYTES);
     private Duration unclaimedExpiry = Duration.ofHours(24);
     private final Staging staging = new Staging();
+    private final Validation validation = new Validation();
     private final Storage storage = new Storage();
 
     public DataSize getMaxFileSize() {
@@ -43,6 +44,10 @@ public class FileProperties {
         return staging;
     }
 
+    public Validation getValidation() {
+        return validation;
+    }
+
     public Storage getStorage() {
         return storage;
     }
@@ -66,6 +71,7 @@ public class FileProperties {
             throw new IllegalStateException(
                     "File staging capacity must fit at least one maximum-size file");
         }
+        validation.validate();
     }
 
     public static class Staging {
@@ -118,6 +124,126 @@ public class FileProperties {
 
         public S3 getS3() {
             return s3;
+        }
+    }
+
+    public static class Validation {
+        private int maxImageWidth = 8_192;
+        private int maxImageHeight = 8_192;
+        private long maxImagePixels = 16_000_000L;
+        private int maxImageFrames = 100;
+        private long maxCumulativeImagePixels = 64_000_000L;
+        private int maxPdfPages = 1_000;
+        private int maxOfficeEntries = 2_048;
+        private DataSize maxOfficeEntrySize = DataSize.ofMegabytes(32);
+        private DataSize maxOfficeExpandedSize = DataSize.ofMegabytes(128);
+        private DataSize maxParserScratchSize = DataSize.ofMegabytes(128);
+
+        public int getMaxImageWidth() {
+            return maxImageWidth;
+        }
+
+        public void setMaxImageWidth(int maxImageWidth) {
+            this.maxImageWidth = maxImageWidth;
+        }
+
+        public int getMaxImageHeight() {
+            return maxImageHeight;
+        }
+
+        public void setMaxImageHeight(int maxImageHeight) {
+            this.maxImageHeight = maxImageHeight;
+        }
+
+        public long getMaxImagePixels() {
+            return maxImagePixels;
+        }
+
+        public void setMaxImagePixels(long maxImagePixels) {
+            this.maxImagePixels = maxImagePixels;
+        }
+
+        public int getMaxImageFrames() {
+            return maxImageFrames;
+        }
+
+        public void setMaxImageFrames(int maxImageFrames) {
+            this.maxImageFrames = maxImageFrames;
+        }
+
+        public long getMaxCumulativeImagePixels() {
+            return maxCumulativeImagePixels;
+        }
+
+        public void setMaxCumulativeImagePixels(long maxCumulativeImagePixels) {
+            this.maxCumulativeImagePixels = maxCumulativeImagePixels;
+        }
+
+        public int getMaxPdfPages() {
+            return maxPdfPages;
+        }
+
+        public void setMaxPdfPages(int maxPdfPages) {
+            this.maxPdfPages = maxPdfPages;
+        }
+
+        public int getMaxOfficeEntries() {
+            return maxOfficeEntries;
+        }
+
+        public void setMaxOfficeEntries(int maxOfficeEntries) {
+            this.maxOfficeEntries = maxOfficeEntries;
+        }
+
+        public DataSize getMaxOfficeEntrySize() {
+            return maxOfficeEntrySize;
+        }
+
+        public void setMaxOfficeEntrySize(DataSize maxOfficeEntrySize) {
+            this.maxOfficeEntrySize = Objects.requireNonNull(maxOfficeEntrySize);
+        }
+
+        public DataSize getMaxOfficeExpandedSize() {
+            return maxOfficeExpandedSize;
+        }
+
+        public void setMaxOfficeExpandedSize(DataSize maxOfficeExpandedSize) {
+            this.maxOfficeExpandedSize = Objects.requireNonNull(maxOfficeExpandedSize);
+        }
+
+        public DataSize getMaxParserScratchSize() {
+            return maxParserScratchSize;
+        }
+
+        public void setMaxParserScratchSize(DataSize maxParserScratchSize) {
+            this.maxParserScratchSize = Objects.requireNonNull(maxParserScratchSize);
+        }
+
+        private void validate() {
+            if (maxImageWidth <= 0
+                    || maxImageWidth > 8_192
+                    || maxImageHeight <= 0
+                    || maxImageHeight > 8_192
+                    || maxImagePixels <= 0
+                    || maxImagePixels > 16_000_000L
+                    || maxImageFrames <= 0
+                    || maxImageFrames > 100
+                    || maxCumulativeImagePixels <= 0
+                    || maxCumulativeImagePixels > 64_000_000L
+                    || maxPdfPages <= 0
+                    || maxPdfPages > 1_000
+                    || maxOfficeEntries <= 0
+                    || maxOfficeEntries > 2_048
+                    || maxOfficeEntrySize.toBytes() <= 0
+                    || maxOfficeEntrySize.toBytes() > 33_554_432L
+                    || maxOfficeExpandedSize.toBytes() <= 0
+                    || maxOfficeExpandedSize.toBytes() > 134_217_728L
+                    || maxParserScratchSize.toBytes() <= 0
+                    || maxParserScratchSize.toBytes() > 134_217_728L) {
+                throw new IllegalStateException(
+                        "File validation limits must be positive and no higher than the approved"
+                                + " ceilings");
+            }
         }
     }
 
