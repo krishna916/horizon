@@ -19,3 +19,22 @@ spring:
       initialize-schema: never
 server:
   port: 8081
+horizon:
+  file:
+    max-file-size: ${HORIZON_FILE_MAX_FILE_SIZE:20971519B}
+    unclaimed-expiry: ${HORIZON_FILE_UNCLAIMED_EXPIRY:24h}
+    staging:
+      directory: ${HORIZON_FILE_STAGING_DIRECTORY:./data/file-staging}
+      max-concurrent-transfers: ${HORIZON_FILE_MAX_CONCURRENT_TRANSFERS:4}
+      copy-buffer-size: ${HORIZON_FILE_COPY_BUFFER_SIZE:65536}
+      max-total-size: ${HORIZON_FILE_STAGING_MAX_TOTAL_SIZE:}
+    storage:
+      s3:
+        endpoint: ${HORIZON_S3_ENDPOINT:}
+        region: ${HORIZON_S3_REGION:us-east-1}
+        bucket: ${HORIZON_S3_BUCKET:horizon-files}
+        path-style-access: ${HORIZON_S3_PATH_STYLE_ACCESS:false}
+        connection-timeout: ${HORIZON_S3_CONNECTION_TIMEOUT:5s}
+        socket-timeout: ${HORIZON_S3_SOCKET_TIMEOUT:30s}
+        operation-timeout: ${HORIZON_S3_OPERATION_TIMEOUT:5m}
+        read-max-attempts: ${HORIZON_S3_READ_MAX_ATTEMPTS:3}
