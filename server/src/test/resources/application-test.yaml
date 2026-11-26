@@ -10,3 +10,7 @@ spring:
     store-type: none
 server:
   port: 8081
+horizon:
+  file:
+    staging:
+      directory: ${java.io.tmpdir}/horizon-file-test-${random.uuid}

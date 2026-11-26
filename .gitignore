@@ -36,6 +36,7 @@ build/
 /client/coverage/
 /client/dist/
 /server/database
+/server/data/file-staging/
 
 /docs/superpowers
 /docs/implementations

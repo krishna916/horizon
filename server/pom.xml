@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.6</version>
+		<version>4.0.10</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.krishnamurti</groupId>
@@ -29,10 +29,18 @@
 	<properties>
 		<java.version>25</java.version>
 		<spring-cloud.version>2025.1.1</spring-cloud.version>
+		<jackson-bom.version>3.2.4</jackson-bom.version>
+		<jackson-2-bom.version>2.22.4</jackson-2-bom.version>
+		<httpclient5.version>5.6.5</httpclient5.version>
+		<httpcore5.version>5.4.4</httpcore5.version>
 		<spotless.version>3.7.0</spotless.version>
 		<spotbugs-maven-plugin.version>4.10.2.0</spotbugs-maven-plugin.version>
 		<jacoco.version>0.8.16</jacoco.version>
 		<error-prone.version>2.50.0</error-prone.version>
+		<aws.sdk.version>2.59.2</aws.sdk.version>
+		<file.pdfbox.version>3.0.8</file.pdfbox.version>
+		<file.poi.version>6.0.0</file.poi.version>
+		<file.twelvemonkeys.version>3.15.3</file.twelvemonkeys.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -89,6 +97,29 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-session-jdbc</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>apache-client</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>${file.pdfbox.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>${file.poi.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.twelvemonkeys.imageio</groupId>
+			<artifactId>imageio-webp</artifactId>
+			<version>${file.twelvemonkeys.version}</version>
 		</dependency>
 
 		<dependency>
@@ -172,6 +203,18 @@
 				<version>${spring-cloud.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>software.amazon.awssdk</groupId>
+				<artifactId>bom</artifactId>
+				<version>${aws.sdk.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcprov-jdk18on</artifactId>
+				<version>1.87</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>

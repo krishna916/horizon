@@ -19,3 +19,41 @@ spring:
       initialize-schema: never
 server:
   port: 8081
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,fileStorage
+horizon:
+  file:
+    max-file-size: ${HORIZON_FILE_MAX_FILE_SIZE:20971519B}
+    unclaimed-expiry: ${HORIZON_FILE_UNCLAIMED_EXPIRY:24h}
+    staging:
+      directory: ${HORIZON_FILE_STAGING_DIRECTORY:./data/file-staging}
+      max-concurrent-transfers: ${HORIZON_FILE_MAX_CONCURRENT_TRANSFERS:4}
+      copy-buffer-size: ${HORIZON_FILE_COPY_BUFFER_SIZE:65536}
+      max-total-size: ${HORIZON_FILE_STAGING_MAX_TOTAL_SIZE:}
+    validation:
+      max-image-width: ${HORIZON_FILE_VALIDATION_MAX_IMAGE_WIDTH:8192}
+      max-image-height: ${HORIZON_FILE_VALIDATION_MAX_IMAGE_HEIGHT:8192}
+      max-image-pixels: ${HORIZON_FILE_VALIDATION_MAX_IMAGE_PIXELS:16000000}
+      max-image-frames: ${HORIZON_FILE_VALIDATION_MAX_IMAGE_FRAMES:100}
+      max-cumulative-image-pixels: ${HORIZON_FILE_VALIDATION_MAX_CUMULATIVE_IMAGE_PIXELS:64000000}
+      max-pdf-pages: ${HORIZON_FILE_VALIDATION_MAX_PDF_PAGES:1000}
+      max-office-entries: ${HORIZON_FILE_VALIDATION_MAX_OFFICE_ENTRIES:2048}
+      max-office-entry-size: ${HORIZON_FILE_VALIDATION_MAX_OFFICE_ENTRY_SIZE:32MB}
+      max-office-expanded-size: ${HORIZON_FILE_VALIDATION_MAX_OFFICE_EXPANDED_SIZE:128MB}
+      max-parser-scratch-size: ${HORIZON_FILE_VALIDATION_MAX_PARSER_SCRATCH_SIZE:128MB}
+    storage:
+      s3:
+        endpoint: ${HORIZON_S3_ENDPOINT:}
+        region: ${HORIZON_S3_REGION:us-east-1}
+        bucket: ${HORIZON_S3_BUCKET:horizon-files}
+        path-style-access: ${HORIZON_S3_PATH_STYLE_ACCESS:false}
+        connection-timeout: ${HORIZON_S3_CONNECTION_TIMEOUT:5s}
+        socket-timeout: ${HORIZON_S3_SOCKET_TIMEOUT:30s}
+        operation-timeout: ${HORIZON_S3_OPERATION_TIMEOUT:5m}
+        read-max-attempts: ${HORIZON_S3_READ_MAX_ATTEMPTS:3}
