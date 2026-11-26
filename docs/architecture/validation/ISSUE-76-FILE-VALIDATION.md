@@ -25,6 +25,12 @@ These controls bound input, decoded pixels, page count, archive expansion, scrat
 
 The implementation compiled and passed the repository's Maven quality gates with the approved existing parser/provider versions. The repository environment did not have an OSV, Grype, Trivy, or OWASP Dependency-Check scanner available, and no dependency vulnerability scan is configured in the repository CI. The resolved dependency tree was captured for compatibility review, but this is not a vulnerability clearance; a scanner-backed advisory assessment remains outstanding.
 
+## Round 2 review evidence (2026-11-26)
+
+- The resolved tree was captured with `./mvnw dependency:tree -DoutputType=text -DoutputFile=/tmp/horizon-issue76-dependency-tree.txt` on Java 25.0.4. This confirms Maven resolution only. No advisory database scan was available or completed; the dependency security assessment remains incomplete and requires explicit owner acceptance before any merge recommendation.
+- CI run [45760047167](https://github.com/krishna916/horizon/actions/runs/45760047167) passed backend Maven verification, frontend verification, Playwright, and SonarCloud for commit `9eb76e28e082cc1f94d67b5a0d87552d5327c7a3`. The SonarCloud check reported a passed quality gate, 99 new issues, 0 accepted issues, 0 security hotspots, 81.0% new-code coverage and 0.0% duplication. GitHub exposed 50 issue annotations. The visible annotations are predominantly maintainability/test-style findings (including complexity/refactoring suggestions, test lambdas and `Thread.sleep`); production annotations include Office/Image validator complexity and generic-exception style. The SonarCloud issue-detail page was inaccessible through the available account/browser path, so severity-wide triage of all 99 issues could not be completed. No blanket suppressions or count-driven refactors were made, and these quality-gate results are not a security clearance.
+- Round 2 code review and regression tests address the approved correctness findings RR-01 through RR-04. The remaining advisory-scan limitation and incomplete Sonar severity disposition are reported for explicit owner review before merge.
+
 ## Pinned library references
 
 - [Apache PDFBox 3.0 migration guide](https://pdfbox.apache.org/3.0/migration.html)
