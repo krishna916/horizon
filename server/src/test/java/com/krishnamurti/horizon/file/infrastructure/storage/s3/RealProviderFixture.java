@@ -4,6 +4,7 @@ import com.krishnamurti.horizon.file.infrastructure.FileProperties;
 import java.net.URI;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
@@ -44,8 +45,18 @@ public final class RealProviderFixture implements AutoCloseable {
         try {
             clients.read().headBucket(request -> request.bucket(bucket));
         } catch (S3Exception exception) {
-            if (exception.statusCode() != 404) throw exception;
-            clients.write().createBucket(CreateBucketRequest.builder().bucket(bucket).build());
+            if (exception.statusCode() != 404
+                    && !(exception instanceof BucketAlreadyOwnedByYouException)) {
+                throw exception;
+            }
+            if (exception.statusCode() == 404) {
+                try {
+                    clients.write()
+                            .createBucket(CreateBucketRequest.builder().bucket(bucket).build());
+                } catch (BucketAlreadyOwnedByYouException alreadyCreated) {
+                    // The test provider may finish a prior idempotent creation after HEAD returns.
+                }
+            }
         }
     }
 

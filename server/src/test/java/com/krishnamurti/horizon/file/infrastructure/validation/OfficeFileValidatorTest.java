@@ -158,6 +158,49 @@ class OfficeFileValidatorTest {
     }
 
     @Test
+    void executableAtNonstandardPartPathIsRejectedDespiteMisleadingXmlType() throws Exception {
+        Map<String, byte[]> entries =
+                officeEntries(
+                        "word/document.xml",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+        entries.put("custom/odd.bin", new byte[] {'M', 'Z', 0, 0, 1});
+        addContentTypeOverride(entries, "/custom/odd.bin", "application/xml");
+        try (ValidationTestSupport.StagedFixture fixture =
+                ValidationTestSupport.stage(
+                        temporaryDirectory.resolve("nonstandard-executable"),
+                        ValidationTestSupport.zip(entries))) {
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void xmlPathIsSecurelyParsedDespiteMisleadingBinaryType() throws Exception {
+        Map<String, byte[]> entries =
+                officeEntries(
+                        "word/document.xml",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+        entries.put(
+                "customXml/item1.xml",
+                "<!DOCTYPE x [<!ENTITY e SYSTEM \"file:///etc/passwd\">]><x>&e;</x>"
+                        .getBytes(StandardCharsets.UTF_8));
+        addContentTypeOverride(entries, "/customXml/item1.xml", "application/octet-stream");
+        try (ValidationTestSupport.StagedFixture fixture =
+                ValidationTestSupport.stage(
+                        temporaryDirectory.resolve("misdeclared-xml"),
+                        ValidationTestSupport.zip(entries))) {
+            assertThatThrownBy(
+                            () ->
+                                    new OfficeFileValidator()
+                                            .validate(fixture.file(), FileFormat.DOCX))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
     void traversalPackagePathIsRejected() throws Exception {
         Map<String, byte[]> entries =
                 officeEntries(
@@ -446,5 +489,20 @@ class OfficeFileValidatorTest {
                 };
         entries.put(mainPart, rootXml.getBytes(StandardCharsets.UTF_8));
         return entries;
+    }
+
+    private static void addContentTypeOverride(
+            Map<String, byte[]> entries, String partName, String contentType) {
+        String contentTypes =
+                new String(entries.get("[Content_Types].xml"), StandardCharsets.UTF_8);
+        contentTypes =
+                contentTypes.replace(
+                        "</Types>",
+                        "<Override PartName=\""
+                                + partName
+                                + "\" ContentType=\""
+                                + contentType
+                                + "\"/></Types>");
+        entries.put("[Content_Types].xml", contentTypes.getBytes(StandardCharsets.UTF_8));
     }
 }

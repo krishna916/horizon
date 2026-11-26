@@ -95,10 +95,13 @@ public class FileStagingService {
             long actualBytes = copyAndDigest(input, stagedPath, declaredLength, digest);
             String sha256 = HexFormat.of().formatHex(digest.digest());
             if (actualBytes != declaredLength) {
-                throw new IOException("File content length does not match the declared length");
+                throw failure(
+                        FileOperationException.Reason.INVALID_CONTENT,
+                        "File content length does not match the declared length");
             }
             if (!sha256.equals(expected.expectedSha256())) {
-                throw new IOException(
+                throw failure(
+                        FileOperationException.Reason.INVALID_CONTENT,
                         "File content checksum does not match the prepared descriptor");
             }
             return new StagedFile(
@@ -167,12 +170,16 @@ public class FileStagingService {
                 int requested = (int) Math.min(buffer.length, expectedLength - copied);
                 int read = input.read(buffer, 0, requested);
                 if (read < 0) {
-                    throw new IOException("File content ended before the declared length");
+                    throw failure(
+                            FileOperationException.Reason.INVALID_CONTENT,
+                            "File content ended before the declared length");
                 }
                 if (read == 0) {
                     int oneByte = input.read();
                     if (oneByte < 0) {
-                        throw new IOException("File content ended before the declared length");
+                        throw failure(
+                                FileOperationException.Reason.INVALID_CONTENT,
+                                "File content ended before the declared length");
                     }
                     output.write(oneByte);
                     digest.update((byte) oneByte);
@@ -184,7 +191,9 @@ public class FileStagingService {
                 copied = Math.addExact(copied, read);
             }
             if (input.read() >= 0) {
-                throw new IOException("File content exceeds the declared length");
+                throw failure(
+                        FileOperationException.Reason.INVALID_CONTENT,
+                        "File content exceeds the declared length");
             }
         }
         return copied;

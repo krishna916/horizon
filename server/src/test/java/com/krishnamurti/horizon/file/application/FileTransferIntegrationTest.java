@@ -18,17 +18,32 @@ import com.krishnamurti.horizon.file.application.port.StoredObject;
 import com.krishnamurti.horizon.file.application.port.WriteResult;
 import com.krishnamurti.horizon.file.domain.FileTransferAttemptEntity;
 import com.krishnamurti.horizon.file.domain.TransferOutcome;
+import com.krishnamurti.horizon.file.infrastructure.FileMetrics;
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
+import com.krishnamurti.horizon.file.infrastructure.persistence.FileMetadataPersistence;
+import com.krishnamurti.horizon.file.infrastructure.persistence.FileMetadataRepository;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileTransferAttemptRepository;
+import com.krishnamurti.horizon.file.infrastructure.staging.FileStagingService;
+import com.krishnamurti.horizon.file.infrastructure.staging.StagingCapacity;
+import com.krishnamurti.horizon.file.infrastructure.storage.s3.S3ObjectStorage;
+import com.krishnamurti.horizon.file.infrastructure.validation.FileValidationService;
+import com.sun.net.httpserver.HttpServer;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.security.MessageDigest;
 import java.sql.Timestamp;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +52,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.retry.RetryPolicy;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
 
 @Import({TestcontainersConfiguration.class, FileApplicationTestConfiguration.class})
 @SpringBootTest
@@ -45,6 +66,13 @@ class FileTransferIntegrationTest {
     @Autowired private FileService files;
     @Autowired private TestFileOwner owner;
     @Autowired private RecordingObjectStorage storage;
+    @Autowired private FileMetadataPersistence metadataPersistence;
+    @Autowired private FileMetadataRepository metadataRepository;
+    @Autowired private FileTransactions transactions;
+    @Autowired private FileStagingService staging;
+    @Autowired private FileValidationService validation;
+    @Autowired private FileMetrics metrics;
+    @Autowired private StagingCapacity stagingCapacity;
     @Autowired private FileTransferAttemptRepository attempts;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private FileProperties properties;
@@ -116,6 +144,95 @@ class FileTransferIntegrationTest {
                                                 FileOperationException.Reason.SIZE_LIMIT_EXCEEDED));
         assertThat(storage.putCount()).isZero();
         assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(oversized.fileId())).isEmpty();
+    }
+
+    @Test
+    void shortLongOrDigestMismatchedUploadIsInvalidContentBeforeAttemptRegistration() {
+        var digestMismatch = prepare(scope(82L, "digest-mismatch"), VALID_WEBP, "chart.webp");
+        byte[] differentBytes = VALID_WEBP.clone();
+        differentBytes[differentBytes.length - 1] ^= 1;
+        assertThatThrownBy(
+                        () ->
+                                transfer(
+                                        digestMismatch.fileId(),
+                                        scope(82L, "digest-mismatch"),
+                                        differentBytes))
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.INVALID_CONTENT));
+
+        var shortUpload = prepare(scope(82L, "short"), VALID_WEBP, "chart.webp");
+        assertThatThrownBy(
+                        () ->
+                                files.transfer(
+                                        new TransferFileCommand(
+                                                new FileReference(
+                                                        shortUpload.fileId(), scope(82L, "short")),
+                                                VALID_WEBP.length,
+                                                new ByteArrayInputStream(
+                                                        java.util.Arrays.copyOf(
+                                                                VALID_WEBP,
+                                                                VALID_WEBP.length - 1)))))
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.INVALID_CONTENT));
+
+        var longUpload = prepare(scope(82L, "long"), VALID_WEBP, "chart.webp");
+        byte[] longBytes = java.util.Arrays.copyOf(VALID_WEBP, VALID_WEBP.length + 1);
+        assertThatThrownBy(
+                        () ->
+                                files.transfer(
+                                        new TransferFileCommand(
+                                                new FileReference(
+                                                        longUpload.fileId(), scope(82L, "long")),
+                                                VALID_WEBP.length,
+                                                new ByteArrayInputStream(longBytes))))
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.INVALID_CONTENT));
+
+        var ioFailure = prepare(scope(82L, "io-failure"), VALID_WEBP, "chart.webp");
+        assertThatThrownBy(
+                        () ->
+                                files.transfer(
+                                        new TransferFileCommand(
+                                                new FileReference(
+                                                        ioFailure.fileId(),
+                                                        scope(82L, "io-failure")),
+                                                VALID_WEBP.length,
+                                                new InputStream() {
+                                                    @Override
+                                                    public int read() throws IOException {
+                                                        throw new IOException(
+                                                                "simulated source I/O");
+                                                    }
+
+                                                    @Override
+                                                    public int read(
+                                                            byte[] bytes, int offset, int length)
+                                                            throws IOException {
+                                                        throw new IOException(
+                                                                "simulated source I/O");
+                                                    }
+                                                })))
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(
+                                                FileOperationException.Reason.STORAGE_UNAVAILABLE));
+
+        assertThat(storage.putCount()).isZero();
+        assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(digestMismatch.fileId())).isEmpty();
+        assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(shortUpload.fileId())).isEmpty();
+        assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(longUpload.fileId())).isEmpty();
+        assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(ioFailure.fileId())).isEmpty();
     }
 
     @Test
@@ -203,6 +320,404 @@ class FileTransferIntegrationTest {
                             assertThat(attempt.getOutcome()).isEqualTo(TransferOutcome.FAILED);
                             assertThat(attempt.getWriteSettledAt()).isNotNull();
                         });
+    }
+
+    @Test
+    void getHeadersAndBodyShareOneVerificationBudget() {
+        var prepared = prepare(scope(89L, "header-budget"), VALID_WEBP, "chart.webp");
+        properties.getStorage().getS3().setOperationTimeout(java.time.Duration.ofMillis(180));
+        AtomicBoolean aborted = new AtomicBoolean();
+        AtomicInteger abortCount = new AtomicInteger();
+        long started = System.nanoTime();
+        storage.nextGetObject(
+                () -> {
+                    try {
+                        Thread.sleep(140);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(exception);
+                    }
+                    return new StoredObject(
+                            new InputStream() {
+                                private int position;
+
+                                @Override
+                                public int read() throws IOException {
+                                    byte[] one = new byte[1];
+                                    int read = read(one, 0, 1);
+                                    return read < 0 ? -1 : Byte.toUnsignedInt(one[0]);
+                                }
+
+                                @Override
+                                public int read(byte[] bytes, int offset, int length)
+                                        throws IOException {
+                                    try {
+                                        Thread.sleep(60);
+                                    } catch (InterruptedException exception) {
+                                        Thread.currentThread().interrupt();
+                                        throw new IOException(exception);
+                                    }
+                                    if (aborted.get()) throw new IOException("aborted");
+                                    if (position == VALID_WEBP.length) return -1;
+                                    bytes[offset] = VALID_WEBP[position++];
+                                    return 1;
+                                }
+                            },
+                            VALID_WEBP.length,
+                            "image/webp",
+                            () -> {
+                                abortCount.incrementAndGet();
+                                aborted.set(true);
+                            });
+                });
+
+        var result = transfer(prepared.fileId(), scope(89L, "header-budget"), VALID_WEBP);
+        long elapsedMillis =
+                java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+
+        assertThat(result.disposition()).isEqualTo(TransferDisposition.RETRYABLE_FAILURE);
+        assertThat(abortCount).hasValue(1);
+        assertThat(elapsedMillis).isLessThan(300);
+        assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()))
+                .singleElement()
+                .satisfies(
+                        attempt -> {
+                            assertThat(attempt.getOutcome()).isEqualTo(TransferOutcome.FAILED);
+                            assertThat(attempt.getWriteSettledAt()).isNotNull();
+                            assertThat(attempt.getCleanupRequestedAt()).isNotNull();
+                        });
+    }
+
+    @Test
+    void headerBudgetExhaustionAbortsWithoutStartingAnotherBudget() {
+        var prepared = prepare(scope(89L, "header-timeout"), VALID_WEBP, "chart.webp");
+        properties.getStorage().getS3().setOperationTimeout(java.time.Duration.ofMillis(100));
+        AtomicInteger aborts = new AtomicInteger();
+        storage.nextGetObject(
+                () -> {
+                    try {
+                        Thread.sleep(180);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(exception);
+                    }
+                    return new StoredObject(
+                            new ByteArrayInputStream(VALID_WEBP),
+                            VALID_WEBP.length,
+                            "image/webp",
+                            aborts::incrementAndGet);
+                });
+
+        var result = transfer(prepared.fileId(), scope(89L, "header-timeout"), VALID_WEBP);
+
+        assertThat(result.disposition()).isEqualTo(TransferDisposition.RETRYABLE_FAILURE);
+        assertThat(aborts).hasValue(1);
+        assertThat(result.file().metadata().validatedFormat()).isNull();
+    }
+
+    @Test
+    void fullyVerifiedResponseClosesNormallyAndItsCancelledDeadlineCannotAbortLater()
+            throws InterruptedException {
+        var prepared = prepare(scope(89L, "normal-close"), VALID_WEBP, "chart.webp");
+        properties.getStorage().getS3().setOperationTimeout(java.time.Duration.ofMillis(500));
+        AtomicInteger aborts = new AtomicInteger();
+        AtomicInteger closes = new AtomicInteger();
+        storage.nextGetObject(
+                () ->
+                        new StoredObject(
+                                new ByteArrayInputStream(VALID_WEBP) {
+                                    @Override
+                                    public void close() throws IOException {
+                                        closes.incrementAndGet();
+                                        super.close();
+                                    }
+                                },
+                                VALID_WEBP.length,
+                                "image/webp",
+                                aborts::incrementAndGet));
+
+        var result = transfer(prepared.fileId(), scope(89L, "normal-close"), VALID_WEBP);
+        Thread.sleep(550);
+
+        assertThat(result.disposition()).isEqualTo(TransferDisposition.VERIFIED);
+        assertThat(closes).hasValue(1);
+        assertThat(aborts).hasValue(0);
+    }
+
+    @Test
+    void concurrentVerificationDeadlinesReleaseBothStalledStreams() throws Exception {
+        FileScope firstScope = scope(89L, "concurrent-deadline-a");
+        FileScope secondScope = scope(89L, "concurrent-deadline-b");
+        var first = prepare(firstScope, VALID_WEBP, "chart.webp");
+        var second = prepare(secondScope, VALID_WEBP, "chart.webp");
+        properties.getStorage().getS3().setOperationTimeout(java.time.Duration.ofMillis(200));
+        var firstEntered = new java.util.concurrent.CountDownLatch(1);
+        var secondEntered = new java.util.concurrent.CountDownLatch(1);
+        var firstReleased = new java.util.concurrent.CountDownLatch(1);
+        var secondReleased = new java.util.concurrent.CountDownLatch(1);
+        AtomicInteger firstAborts = new AtomicInteger();
+        AtomicInteger secondAborts = new AtomicInteger();
+        storage.nextGetObject(
+                () ->
+                        new StoredObject(
+                                blockingStream(firstEntered, firstReleased),
+                                VALID_WEBP.length,
+                                "image/webp",
+                                () -> {
+                                    firstAborts.incrementAndGet();
+                                    firstReleased.countDown();
+                                }));
+        storage.nextGetObject(
+                () ->
+                        new StoredObject(
+                                blockingStream(secondEntered, secondReleased),
+                                VALID_WEBP.length,
+                                "image/webp",
+                                () -> {
+                                    secondAborts.incrementAndGet();
+                                    secondReleased.countDown();
+                                }));
+
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var firstResult =
+                    executor.submit(() -> transfer(first.fileId(), firstScope, VALID_WEBP));
+            var secondResult =
+                    executor.submit(() -> transfer(second.fileId(), secondScope, VALID_WEBP));
+            assertThat(firstEntered.await(3, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(secondEntered.await(3, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+            assertThat(firstResult.get(3, java.util.concurrent.TimeUnit.SECONDS).disposition())
+                    .isEqualTo(TransferDisposition.RETRYABLE_FAILURE);
+            assertThat(secondResult.get(3, java.util.concurrent.TimeUnit.SECONDS).disposition())
+                    .isEqualTo(TransferDisposition.RETRYABLE_FAILURE);
+        }
+
+        assertThat(firstAborts).hasValue(1);
+        assertThat(secondAborts).hasValue(1);
+        assertThat(firstReleased.getCount()).isZero();
+        assertThat(secondReleased.getCount()).isZero();
+    }
+
+    private static InputStream blockingStream(
+            java.util.concurrent.CountDownLatch entered,
+            java.util.concurrent.CountDownLatch released) {
+        return new InputStream() {
+            @Override
+            public int read() throws IOException {
+                awaitAbort();
+                return -1;
+            }
+
+            @Override
+            public int read(byte[] bytes, int offset, int length) throws IOException {
+                awaitAbort();
+                return -1;
+            }
+
+            private void awaitAbort() throws IOException {
+                entered.countDown();
+                try {
+                    released.await();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("read interrupted", exception);
+                }
+                throw new IOException("verification stream aborted");
+            }
+        };
+    }
+
+    @Test
+    void declaredLengthMismatchAbortsWithoutReadingOrDrainingBody() {
+        var prepared = prepare(scope(89L, "length-mismatch"), VALID_WEBP, "chart.webp");
+        AtomicInteger reads = new AtomicInteger();
+        AtomicInteger aborts = new AtomicInteger();
+        storage.nextGetObject(
+                () ->
+                        new StoredObject(
+                                new InputStream() {
+                                    @Override
+                                    public int read() {
+                                        reads.incrementAndGet();
+                                        return -1;
+                                    }
+
+                                    @Override
+                                    public int read(byte[] bytes, int offset, int length) {
+                                        reads.incrementAndGet();
+                                        return -1;
+                                    }
+                                },
+                                VALID_WEBP.length + 1L,
+                                "image/webp",
+                                aborts::incrementAndGet));
+
+        var result = transfer(prepared.fileId(), scope(89L, "length-mismatch"), VALID_WEBP);
+
+        assertThat(result.disposition()).isEqualTo(TransferDisposition.RETRYABLE_FAILURE);
+        assertThat(reads).hasValue(0);
+        assertThat(aborts).hasValue(1);
+    }
+
+    @Test
+    void actualS3SdkGetHeadersAndBodyShareOneDeadline() throws Exception {
+        var prepared = prepare(scope(89L, "real-http-deadline"), VALID_WEBP, "chart.webp");
+        properties.getStorage().getS3().setOperationTimeout(java.time.Duration.ofMillis(1_500));
+        Map<String, byte[]> objects = new ConcurrentHashMap<>();
+        AtomicInteger puts = new AtomicInteger();
+        AtomicInteger gets = new AtomicInteger();
+        AtomicLong getStartedAt = new AtomicLong();
+        java.util.concurrent.CountDownLatch clientDisconnect =
+                new java.util.concurrent.CountDownLatch(1);
+        HttpServer server =
+                HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        var serverExecutor = java.util.concurrent.Executors.newCachedThreadPool();
+        server.setExecutor(serverExecutor);
+        server.createContext(
+                "/",
+                exchange -> {
+                    String path = exchange.getRequestURI().getPath();
+                    if ("PUT".equals(exchange.getRequestMethod())) {
+                        puts.incrementAndGet();
+                        objects.put(
+                                path, decodeAwsChunked(exchange.getRequestBody().readAllBytes()));
+                        exchange.sendResponseHeaders(200, -1);
+                        exchange.close();
+                        return;
+                    }
+                    if (!"GET".equals(exchange.getRequestMethod())) {
+                        exchange.sendResponseHeaders(405, -1);
+                        exchange.close();
+                        return;
+                    }
+                    gets.incrementAndGet();
+                    getStartedAt.set(System.nanoTime());
+                    byte[] bytes = objects.get(path);
+                    try {
+                        Thread.sleep(900);
+                        exchange.getResponseHeaders().add("Content-Type", "image/webp");
+                        exchange.sendResponseHeaders(200, bytes.length);
+                        OutputStream body = exchange.getResponseBody();
+                        for (int offset = 0; offset < bytes.length; offset += 8) {
+                            if (offset > 0) Thread.sleep(300);
+                            body.write(bytes, offset, Math.min(8, bytes.length - offset));
+                            body.flush();
+                        }
+                    } catch (IOException exception) {
+                        clientDisconnect.countDown();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        exchange.close();
+                    }
+                });
+        server.start();
+
+        URI endpoint = URI.create("http://127.0.0.1:" + server.getAddress().getPort());
+        var credentials =
+                StaticCredentialsProvider.create(
+                        AwsBasicCredentials.create("local-access", "local-secret"));
+        S3Client writeClient = testS3Client(endpoint, credentials);
+        S3Client readClient = testS3Client(endpoint, credentials);
+        S3ObjectStorage networkStorage =
+                new S3ObjectStorage(writeClient, readClient, "horizon-files");
+        DefaultFileService networkFiles =
+                new DefaultFileService(
+                        metadataPersistence,
+                        metadataRepository,
+                        transactions,
+                        properties,
+                        staging,
+                        validation,
+                        networkStorage,
+                        metrics);
+        try {
+            var result =
+                    networkFiles.transfer(
+                            new TransferFileCommand(
+                                    new FileReference(
+                                            prepared.fileId(), scope(89L, "real-http-deadline")),
+                                    VALID_WEBP.length,
+                                    new ByteArrayInputStream(VALID_WEBP)));
+            long getElapsedMillis =
+                    java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                            System.nanoTime() - getStartedAt.get());
+
+            assertThat(result.disposition()).isEqualTo(TransferDisposition.RETRYABLE_FAILURE);
+            assertThat(puts).hasValue(1);
+            assertThat(gets).hasValue(1);
+            assertThat(getElapsedMillis).isBetween(1_300L, 2_200L);
+            assertThat(clientDisconnect.await(3, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(stagingCapacity.activeSlots()).isZero();
+            assertThat(stagingCapacity.reservedBytes()).isZero();
+            assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()))
+                    .singleElement()
+                    .satisfies(
+                            attempt -> {
+                                assertThat(attempt.getOutcome()).isEqualTo(TransferOutcome.FAILED);
+                                assertThat(attempt.getWriteSettledAt()).isNotNull();
+                                assertThat(attempt.getCleanupRequestedAt()).isNotNull();
+                            });
+        } finally {
+            networkStorage.close();
+            writeClient.close();
+            readClient.close();
+            server.stop(0);
+            serverExecutor.shutdownNow();
+        }
+    }
+
+    private static S3Client testS3Client(
+            URI endpoint,
+            software.amazon.awssdk.auth.credentials.AwsCredentialsProvider credentials) {
+        return S3Client.builder()
+                .endpointOverride(endpoint)
+                .region(Region.US_EAST_1)
+                .credentialsProvider(credentials)
+                .serviceConfiguration(
+                        software.amazon.awssdk.services.s3.S3Configuration.builder()
+                                .pathStyleAccessEnabled(true)
+                                .build())
+                .httpClientBuilder(
+                        ApacheHttpClient.builder()
+                                .connectionTimeout(java.time.Duration.ofSeconds(2))
+                                .socketTimeout(java.time.Duration.ofSeconds(5)))
+                .overrideConfiguration(
+                        configuration ->
+                                configuration
+                                        .apiCallTimeout(java.time.Duration.ofSeconds(8))
+                                        .apiCallAttemptTimeout(java.time.Duration.ofSeconds(8))
+                                        .retryPolicy(RetryPolicy.none()))
+                .build();
+    }
+
+    private static byte[] decodeAwsChunked(byte[] encoded) throws IOException {
+        java.io.ByteArrayOutputStream decoded = new java.io.ByteArrayOutputStream();
+        int cursor = 0;
+        while (cursor < encoded.length) {
+            int lineEnd = cursor;
+            while (lineEnd < encoded.length - 1
+                    && (encoded[lineEnd] != '\r' || encoded[lineEnd + 1] != '\n')) {
+                lineEnd++;
+            }
+            if (lineEnd == encoded.length - 1) throw new IOException("Malformed AWS chunk header");
+            String header =
+                    new String(
+                            encoded,
+                            cursor,
+                            lineEnd - cursor,
+                            java.nio.charset.StandardCharsets.US_ASCII);
+            int length = Integer.parseInt(header.split(";", 2)[0], 16);
+            cursor = lineEnd + 2;
+            if (length == 0) break;
+            decoded.write(encoded, cursor, length);
+            cursor += length;
+            if (encoded[cursor] != '\r' || encoded[cursor + 1] != '\n') {
+                throw new IOException("Malformed AWS chunk framing");
+            }
+            cursor += 2;
+        }
+        return decoded.toByteArray();
     }
 
     @Test

@@ -48,6 +48,13 @@ effective maximum applies to new and unverified transfers. A file already verifi
 valid if a deployment later lowers its maximum. This implementation does not impose an
 aggregate per-user storage quota.
 
+The internal GET and SHA-256 verification after an object write uses one monotonic deadline from
+before the provider GET begins through body verification. Its budget is controlled by
+`horizon.file.storage.s3.operation-timeout` (default five minutes); provider SDK request timeouts
+also bound response acquisition. An incomplete or expired response is aborted, while a fully
+consumed, verified response closes normally. Caller-owned download reads do not use this internal
+verification deadline.
+
 The default staging concurrency is four transfers with a 65,536-byte copy buffer. The default
 payload staging budget is derived from the effective maximum multiplied by concurrency:
 83,886,076 bytes at the default upload limit. `HORIZON_FILE_STAGING_MAX_TOTAL_SIZE` (or

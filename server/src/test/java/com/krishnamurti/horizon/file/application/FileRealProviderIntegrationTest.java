@@ -17,8 +17,13 @@ import com.krishnamurti.horizon.file.api.model.FileScope;
 import com.krishnamurti.horizon.file.api.model.FileSnapshot;
 import com.krishnamurti.horizon.file.api.model.TransferDisposition;
 import com.krishnamurti.horizon.file.api.query.ReadFileQuery;
+import com.krishnamurti.horizon.file.application.port.DeleteResult;
 import com.krishnamurti.horizon.file.application.port.ObjectKey;
+import com.krishnamurti.horizon.file.application.port.ObjectMetadata;
+import com.krishnamurti.horizon.file.application.port.ObjectStorage;
+import com.krishnamurti.horizon.file.application.port.ObjectWriteRequest;
 import com.krishnamurti.horizon.file.application.port.StoredObject;
+import com.krishnamurti.horizon.file.application.port.WriteResult;
 import com.krishnamurti.horizon.file.domain.TransferOutcome;
 import com.krishnamurti.horizon.file.infrastructure.FileMetrics;
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
@@ -43,9 +48,11 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -361,8 +368,7 @@ class FileRealProviderIntegrationTest {
                     executor.shutdownNow();
                 }
 
-                assertRealRetrySelectsOneAttemptAndKeepsDistinctLoser(
-                        realFiles, provider.storage());
+                assertRealRetrySelectsOneAttemptAndKeepsDistinctLoser(provider.storage());
             }
         } finally {
             makeContainerDataRemovable(seaweed);
@@ -372,30 +378,42 @@ class FileRealProviderIntegrationTest {
         }
     }
 
-    private void assertRealRetrySelectsOneAttemptAndKeepsDistinctLoser(
-            DefaultFileService realFiles, S3ObjectStorage storage) throws Exception {
+    private void assertRealRetrySelectsOneAttemptAndKeepsDistinctLoser(S3ObjectStorage storage)
+            throws Exception {
         FileScope scope = scope(99L, "real-concurrent-retry");
         var prepared = prepare(scope, "concurrent-retry.webp");
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
+        BarrierObjectStorage barrier = new BarrierObjectStorage(storage);
+        DefaultFileService realFiles = realService(barrier);
         try (var executor = Executors.newFixedThreadPool(2)) {
             var first =
                     executor.submit(
-                            () ->
-                                    concurrentTransfer(
-                                            realFiles, prepared.fileId(), scope, ready, start));
+                            () -> realFiles.transfer(transferCommand(prepared.fileId(), scope)));
             var second =
                     executor.submit(
-                            () ->
-                                    concurrentTransfer(
-                                            realFiles, prepared.fileId(), scope, ready, start));
-            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
-            start.countDown();
+                            () -> realFiles.transfer(transferCommand(prepared.fileId(), scope)));
+            assertThat(barrier.awaitBothPuts()).isTrue();
+            var registered = attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId());
+            assertThat(registered).hasSize(2);
+            assertThat(registered)
+                    .allSatisfy(
+                            attempt -> {
+                                assertThat(attempt.getOutcome()).isEqualTo(TransferOutcome.PENDING);
+                                assertThat(attempt.getObjectKey()).isNotBlank();
+                            });
+            assertThat(registered.stream().map(attempt -> attempt.getObjectKey()).distinct())
+                    .hasSize(2);
+
+            barrier.releaseFirstPut();
+            awaitSelectedAttempt(prepared.fileId());
+            barrier.releaseSecondPut();
             List<com.krishnamurti.horizon.file.api.model.TransferResult> results =
                     List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
             assertThat(results)
                     .extracting(result -> result.disposition())
                     .contains(TransferDisposition.VERIFIED);
+            assertThat(results)
+                    .extracting(result -> result.disposition())
+                    .contains(TransferDisposition.RETRYABLE_FAILURE);
         }
         var concurrentAttempts = attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId());
         assertThat(concurrentAttempts).hasSize(2);
@@ -408,34 +426,41 @@ class FileRealProviderIntegrationTest {
                         attempt ->
                                 assertThat(attempt.getOutcome())
                                         .isEqualTo(TransferOutcome.VERIFIED));
+        var loser =
+                concurrentAttempts.stream()
+                        .filter(attempt -> !attempt.getId().equals(selected))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(loser.getOutcome()).isEqualTo(TransferOutcome.VERIFIED);
+        assertThat(loser.getWriteSettledAt()).isNotNull();
+        assertThat(loser.getCleanupRequestedAt()).isNotNull();
+        assertThat(loser.getCleanupConfirmedAt()).isNull();
         var winner =
                 concurrentAttempts.stream()
                         .filter(attempt -> attempt.getId().equals(selected))
                         .findFirst()
                         .orElseThrow();
+        assertThat(barrier.putKeys()).contains(winner.getObjectKey(), loser.getObjectKey());
         assertThat(storage.head(new ObjectKey(winner.getObjectKey())).found()).isTrue();
+        assertThat(storage.head(new ObjectKey(loser.getObjectKey())).found()).isTrue();
         try (StoredObject object = storage.get(new ObjectKey(winner.getObjectKey()));
+                ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            object.content().transferTo(output);
+            assertThat(output.toByteArray()).containsExactly(WEBP);
+        }
+        try (StoredObject object = storage.get(new ObjectKey(loser.getObjectKey()));
                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             object.content().transferTo(output);
             assertThat(output.toByteArray()).containsExactly(WEBP);
         }
     }
 
-    private com.krishnamurti.horizon.file.api.model.TransferResult concurrentTransfer(
-            DefaultFileService realFiles,
-            UUID fileId,
-            FileScope scope,
-            CountDownLatch ready,
-            CountDownLatch start) {
-        ready.countDown();
-        try {
-            if (!start.await(5, TimeUnit.SECONDS))
-                throw new IllegalStateException("Start gate timed out");
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Concurrent transfer interrupted", exception);
+    private void awaitSelectedAttempt(UUID fileId) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (selectedAttempt(fileId) == null && System.nanoTime() < deadline) {
+            Thread.sleep(10);
         }
-        return realFiles.transfer(transferCommand(fileId, scope));
+        assertThat(selectedAttempt(fileId)).isNotNull();
     }
 
     private UUID selectedAttempt(UUID fileId) {
@@ -509,7 +534,7 @@ class FileRealProviderIntegrationTest {
         jdbc.execute("DROP FUNCTION IF EXISTS force_file_attempt_db_failure()");
     }
 
-    private DefaultFileService realService(S3ObjectStorage storage) {
+    private DefaultFileService realService(ObjectStorage storage) {
         return new DefaultFileService(
                 metadataPersistence,
                 metadataRepository,
@@ -519,6 +544,72 @@ class FileRealProviderIntegrationTest {
                 validation,
                 storage,
                 metrics);
+    }
+
+    private static final class BarrierObjectStorage implements ObjectStorage {
+        private final S3ObjectStorage delegate;
+        private final CountDownLatch bothPutsEntered = new CountDownLatch(2);
+        private final CountDownLatch firstPutRelease = new CountDownLatch(1);
+        private final CountDownLatch secondPutRelease = new CountDownLatch(1);
+        private final AtomicInteger putIndex = new AtomicInteger();
+        private final List<String> putKeys = new CopyOnWriteArrayList<>();
+
+        private BarrierObjectStorage(S3ObjectStorage delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public WriteResult put(ObjectWriteRequest request) {
+            int index = putIndex.getAndIncrement();
+            putKeys.add(request.key().value());
+            bothPutsEntered.countDown();
+            try {
+                CountDownLatch release = index == 0 ? firstPutRelease : secondPutRelease;
+                if (!release.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("PUT barrier timed out");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("PUT barrier was interrupted", exception);
+            }
+            return delegate.put(request);
+        }
+
+        private boolean awaitBothPuts() throws InterruptedException {
+            return bothPutsEntered.await(10, TimeUnit.SECONDS);
+        }
+
+        private void releaseFirstPut() {
+            firstPutRelease.countDown();
+        }
+
+        private void releaseSecondPut() {
+            secondPutRelease.countDown();
+        }
+
+        private List<String> putKeys() {
+            return List.copyOf(putKeys);
+        }
+
+        @Override
+        public ObjectMetadata head(ObjectKey key) {
+            return delegate.head(key);
+        }
+
+        @Override
+        public StoredObject get(ObjectKey key) {
+            return delegate.get(key);
+        }
+
+        @Override
+        public DeleteResult delete(ObjectKey key) {
+            return delegate.delete(key);
+        }
+
+        @Override
+        public void checkAvailability() {
+            delegate.checkAvailability();
+        }
     }
 
     private FileSnapshot prepare(FileScope scope, String filename) {

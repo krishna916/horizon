@@ -62,7 +62,12 @@ class FileStagingServiceTest {
                                             new ByteArrayInputStream(CONTENT),
                                             CONTENT.length + 1L,
                                             shortDescriptor))
-                    .isInstanceOf(IOException.class);
+                    .isInstanceOfSatisfying(
+                            FileOperationException.class,
+                            exception ->
+                                    assertThat(exception.reason())
+                                            .isEqualTo(
+                                                    FileOperationException.Reason.INVALID_CONTENT));
             byte[] overlong = java.util.Arrays.copyOf(CONTENT, CONTENT.length + 1);
             assertThatThrownBy(
                             () ->
@@ -70,7 +75,12 @@ class FileStagingServiceTest {
                                             new ByteArrayInputStream(overlong),
                                             CONTENT.length,
                                             descriptor))
-                    .isInstanceOf(IOException.class);
+                    .isInstanceOfSatisfying(
+                            FileOperationException.class,
+                            exception ->
+                                    assertThat(exception.reason())
+                                            .isEqualTo(
+                                                    FileOperationException.Reason.INVALID_CONTENT));
             assertThatThrownBy(
                             () ->
                                     service.stage(
@@ -81,7 +91,12 @@ class FileStagingServiceTest {
                                                     "text/plain",
                                                     CONTENT.length,
                                                     "b".repeat(64))))
-                    .isInstanceOf(IOException.class);
+                    .isInstanceOfSatisfying(
+                            FileOperationException.class,
+                            exception ->
+                                    assertThat(exception.reason())
+                                            .isEqualTo(
+                                                    FileOperationException.Reason.INVALID_CONTENT));
             assertThat(stageFiles(directory.path())).isEmpty();
             assertThat(capacity.activeSlots()).isZero();
             assertThat(capacity.reservedBytes()).isZero();
