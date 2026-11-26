@@ -255,12 +255,15 @@ public class OfficeFileValidator implements FileValidator {
                     || contentType.contains("oleobject")) {
                 throw invalid("Office macros and executable embedded objects are not accepted");
             }
-            if (isXmlEntry(name)) {
+            if (hasExecutableSignature(part)) {
+                throw invalid("Office embedded executable content is not accepted");
+            }
+            if (isXmlEntry(name)
+                    || contentType.endsWith("+xml")
+                    || contentType.equals("application/xml")) {
                 try (InputStream input = part.getInputStream()) {
                     scanXml(secureXmlFactory(), input);
                 }
-            } else if (hasExecutableSignature(part)) {
-                throw invalid("Office embedded executable content is not accepted");
             }
         }
     }

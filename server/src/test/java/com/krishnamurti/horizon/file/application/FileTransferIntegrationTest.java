@@ -8,6 +8,7 @@ import com.krishnamurti.horizon.file.api.FileOperationException;
 import com.krishnamurti.horizon.file.api.FileService;
 import com.krishnamurti.horizon.file.api.command.ClaimFileCommand;
 import com.krishnamurti.horizon.file.api.command.CleanupFileCommand;
+import com.krishnamurti.horizon.file.api.command.PrepareFileCommand;
 import com.krishnamurti.horizon.file.api.command.TransferFileCommand;
 import com.krishnamurti.horizon.file.api.model.FileDescriptor;
 import com.krishnamurti.horizon.file.api.model.FileReference;
@@ -29,12 +30,14 @@ import com.krishnamurti.horizon.file.infrastructure.storage.s3.S3ObjectStorage;
 import com.krishnamurti.horizon.file.infrastructure.validation.FileValidationService;
 import com.sun.net.httpserver.HttpServer;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.sql.Timestamp;
 import java.util.HexFormat;
@@ -44,6 +47,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -144,6 +149,59 @@ class FileTransferIntegrationTest {
                                                 FileOperationException.Reason.SIZE_LIMIT_EXCEEDED));
         assertThat(storage.putCount()).isZero();
         assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(oversized.fileId())).isEmpty();
+    }
+
+    @Test
+    void nonstandardOfficeXmlRejectedBeforeAttemptRegistration() throws Exception {
+        byte[] officeBytes = docxWithNonstandardXmlPart();
+        FileScope scope = scope(82L, "nonstandard-office-xml");
+        var prepared =
+                owner.prepare(
+                        new PrepareFileCommand(
+                                UUID.randomUUID(),
+                                scope,
+                                new FileDescriptor(
+                                        "report.docx",
+                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        officeBytes.length,
+                                        sha256(officeBytes))));
+
+        assertThatThrownBy(
+                        () ->
+                                files.transfer(
+                                        new TransferFileCommand(
+                                                new FileReference(prepared.fileId(), scope),
+                                                officeBytes.length,
+                                                new ByteArrayInputStream(officeBytes))))
+                .isInstanceOfSatisfying(
+                        FileOperationException.class,
+                        failure ->
+                                assertThat(failure.reason())
+                                        .isEqualTo(FileOperationException.Reason.INVALID_CONTENT));
+
+        assertThat(storage.putCount()).isZero();
+        assertThat(attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())).isEmpty();
+        assertThat(
+                        metadataRepository
+                                .findById(prepared.fileId())
+                                .orElseThrow()
+                                .getSelectedAttemptId())
+                .isNull();
+        assertThat(stagingCapacity.activeSlots()).isZero();
+        assertThat(stagingCapacity.reservedBytes()).isZero();
+        try (var stagedFiles =
+                java.nio.file.Files.list(Path.of(properties.getStaging().getDirectory()))) {
+            assertThat(
+                            stagedFiles.filter(
+                                    path ->
+                                            path.getFileName()
+                                                            .toString()
+                                                            .startsWith("horizon-file-")
+                                                    && path.getFileName()
+                                                            .toString()
+                                                            .endsWith(".stage")))
+                    .isEmpty();
+        }
     }
 
     @Test
@@ -1095,6 +1153,45 @@ class FileTransferIntegrationTest {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    private static byte[] docxWithNonstandardXmlPart() throws IOException {
+        Map<String, byte[]> entries =
+                Map.of(
+                        "[Content_Types].xml",
+                        ("<?xml version=\"1.0\"?><Types"
+                             + " xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default"
+                             + " Extension=\"rels\""
+                             + " ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Override"
+                             + " PartName=\"/word/document.xml\""
+                             + " ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/><Override"
+                             + " PartName=\"/custom/metadata.bin\""
+                             + " ContentType=\"application/xml\"/></Types>")
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        "_rels/.rels",
+                        ("<?xml version=\"1.0\"?><Relationships"
+                             + " xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship"
+                             + " Id=\"rId1\""
+                             + " Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\""
+                             + " Target=\"word/document.xml\"/></Relationships>")
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        "word/document.xml",
+                        ("<?xml version=\"1.0\"?><w:document"
+                             + " xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>")
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        "custom/metadata.bin",
+                        "<!DOCTYPE x [<!ENTITY e \"blocked\">]><x>&e;</x>"
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        try (ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                ZipOutputStream zip = new ZipOutputStream(bytes)) {
+            for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+                zip.putNextEntry(new ZipEntry(entry.getKey()));
+                zip.write(entry.getValue());
+                zip.closeEntry();
+            }
+            zip.finish();
+            return bytes.toByteArray();
         }
     }
 }

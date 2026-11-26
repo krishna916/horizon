@@ -8,6 +8,7 @@ import com.krishnamurti.horizon.file.infrastructure.FileProperties;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -197,6 +198,51 @@ class OfficeFileValidatorTest {
                                     new OfficeFileValidator()
                                             .validate(fixture.file(), FileFormat.DOCX))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void nonXmlPathWithDeclaredXmlTypeRejectsProhibitedAndMalformedXml() throws Exception {
+        for (String contentType :
+                List.of("application/xml", "application/vnd.example.metadata+xml")) {
+            for (String xml : List.of("<!DOCTYPE x [<!ENTITY e \"blocked\">]><x>&e;</x>", "<x>")) {
+                Map<String, byte[]> entries =
+                        officeEntries(
+                                "word/document.xml",
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+                entries.put("custom/metadata.bin", xml.getBytes(StandardCharsets.UTF_8));
+                addContentTypeOverride(entries, "/custom/metadata.bin", contentType);
+                try (ValidationTestSupport.StagedFixture fixture =
+                        ValidationTestSupport.stage(
+                                temporaryDirectory.resolve(
+                                        "declared-xml-" + contentType.hashCode()),
+                                ValidationTestSupport.zip(entries))) {
+                    assertThatThrownBy(
+                                    () ->
+                                            new OfficeFileValidator()
+                                                    .validate(fixture.file(), FileFormat.DOCX))
+                            .isInstanceOf(IllegalArgumentException.class);
+                }
+            }
+        }
+    }
+
+    @Test
+    void benignXmlUnderNonXmlPathAndXmlContentTypeIsAccepted() throws Exception {
+        Map<String, byte[]> entries =
+                officeEntries(
+                        "word/document.xml",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+        entries.put(
+                "custom/metadata.bin",
+                "<metadata><value>safe</value></metadata>".getBytes(StandardCharsets.UTF_8));
+        addContentTypeOverride(entries, "/custom/metadata.bin", "application/xml");
+        try (ValidationTestSupport.StagedFixture fixture =
+                ValidationTestSupport.stage(
+                        temporaryDirectory.resolve("benign-declared-xml"),
+                        ValidationTestSupport.zip(entries))) {
+            assertThat(new OfficeFileValidator().validate(fixture.file(), FileFormat.DOCX).format())
+                    .isEqualTo(FileFormat.DOCX);
         }
     }
 
