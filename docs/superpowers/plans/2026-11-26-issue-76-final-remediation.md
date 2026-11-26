@@ -6,7 +6,7 @@
 
 **Architecture:** Preserve the existing File foundation, public contracts, storage port, schema, transaction boundaries and all resolved review findings. Restore complementary executable and secure XML inspection at the existing Office validator boundary; do not expand file-format or parser policy.
 
-**Tech stack:** Existing Java 25, Spring Boot 4.0.6, PostgreSQL/Flyway, AWS SDK 2.59.2, pinned SeaweedFS 4.54, POI 6.0.0, PDFBox 3.0.8, TwelveMonkeys WebP 3.15.3, Maven/Testcontainers. No new runtime dependency.
+**Tech stack:** Existing Java 25, Spring Boot 4.0.10 after the owner-approved aligned security updates, PostgreSQL/Flyway, AWS SDK 2.59.2, pinned SeaweedFS 4.54, POI 6.0.0, PDFBox 3.0.8, TwelveMonkeys WebP 3.15.3, Maven/Testcontainers. No new runtime dependency.
 
 **Spec:** [Approved design](https://github.com/krishna916/horizon/blob/506c0777a0eb8930097d08c144642dae1e6e7a04/docs/superpowers/specs/2026-11-25-issue-76-file-foundation-design.md), [original implementation plan](https://github.com/krishna916/horizon/blob/506c0777a0eb8930097d08c144642dae1e6e7a04/docs/superpowers/plans/2026-11-25-issue-76-file-foundation.md), [Round 2 plan](https://github.com/krishna916/horizon/blob/7e249b7c2c207fb56111417fbd5866504979e80b/docs/superpowers/plans/2026-11-26-issue-76-round-2-remediation.md), [Round 2 closure matrix](https://github.com/krishna916/horizon/pull/96#issuecomment-7197127101).
 
