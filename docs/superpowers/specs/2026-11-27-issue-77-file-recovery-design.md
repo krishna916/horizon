@@ -3,7 +3,7 @@
 **Date:** 2026-11-27  
 **Status:** D77-01–08 and detailed design including R1–R6 approved by human owner on 2026-11-27. Plan authoring authorized; production implementation and repository publication remain subject to plan review.  
 **Base reviewed:** `master` at `d2c11bf64b7af1420d840e71b4b90c267cc85654` (merged PR #96).  
-**Executor:** Luna, inline and sequential; no subagents.  
+**Executor:** Luna, inline and sequential in the normal feature-branch checkout; no worktrees, no subagents or delegation (including review). Open one PR only at the end after all implementation and local CI-equivalent verification; require all actual PR CI checks and SonarCloud quality gate to pass before handoff. No automatic merge.  
 **Target repository path after publication authorization:** `docs/superpowers/specs/2026-11-27-issue-77-file-recovery-design.md`.
 
 ## 1. Intent and boundaries
