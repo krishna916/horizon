@@ -16,3 +16,7 @@ management:
       group:
         readiness:
           include: readinessState,fileStorage
+horizon:
+  file:
+    recovery:
+      enabled: false

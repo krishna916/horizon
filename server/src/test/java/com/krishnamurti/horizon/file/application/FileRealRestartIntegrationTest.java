@@ -187,6 +187,7 @@ class FileRealRestartIntegrationTest {
     private static ConfigurableApplicationContext start(
             PostgreSQLContainer database, Path staging, String endpoint) {
         Properties properties = new Properties();
+        properties.put("horizon.file.recovery.enabled", "false");
         properties.putAll(
                 Map.of(
                         "spring.datasource.url",
