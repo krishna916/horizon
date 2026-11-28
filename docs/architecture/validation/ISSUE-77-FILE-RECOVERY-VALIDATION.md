@@ -66,6 +66,50 @@ storage pinned to digest
 These runs establish the baseline only; they do not verify remediation changes
 or the actual deployment bucket.
 
+### PostgreSQL discovery and diagnostics (Task 6)
+
+The focused recovery matrix passed on PostgreSQL 17.11: `FileRecoveryLeaseIntegrationTest`,
+`FileRecoveryObservabilityTest`, and `FileRecoveryWorkerIntegrationTest` ran
+32 tests with zero failures, errors, or skips. The oldest-parent lock test uses
+batch size 1 for expiry, deletion, and compaction. For each kind, a later due
+row was processed while the oldest parent was held; the locked row remained
+unchanged and became eligible after release. A temporary removal of
+`SKIP LOCKED` made the expiry case fail by returning the blocked oldest row;
+the production clause was restored before the final run.
+
+The diagnostics parity case includes a live selected winner, a selectable
+unsettled attempt, a settled failed attempt, a parent-fenced UNKNOWN attempt,
+an expired-but-not-yet-fenced parent, future retry, active and expired leases,
+and a compactable terminal parent. At a fixed database timestamp, the
+diagnostic due count equaled the sum of candidate discovery for all three work
+kinds. It excluded the live winner, future retry, active lease, and unfenced
+expiry from deletion eligibility while reporting the expiry as expiry work.
+Unresolved and lease counts matched the fixture.
+
+An opt-in Testcontainers fixture ran the exact production SQL via
+`EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)` inside rollback-only transactions.
+Command: `./mvnw -Duser.timezone=UTC -Dfile.recovery.explain=true test
+-Dtest=FileRecoveryPersistenceIntegrationTest#explainsProductionQueriesAgainstRepresentativeRecoveryBacklogs`.
+It loaded 2,000 due expiry parents and 64 terminal compaction parents, then
+measured both 128 and 5,128 UNKNOWN attempts (the initial backlog also had 32
+active leases and 32 future retries). At the larger population, expiry used
+`idx_file_metadata_expiry` and completed in 1.021 ms; compaction used
+`idx_file_recovery_parent_terminal` and completed in 0.107 ms. DELETE discovery
+returned its bounded 25 rows after scanning about 7,192 parent rows and 5,064
+attempt rows and sorting the due candidates; it completed in 11.462 ms. The
+diagnostic aggregate scanned retained rows and completed in 15.589 ms. With the
+oldest expiry parent separately locked, the production query still returned 25
+later rows and completed in 1.204 ms. At the smaller backlog, the four query
+times were 0.059 ms (expiry), 1.156 ms (delete), 0.094 ms (compaction), and
+1.632 ms (diagnostics).
+
+No query or index change was justified by these fixture timings. DELETE and
+aggregate work scan history and will scale with retained rows; these synthetic
+measurements are not a production capacity guarantee. Larger deployment data
+should be measured before changing indexes or query shape. The runbook's
+attempt diagnostic predicates match the worker's live-winner, retry, lease,
+and cleanup eligibility rules; no query correction was needed there.
+
 ## Recovery and provider proof
 
 - PostgreSQL integration coverage verifies migration on empty databases and

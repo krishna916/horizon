@@ -49,50 +49,7 @@ public class FileRecoveryPersistence {
     }
 
     public List<Candidate> findCandidates(WorkKind kind, Instant now, int limit) {
-        String sql =
-                switch (kind) {
-                    case EXPIRE_FILE ->
-                            """
-                            SELECT f.id AS file_id, NULL::uuid AS attempt_id, f.expires_at AS due_at
-                            FROM file_metadata f WHERE f.claimed_at IS NULL AND f.cleanup_requested_at IS NULL
-                              AND f.expiry_recorded_at IS NULL AND f.purged_at IS NULL AND f.expires_at <= ?
-                            ORDER BY due_at, f.id LIMIT ? FOR UPDATE OF f SKIP LOCKED
-                            """;
-                    case COMPACT_FILE ->
-                            """
-                            SELECT f.id AS file_id, NULL::uuid AS attempt_id, COALESCE(f.cleanup_requested_at,f.expiry_recorded_at) AS due_at
-                            FROM file_metadata f WHERE f.purged_at IS NULL
-                              AND (f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL)
-                              AND NOT EXISTS (SELECT 1 FROM file_transfer_attempt a WHERE a.file_id=f.id AND
-                                (a.cleanup_confirmed_at IS NULL OR a.object_key IS NOT NULL OR a.expected_size_bytes IS NOT NULL
-                                OR a.expected_sha256 IS NOT NULL OR a.verified_size_bytes IS NOT NULL OR a.verified_sha256 IS NOT NULL))
-                              AND COALESCE(f.cleanup_requested_at,f.expiry_recorded_at) <= ?
-                            ORDER BY due_at, f.id LIMIT ? FOR UPDATE OF f SKIP LOCKED
-                            """;
-                    case DELETE_ATTEMPT ->
-                            """
-                            SELECT candidates.file_id, candidates.attempt_id, candidates.due_at
-                            FROM (
-                              SELECT f.id AS file_id, a.id AS attempt_id, COALESCE(a.next_cleanup_at,a.cleanup_requested_at) AS due_at
-                              FROM file_transfer_attempt a JOIN file_metadata f ON f.id=a.file_id
-                              WHERE a.cleanup_requested_at IS NOT NULL AND a.cleanup_confirmed_at IS NULL AND a.object_key IS NOT NULL
-                                AND f.purged_at IS NULL AND (a.cleanup_lease_until IS NULL OR a.cleanup_lease_until <= ?)
-                                AND (f.selected_attempt_id IS DISTINCT FROM a.id OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL OR (f.claimed_at IS NULL AND f.expires_at <= ?))
-                              UNION ALL
-                              SELECT f.id AS file_id, a.id AS attempt_id, a.created_at AS due_at
-                              FROM file_transfer_attempt a JOIN file_metadata f ON f.id=a.file_id
-                              WHERE a.cleanup_requested_at IS NULL AND a.cleanup_confirmed_at IS NULL AND a.object_key IS NOT NULL
-                                AND f.purged_at IS NULL AND (a.cleanup_lease_until IS NULL OR a.cleanup_lease_until <= ?)
-                                AND (f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL
-                                     OR (f.claimed_at IS NULL AND f.expires_at <= ?)
-                                     OR (f.selected_attempt_id IS NOT NULL AND f.selected_attempt_id<>a.id)
-                                     OR (a.outcome='FAILED' AND a.write_settled_at IS NOT NULL))
-                                AND (f.selected_attempt_id IS DISTINCT FROM a.id OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL OR (f.claimed_at IS NULL AND f.expires_at <= ?))
-                            ) candidates JOIN file_metadata f ON f.id=candidates.file_id
-                            WHERE candidates.due_at <= ? ORDER BY candidates.due_at,candidates.attempt_id
-                            LIMIT ? FOR UPDATE OF f SKIP LOCKED
-                            """;
-                };
+        String sql = candidateSql(kind);
         OffsetDateTime t = OffsetDateTime.ofInstant(now, ZoneOffset.UTC);
         Object[] args =
                 kind == WorkKind.DELETE_ATTEMPT
@@ -109,6 +66,52 @@ public class FileRecoveryPersistence {
                 args);
     }
 
+    static String candidateSql(WorkKind kind) {
+        return switch (kind) {
+            case EXPIRE_FILE ->
+                    """
+                    SELECT f.id AS file_id, NULL::uuid AS attempt_id, f.expires_at AS due_at
+                    FROM file_metadata f WHERE f.claimed_at IS NULL AND f.cleanup_requested_at IS NULL
+                      AND f.expiry_recorded_at IS NULL AND f.purged_at IS NULL AND f.expires_at <= ?
+                            ORDER BY due_at, f.id LIMIT ? FOR UPDATE OF f SKIP LOCKED
+                    """;
+            case COMPACT_FILE ->
+                    """
+                    SELECT f.id AS file_id, NULL::uuid AS attempt_id, COALESCE(f.cleanup_requested_at,f.expiry_recorded_at) AS due_at
+                    FROM file_metadata f WHERE f.purged_at IS NULL
+                      AND (f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL)
+                      AND NOT EXISTS (SELECT 1 FROM file_transfer_attempt a WHERE a.file_id=f.id AND
+                        (a.cleanup_confirmed_at IS NULL OR a.object_key IS NOT NULL OR a.expected_size_bytes IS NOT NULL
+                        OR a.expected_sha256 IS NOT NULL OR a.verified_size_bytes IS NOT NULL OR a.verified_sha256 IS NOT NULL))
+                      AND COALESCE(f.cleanup_requested_at,f.expiry_recorded_at) <= ?
+                    ORDER BY due_at, f.id LIMIT ? FOR UPDATE OF f SKIP LOCKED
+                    """;
+            case DELETE_ATTEMPT ->
+                    """
+                    SELECT candidates.file_id, candidates.attempt_id, candidates.due_at
+                    FROM (
+                      SELECT f.id AS file_id, a.id AS attempt_id, COALESCE(a.next_cleanup_at,a.cleanup_requested_at) AS due_at
+                      FROM file_transfer_attempt a JOIN file_metadata f ON f.id=a.file_id
+                      WHERE a.cleanup_requested_at IS NOT NULL AND a.cleanup_confirmed_at IS NULL AND a.object_key IS NOT NULL
+                        AND f.purged_at IS NULL AND (a.cleanup_lease_until IS NULL OR a.cleanup_lease_until <= ?)
+                        AND (f.selected_attempt_id IS DISTINCT FROM a.id OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL OR (f.claimed_at IS NULL AND f.expires_at <= ?))
+                      UNION ALL
+                      SELECT f.id AS file_id, a.id AS attempt_id, a.created_at AS due_at
+                      FROM file_transfer_attempt a JOIN file_metadata f ON f.id=a.file_id
+                      WHERE a.cleanup_requested_at IS NULL AND a.cleanup_confirmed_at IS NULL AND a.object_key IS NOT NULL
+                        AND f.purged_at IS NULL AND (a.cleanup_lease_until IS NULL OR a.cleanup_lease_until <= ?)
+                        AND (f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL
+                             OR (f.claimed_at IS NULL AND f.expires_at <= ?)
+                             OR (f.selected_attempt_id IS NOT NULL AND f.selected_attempt_id<>a.id)
+                             OR (a.outcome='FAILED' AND a.write_settled_at IS NOT NULL))
+                        AND (f.selected_attempt_id IS DISTINCT FROM a.id OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL OR (f.claimed_at IS NULL AND f.expires_at <= ?))
+                    ) candidates JOIN file_metadata f ON f.id=candidates.file_id
+                    WHERE candidates.due_at <= ? ORDER BY candidates.due_at,candidates.attempt_id
+                    LIMIT ? FOR UPDATE OF f SKIP LOCKED
+                    """;
+        };
+    }
+
     public record RecoveryCounts(
             long pending,
             long due,
@@ -119,38 +122,7 @@ public class FileRecoveryPersistence {
             long oldestUnresolvedAgeSeconds) {}
 
     public RecoveryCounts recoveryCounts(Instant now) {
-        String sql =
-                """
-                WITH work AS (
-                  SELECT f.expires_at AS due_at, FALSE AS leased FROM file_metadata f
-                  WHERE f.claimed_at IS NULL AND f.cleanup_requested_at IS NULL AND f.expiry_recorded_at IS NULL AND f.purged_at IS NULL
-                  UNION ALL
-                  SELECT COALESCE(a.next_cleanup_at,a.cleanup_requested_at,a.created_at),
-                         (a.cleanup_lease_until IS NOT NULL AND a.cleanup_lease_until > :now)
-                  FROM file_transfer_attempt a JOIN file_metadata f ON f.id=a.file_id
-                  WHERE f.purged_at IS NULL AND a.object_key IS NOT NULL AND a.cleanup_confirmed_at IS NULL
-                    AND (a.cleanup_requested_at IS NOT NULL OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL
-                         OR (f.claimed_at IS NULL AND f.expires_at <= :now)
-                         OR (f.selected_attempt_id IS NOT NULL AND f.selected_attempt_id<>a.id)
-                         OR (a.outcome='FAILED' AND a.write_settled_at IS NOT NULL))
-                    AND (f.selected_attempt_id IS DISTINCT FROM a.id OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL
-                         OR (f.claimed_at IS NULL AND f.expires_at <= :now))
-                  UNION ALL
-                  SELECT COALESCE(f.cleanup_requested_at,f.expiry_recorded_at), FALSE FROM file_metadata f
-                  WHERE f.purged_at IS NULL AND (f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL)
-                    AND NOT EXISTS (SELECT 1 FROM file_transfer_attempt a WHERE a.file_id=f.id AND
-                     (a.cleanup_confirmed_at IS NULL OR a.object_key IS NOT NULL OR a.expected_size_bytes IS NOT NULL
-                      OR a.expected_sha256 IS NOT NULL OR a.verified_size_bytes IS NOT NULL OR a.verified_sha256 IS NOT NULL))
-                )
-                SELECT count(*) AS pending,
-                       count(*) FILTER (WHERE due_at<=:now AND NOT leased) AS due,
-                       count(*) FILTER (WHERE due_at<:now AND NOT leased) AS overdue,
-                       (SELECT count(*) FROM file_transfer_attempt WHERE object_key IS NOT NULL AND write_settled_at IS NULL AND outcome IN ('PENDING','UNKNOWN')) AS unresolved,
-                       (SELECT count(*) FROM file_transfer_attempt WHERE cleanup_lease_token IS NOT NULL AND cleanup_lease_until>:now) AS active_leases,
-                       (SELECT count(*) FROM file_transfer_attempt WHERE cleanup_lease_token IS NOT NULL AND cleanup_lease_until<=:now) AS expired_leases,
-                       (SELECT COALESCE(GREATEST(0, EXTRACT(EPOCH FROM (:now - MIN(created_at)))::bigint),0) FROM file_transfer_attempt WHERE object_key IS NOT NULL AND write_settled_at IS NULL AND outcome IN ('PENDING','UNKNOWN')) AS oldest
-                FROM work
-                """;
+        String sql = recoveryCountsSql();
         var named = new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(jdbc);
         return named.queryForObject(
                 sql,
@@ -164,5 +136,39 @@ public class FileRecoveryPersistence {
                                 rs.getLong("active_leases"),
                                 rs.getLong("expired_leases"),
                                 rs.getLong("oldest")));
+    }
+
+    static String recoveryCountsSql() {
+        return """
+        WITH work AS (
+          SELECT f.expires_at AS due_at, FALSE AS leased FROM file_metadata f
+          WHERE f.claimed_at IS NULL AND f.cleanup_requested_at IS NULL AND f.expiry_recorded_at IS NULL AND f.purged_at IS NULL
+          UNION ALL
+          SELECT COALESCE(a.next_cleanup_at,a.cleanup_requested_at,a.created_at),
+                 (a.cleanup_lease_until IS NOT NULL AND a.cleanup_lease_until > :now)
+          FROM file_transfer_attempt a JOIN file_metadata f ON f.id=a.file_id
+          WHERE f.purged_at IS NULL AND a.object_key IS NOT NULL AND a.cleanup_confirmed_at IS NULL
+            AND (a.cleanup_requested_at IS NOT NULL OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL
+                 OR (f.claimed_at IS NULL AND f.expires_at <= :now)
+                 OR (f.selected_attempt_id IS NOT NULL AND f.selected_attempt_id<>a.id)
+                 OR (a.outcome='FAILED' AND a.write_settled_at IS NOT NULL))
+            AND (f.selected_attempt_id IS DISTINCT FROM a.id OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL
+                 OR (f.claimed_at IS NULL AND f.expires_at <= :now))
+          UNION ALL
+          SELECT COALESCE(f.cleanup_requested_at,f.expiry_recorded_at), FALSE FROM file_metadata f
+          WHERE f.purged_at IS NULL AND (f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM file_transfer_attempt a WHERE a.file_id=f.id AND
+             (a.cleanup_confirmed_at IS NULL OR a.object_key IS NOT NULL OR a.expected_size_bytes IS NOT NULL
+              OR a.expected_sha256 IS NOT NULL OR a.verified_size_bytes IS NOT NULL OR a.verified_sha256 IS NOT NULL))
+        )
+        SELECT count(*) AS pending,
+               count(*) FILTER (WHERE due_at<=:now AND NOT leased) AS due,
+               count(*) FILTER (WHERE due_at<:now AND NOT leased) AS overdue,
+               (SELECT count(*) FROM file_transfer_attempt WHERE object_key IS NOT NULL AND write_settled_at IS NULL AND outcome IN ('PENDING','UNKNOWN')) AS unresolved,
+               (SELECT count(*) FROM file_transfer_attempt WHERE cleanup_lease_token IS NOT NULL AND cleanup_lease_until>:now) AS active_leases,
+               (SELECT count(*) FROM file_transfer_attempt WHERE cleanup_lease_token IS NOT NULL AND cleanup_lease_until<=:now) AS expired_leases,
+               (SELECT COALESCE(GREATEST(0, EXTRACT(EPOCH FROM (:now - MIN(created_at)))::bigint),0) FROM file_transfer_attempt WHERE object_key IS NOT NULL AND write_settled_at IS NULL AND outcome IN ('PENDING','UNKNOWN')) AS oldest
+        FROM work
+        """;
     }
 }

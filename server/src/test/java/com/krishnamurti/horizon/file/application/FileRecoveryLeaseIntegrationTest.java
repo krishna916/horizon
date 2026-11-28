@@ -11,6 +11,8 @@ import com.krishnamurti.horizon.file.infrastructure.persistence.FileRecoveryPers
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -30,6 +32,9 @@ class FileRecoveryLeaseIntegrationTest {
 
     @BeforeEach
     void setup() {
+        jdbc.update("UPDATE file_metadata SET claimed_at=NULL,selected_attempt_id=NULL");
+        jdbc.update("DELETE FROM file_transfer_attempt");
+        jdbc.update("DELETE FROM file_metadata");
         FilePrepareIntegrationTest.ensureUsers(jdbc);
     }
 
@@ -271,6 +276,7 @@ class FileRecoveryLeaseIntegrationTest {
                 freeAttempt.attemptId());
         var locked = new java.util.concurrent.CountDownLatch(1);
         var release = new java.util.concurrent.CountDownLatch(1);
+        jdbc.execute("SET lock_timeout='2s'");
         try (var executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
             var held =
                     executor.submit(
@@ -309,6 +315,126 @@ class FileRecoveryLeaseIntegrationTest {
             held.get(10, java.util.concurrent.TimeUnit.SECONDS);
         } finally {
             release.countDown();
+            jdbc.execute("RESET lock_timeout");
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(FileRecoveryPersistence.WorkKind.class)
+    void lockedOldestParentDoesNotBlockAnyWorkKind(FileRecoveryPersistence.WorkKind kind)
+            throws Exception {
+        var firstFile = prepared();
+        var secondFile = prepared();
+        var attempts = new java.util.HashMap<UUID, UUID>();
+        switch (kind) {
+            case EXPIRE_FILE ->
+                    jdbc.update(
+                            "UPDATE file_metadata SET expires_at=created_at+interval '1"
+                                    + " microsecond' WHERE id IN (?,?)",
+                            firstFile.fileId(),
+                            secondFile.fileId());
+            case COMPACT_FILE -> {
+                owner.inTransaction(
+                        () -> {
+                            files.requestCleanup(
+                                    new com.krishnamurti.horizon.file.api.command
+                                            .CleanupFileCommand(firstFile));
+                            files.requestCleanup(
+                                    new com.krishnamurti.horizon.file.api.command
+                                            .CleanupFileCommand(secondFile));
+                            return null;
+                        });
+            }
+            case DELETE_ATTEMPT -> {
+                attempts.put(firstFile.fileId(), transfers.registerAttempt(firstFile).attemptId());
+                attempts.put(
+                        secondFile.fileId(), transfers.registerAttempt(secondFile).attemptId());
+                jdbc.update(
+                        "UPDATE file_transfer_attempt SET cleanup_requested_at=created_at+interval"
+                                + " '1 microsecond' WHERE id IN (?,?)",
+                        attempts.get(firstFile.fileId()),
+                        attempts.get(secondFile.fileId()));
+            }
+        }
+
+        var due = persistence.findCandidates(kind, clock.now(), 25);
+        UUID blockedFileId = due.get(0).fileId();
+        var blocked = due.get(0);
+        UUID freeFileId =
+                blockedFileId.equals(firstFile.fileId()) ? secondFile.fileId() : firstFile.fileId();
+        var locked = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        jdbc.execute("SET lock_timeout='2s'");
+        try (var executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            var held =
+                    executor.submit(
+                            () ->
+                                    transaction.executeWithoutResult(
+                                            status -> {
+                                                jdbc.queryForObject(
+                                                        "SELECT id FROM file_metadata WHERE id=?"
+                                                                + " FOR UPDATE",
+                                                        UUID.class,
+                                                        blockedFileId);
+                                                locked.countDown();
+                                                try {
+                                                    if (!release.await(
+                                                            10,
+                                                            java.util.concurrent.TimeUnit.SECONDS))
+                                                        throw new IllegalStateException(
+                                                                "lock wait timeout");
+                                                } catch (InterruptedException e) {
+                                                    Thread.currentThread().interrupt();
+                                                    throw new IllegalStateException(e);
+                                                }
+                                            }));
+            assertThat(locked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var next = persistence.findCandidates(kind, clock.now(), 1);
+            assertThat(next).hasSize(1);
+            assertThat(next.getFirst().fileId()).isEqualTo(freeFileId);
+
+            switch (kind) {
+                case EXPIRE_FILE -> assertThat(recovery.recordExpiry(freeFileId)).isTrue();
+                case COMPACT_FILE -> assertThat(recovery.compactFile(freeFileId)).isTrue();
+                case DELETE_ATTEMPT ->
+                        assertThat(recovery.claimDelete(freeFileId, attempts.get(freeFileId)))
+                                .isPresent();
+            }
+            if (kind == FileRecoveryPersistence.WorkKind.DELETE_ATTEMPT) {
+                assertThat(
+                                jdbc.queryForObject(
+                                        "SELECT cleanup_attempt_count FROM file_transfer_attempt"
+                                                + " WHERE id=?",
+                                        Long.class,
+                                        attempts.get(blockedFileId)))
+                        .isZero();
+            } else {
+                assertThat(
+                                jdbc.queryForObject(
+                                        "SELECT "
+                                                + (kind
+                                                                == FileRecoveryPersistence.WorkKind
+                                                                        .EXPIRE_FILE
+                                                        ? "expiry_recorded_at"
+                                                        : "purged_at")
+                                                + " IS NULL FROM file_metadata WHERE id=?",
+                                        Boolean.class,
+                                        blockedFileId))
+                        .isTrue();
+            }
+            release.countDown();
+            held.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            jdbc.execute("RESET lock_timeout");
+        }
+
+        switch (kind) {
+            case EXPIRE_FILE -> assertThat(recovery.recordExpiry(blockedFileId)).isTrue();
+            case COMPACT_FILE -> assertThat(recovery.compactFile(blockedFileId)).isTrue();
+            case DELETE_ATTEMPT ->
+                    assertThat(recovery.claimDelete(blockedFileId, blocked.attemptId()))
+                            .isPresent();
         }
     }
 }

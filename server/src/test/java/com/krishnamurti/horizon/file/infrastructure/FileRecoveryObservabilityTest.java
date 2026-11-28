@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.krishnamurti.horizon.TestcontainersConfiguration;
+import com.krishnamurti.horizon.file.api.FileService;
 import com.krishnamurti.horizon.file.api.command.PrepareFileCommand;
 import com.krishnamurti.horizon.file.api.model.FileDescriptor;
 import com.krishnamurti.horizon.file.api.model.FileReference;
@@ -38,6 +39,7 @@ class FileRecoveryObservabilityTest {
     @Autowired RecordingObjectStorage storage;
     @Autowired FileRecoveryPersistence persistence;
     @Autowired FileRecoveryTransactions recoveryTransactions;
+    @Autowired FileService files;
     @Autowired RecoveryClock clock;
     @Autowired FileProperties properties;
     @Autowired FileRecoveryMetrics metrics;
@@ -115,6 +117,113 @@ class FileRecoveryObservabilityTest {
                                         FileRecoveryPersistence.WorkKind.DELETE_ATTEMPT, now, 25)
                                 .size());
         assertThat(counts.pending()).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    void diagnosticsMatchDiscoveryWithoutCountingLiveWinner() {
+        var live = prepared();
+        var winner = transfers.registerAttempt(live);
+        transfers.recordAttempt(
+                live,
+                winner.attemptId(),
+                FileTransactions.AttemptResult.verified(1, "b".repeat(64)),
+                com.krishnamurti.horizon.file.api.model.FileFormat.TXT);
+
+        var selectableUnknown = prepared();
+        transfers.registerAttempt(selectableUnknown);
+
+        var settled = prepared();
+        var settledAttempt = transfers.registerAttempt(settled);
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET outcome='FAILED',write_settled_at=now(),"
+                        + "cleanup_requested_at=now() WHERE id=?",
+                settledAttempt.attemptId());
+
+        var parentFenced = prepared();
+        var unknownLoser = transfers.registerAttempt(parentFenced);
+        owner.inTransaction(
+                () -> {
+                    files.requestCleanup(
+                            new com.krishnamurti.horizon.file.api.command.CleanupFileCommand(
+                                    parentFenced));
+                    return null;
+                });
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET outcome='UNKNOWN' WHERE id=?",
+                unknownLoser.attemptId());
+
+        var expiryOnly = prepared();
+        jdbc.update(
+                "UPDATE file_metadata SET expires_at=created_at+interval '1 microsecond' WHERE"
+                        + " id=?",
+                expiryOnly.fileId());
+
+        var futureRetry = prepared();
+        var futureAttempt = transfers.registerAttempt(futureRetry);
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET cleanup_requested_at=now(),"
+                        + "next_cleanup_at=now()+interval '1 hour' WHERE id=?",
+                futureAttempt.attemptId());
+
+        var activeLease = prepared();
+        var activeAttempt = transfers.registerAttempt(activeLease);
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET"
+                    + " cleanup_requested_at=now(),cleanup_lease_token=?,cleanup_lease_until=now()+interval"
+                    + " '1 hour' WHERE id=?",
+                UUID.randomUUID(),
+                activeAttempt.attemptId());
+
+        var expiredLease = prepared();
+        var expiredAttempt = transfers.registerAttempt(expiredLease);
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET"
+                    + " cleanup_requested_at=now(),cleanup_lease_token=?,cleanup_lease_until=now()-interval"
+                    + " '1 second' WHERE id=?",
+                UUID.randomUUID(),
+                expiredAttempt.attemptId());
+
+        var terminalParent = prepared();
+        owner.inTransaction(
+                () -> {
+                    files.requestCleanup(
+                            new com.krishnamurti.horizon.file.api.command.CleanupFileCommand(
+                                    terminalParent));
+                    return null;
+                });
+
+        var now = clock.now();
+        var expireCandidates =
+                persistence.findCandidates(FileRecoveryPersistence.WorkKind.EXPIRE_FILE, now, 100);
+        var deleteCandidates =
+                persistence.findCandidates(
+                        FileRecoveryPersistence.WorkKind.DELETE_ATTEMPT, now, 100);
+        var compactCandidates =
+                persistence.findCandidates(FileRecoveryPersistence.WorkKind.COMPACT_FILE, now, 100);
+        var counts = persistence.recoveryCounts(now);
+
+        assertThat(counts.due())
+                .isEqualTo(
+                        expireCandidates.size()
+                                + deleteCandidates.size()
+                                + compactCandidates.size());
+        assertThat(counts.unresolved()).isEqualTo(5);
+        assertThat(counts.activeLeases()).isEqualTo(1);
+        assertThat(counts.expiredLeases()).isEqualTo(1);
+        assertThat(expireCandidates)
+                .extracting(FileRecoveryPersistence.Candidate::fileId)
+                .containsExactly(expiryOnly.fileId());
+        assertThat(deleteCandidates)
+                .extracting(FileRecoveryPersistence.Candidate::attemptId)
+                .contains(
+                        settledAttempt.attemptId(),
+                        unknownLoser.attemptId(),
+                        expiredAttempt.attemptId())
+                .doesNotContain(
+                        winner.attemptId(), activeAttempt.attemptId(), futureAttempt.attemptId());
+        assertThat(compactCandidates)
+                .extracting(FileRecoveryPersistence.Candidate::fileId)
+                .contains(terminalParent.fileId());
     }
 
     @Test
