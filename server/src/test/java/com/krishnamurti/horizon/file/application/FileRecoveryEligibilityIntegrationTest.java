@@ -43,6 +43,8 @@ class FileRecoveryEligibilityIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired TransactionTemplate transaction;
     @Autowired ControlledClock clock;
+    @Autowired FileRecoveryTransactions recovery;
+    @Autowired FileTransactions transfers;
 
     @Test
     void expiryAtBoundaryDeniesClaimEvenAfterWaitedLock() throws Exception {
@@ -123,6 +125,66 @@ class FileRecoveryEligibilityIntegrationTest {
                                 Boolean.class,
                                 ref.fileId()))
                 .isTrue();
+    }
+
+    @Test
+    void clockRollbackCannotBackdateParentCompaction() {
+        FilePrepareIntegrationTest.ensureUsers(jdbc);
+        FileScope scope = new FileScope(71L, "notes", "a".repeat(64));
+        var file =
+                owner.prepare(
+                        new PrepareFileCommand(
+                                UUID.randomUUID(),
+                                scope,
+                                new FileDescriptor("x.txt", "text/plain", 1, "b".repeat(64))));
+        try {
+            clock.fixed = file.expiresAt();
+            assertThat(recovery.recordExpiry(file.fileId())).isTrue();
+            clock.fixed = file.expiresAt().minusSeconds(1);
+            assertThat(recovery.compactFile(file.fileId())).isFalse();
+        } finally {
+            clock.fixed = null;
+        }
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT purged_at IS NULL FROM file_metadata WHERE id=?",
+                                Boolean.class,
+                                file.fileId()))
+                .isTrue();
+    }
+
+    @Test
+    void clockRollbackCannotCompleteLeaseBeforeItWasAcquired() {
+        FilePrepareIntegrationTest.ensureUsers(jdbc);
+        FileScope scope = new FileScope(71L, "notes", "a".repeat(64));
+        var file =
+                owner.prepare(
+                        new PrepareFileCommand(
+                                UUID.randomUUID(),
+                                scope,
+                                new FileDescriptor("x.txt", "text/plain", 1, "b".repeat(64))));
+        var attempt = transfers.registerAttempt(new FileReference(file.fileId(), scope));
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET cleanup_requested_at=now() WHERE id=?",
+                attempt.attemptId());
+        try {
+            clock.fixed = clock.delegate.now().plusSeconds(60);
+            var claim = recovery.claimDelete(file.fileId(), attempt.attemptId()).orElseThrow();
+            clock.fixed = clock.fixed.minusSeconds(10);
+            assertThat(
+                            recovery.completeDelete(
+                                    claim, FileRecoveryTransactions.DeleteCompletion.ack()))
+                    .isEqualTo(FileRecoveryTransactions.CompletionDisposition.STALE);
+            assertThat(
+                            jdbc.queryForObject(
+                                    "SELECT cleanup_lease_token FROM file_transfer_attempt WHERE"
+                                            + " id=?",
+                                    UUID.class,
+                                    attempt.attemptId()))
+                    .isEqualTo(claim.token());
+        } finally {
+            clock.fixed = null;
+        }
     }
 
     static class ControlledClock implements RecoveryClock {

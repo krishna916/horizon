@@ -2,6 +2,7 @@ package com.krishnamurti.horizon.file.application;
 
 import com.krishnamurti.horizon.file.application.port.ObjectKey;
 import com.krishnamurti.horizon.file.domain.FileMetadataEntity;
+import com.krishnamurti.horizon.file.domain.FileRecoveryBackoff;
 import com.krishnamurti.horizon.file.domain.FileTransferAttemptEntity;
 import com.krishnamurti.horizon.file.domain.TransferOutcome;
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
@@ -119,5 +120,134 @@ public class FileRecoveryTransactions {
                         token,
                         lease,
                         attempt.getWriteSettledAt() != null));
+    }
+
+    public enum CleanupError {
+        STORAGE_UNAVAILABLE,
+        DELETE_FAILED,
+        DB_RETRY
+    }
+
+    public enum CompletionDisposition {
+        STALE,
+        RETRY_SCHEDULED,
+        UNKNOWN_REVISIT,
+        TERMINAL_CONFIRMED
+    }
+
+    public record DeleteCompletion(boolean acknowledged, CleanupError error) {
+        public DeleteCompletion {
+            if (acknowledged == (error != null))
+                throw new IllegalArgumentException("Exactly one delete result is required");
+        }
+
+        public static DeleteCompletion ack() {
+            return new DeleteCompletion(true, null);
+        }
+
+        public static DeleteCompletion failed(CleanupError error) {
+            return new DeleteCompletion(false, Objects.requireNonNull(error));
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompletionDisposition completeDelete(DeleteClaim claim, DeleteCompletion completion) {
+        Objects.requireNonNull(claim);
+        Objects.requireNonNull(completion);
+        FileMetadataEntity file = files.lockById(claim.fileId()).orElse(null);
+        if (file == null) return CompletionDisposition.STALE;
+        FileTransferAttemptEntity attempt =
+                attempts.lockByFileIdAndId(claim.fileId(), claim.attemptId()).orElse(null);
+        if (attempt == null) return CompletionDisposition.STALE;
+        Instant now = clock.now();
+        if (!Objects.equals(attempt.getCleanupLeaseToken(), claim.token())
+                || attempt.getCleanupLeaseUntil() == null
+                || !now.isBefore(attempt.getCleanupLeaseUntil())
+                || attempt.getCleanupRequestedAt() == null
+                || attempt.getLastCleanupAttemptAt() == null
+                || now.isBefore(attempt.getLastCleanupAttemptAt())
+                || now.isBefore(attempt.getCleanupRequestedAt())
+                || attempt.getCleanupConfirmedAt() != null
+                || !Objects.equals(attempt.getObjectKey(), claim.key().value())
+                || file.getPurgedAt() != null) return CompletionDisposition.STALE;
+        boolean parentFenced =
+                file.getCleanupRequestedAt() != null || file.getExpiryRecordedAt() != null;
+        boolean liveSelected =
+                Objects.equals(file.getSelectedAttemptId(), attempt.getId())
+                        && !parentFenced
+                        && (file.getClaimedAt() != null || now.isBefore(file.getExpiresAt()));
+        if (liveSelected) return CompletionDisposition.STALE;
+        if (completion.acknowledged()
+                && claim.settledAtClaim()
+                && (attempt.getWriteSettledAt() == null
+                        || now.isBefore(attempt.getWriteSettledAt())
+                        || now.isBefore(attempt.getCleanupRequestedAt())))
+            return CompletionDisposition.STALE;
+        attempt.setCleanupLeaseToken(null);
+        attempt.setCleanupLeaseUntil(null);
+        attempt.setUpdatedAt(now);
+        CompletionDisposition disposition;
+        if (!completion.acknowledged()) {
+            long failures =
+                    attempt.getConsecutiveCleanupFailures() == Long.MAX_VALUE
+                            ? Long.MAX_VALUE
+                            : attempt.getConsecutiveCleanupFailures() + 1;
+            attempt.setConsecutiveCleanupFailures(failures);
+            attempt.setLastCleanupErrorCode(completion.error().name());
+            attempt.setNextCleanupAt(
+                    now.plus(
+                            FileRecoveryBackoff.delay(
+                                    properties.getRecovery().getInitialRetryDelay(),
+                                    properties.getRecovery().getMaxRetryDelay(),
+                                    failures,
+                                    java.util.concurrent.ThreadLocalRandom.current()::nextDouble)));
+            disposition = CompletionDisposition.RETRY_SCHEDULED;
+        } else {
+            attempt.setConsecutiveCleanupFailures(0);
+            attempt.setLastCleanupErrorCode(null);
+            if (claim.settledAtClaim()) {
+                attempt.setCleanupConfirmedAt(now);
+                attempt.setNextCleanupAt(null);
+                attempt.setObjectKey(null);
+                attempt.setExpectedSizeBytes(null);
+                attempt.setExpectedSha256(null);
+                attempt.setVerifiedSizeBytes(null);
+                attempt.setVerifiedSha256(null);
+                disposition = CompletionDisposition.TERMINAL_CONFIRMED;
+            } else {
+                attempt.setNextCleanupAt(
+                        attempt.getWriteSettledAt() != null
+                                ? now
+                                : now.plus(properties.getRecovery().getUnknownRevisitInterval()));
+                disposition = CompletionDisposition.UNKNOWN_REVISIT;
+            }
+        }
+        attempts.saveAndFlush(attempt);
+        return disposition;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean compactFile(UUID fileId) {
+        if (!recovery.lockFileIfAvailable(fileId)) return false;
+        FileMetadataEntity file = files.findById(fileId).orElseThrow();
+        if (file.getPurgedAt() != null
+                || (file.getCleanupRequestedAt() == null && file.getExpiryRecordedAt() == null)
+                || recovery.hasUnconfirmedAttempts(fileId)) return false;
+        Instant now = clock.now();
+        if (now.isBefore(file.getCreatedAt())
+                || (file.getCleanupRequestedAt() != null
+                        && now.isBefore(file.getCleanupRequestedAt()))
+                || (file.getExpiryRecordedAt() != null && now.isBefore(file.getExpiryRecordedAt())))
+            return false;
+        file.setOriginalFilename(null);
+        file.setDeclaredContentType(null);
+        file.setValidatedFormat(null);
+        file.setExpectedSizeBytes(null);
+        file.setExpectedSha256(null);
+        file.setSelectedAttemptId(null);
+        file.setPurgedAt(now);
+        file.setUpdatedAt(now);
+        files.saveAndFlush(file);
+        return true;
     }
 }
