@@ -76,26 +76,44 @@ error categories without returning attempt identifiers or object metadata:
 
 ```sql
 SELECT
-  COALESCE(last_cleanup_error_code, 'NONE') AS safe_error_code,
-  count(*) FILTER (WHERE object_key IS NOT NULL AND cleanup_confirmed_at IS NULL)
+  COALESCE(a.last_cleanup_error_code, 'NONE') AS safe_error_code,
+  count(*) FILTER (WHERE a.object_key IS NOT NULL AND a.cleanup_confirmed_at IS NULL)
     AS retained_attempts,
-  count(*) FILTER (WHERE object_key IS NOT NULL AND cleanup_confirmed_at IS NULL
-                   AND COALESCE(next_cleanup_at, cleanup_requested_at, created_at)
+  count(*) FILTER (WHERE a.object_key IS NOT NULL AND a.cleanup_confirmed_at IS NULL
+                   AND f.purged_at IS NULL
+                   AND CASE WHEN a.cleanup_requested_at IS NOT NULL
+                            THEN COALESCE(a.next_cleanup_at, a.cleanup_requested_at)
+                            ELSE a.created_at END
                        <= clock_timestamp()
-                   AND (cleanup_lease_until IS NULL OR cleanup_lease_until <= clock_timestamp()))
+                   AND (a.cleanup_lease_until IS NULL
+                        OR a.cleanup_lease_until <= clock_timestamp())
+                   AND (a.cleanup_requested_at IS NOT NULL
+                        OR f.cleanup_requested_at IS NOT NULL
+                        OR f.expiry_recorded_at IS NOT NULL
+                        OR (f.claimed_at IS NULL AND f.expires_at <= clock_timestamp())
+                        OR (f.selected_attempt_id IS NOT NULL
+                            AND f.selected_attempt_id <> a.id)
+                        OR (a.outcome = 'FAILED' AND a.write_settled_at IS NOT NULL))
+                   AND (f.selected_attempt_id IS DISTINCT FROM a.id
+                        OR f.cleanup_requested_at IS NOT NULL
+                        OR f.expiry_recorded_at IS NOT NULL
+                        OR (f.claimed_at IS NULL
+                            AND f.expires_at <= clock_timestamp())))
     AS due_unleased_attempts,
-  count(*) FILTER (WHERE cleanup_lease_token IS NOT NULL
-                   AND cleanup_lease_until > clock_timestamp()) AS active_leases,
-  count(*) FILTER (WHERE cleanup_lease_token IS NOT NULL
-                   AND cleanup_lease_until <= clock_timestamp()) AS expired_leases,
+  count(*) FILTER (WHERE a.cleanup_lease_token IS NOT NULL
+                   AND a.cleanup_lease_until > clock_timestamp()) AS active_leases,
+  count(*) FILTER (WHERE a.cleanup_lease_token IS NOT NULL
+                   AND a.cleanup_lease_until <= clock_timestamp()) AS expired_leases,
   COALESCE(GREATEST(0, EXTRACT(EPOCH FROM
-      (clock_timestamp() - min(created_at) FILTER
-          (WHERE object_key IS NOT NULL AND write_settled_at IS NULL)))::bigint), 0)
+      (clock_timestamp() - min(a.created_at) FILTER
+          (WHERE a.object_key IS NOT NULL AND a.write_settled_at IS NULL)))::bigint), 0)
     AS oldest_unsettled_age_seconds,
-  min(next_cleanup_at) FILTER (WHERE object_key IS NOT NULL AND cleanup_confirmed_at IS NULL)
+  min(a.next_cleanup_at) FILTER
+      (WHERE a.object_key IS NOT NULL AND a.cleanup_confirmed_at IS NULL)
     AS earliest_retry_at
-FROM file_transfer_attempt
-GROUP BY COALESCE(last_cleanup_error_code, 'NONE')
+FROM file_transfer_attempt a
+JOIN file_metadata f ON f.id = a.file_id
+GROUP BY COALESCE(a.last_cleanup_error_code, 'NONE')
 ORDER BY safe_error_code;
 ```
 

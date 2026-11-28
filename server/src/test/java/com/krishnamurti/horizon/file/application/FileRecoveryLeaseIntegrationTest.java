@@ -263,7 +263,10 @@ class FileRecoveryLeaseIntegrationTest {
         var blockedAttempt = transfers.registerAttempt(blocked);
         var freeAttempt = transfers.registerAttempt(free);
         jdbc.update(
-                "UPDATE file_transfer_attempt SET cleanup_requested_at=now() WHERE id IN (?,?)",
+                "UPDATE file_transfer_attempt SET cleanup_requested_at=now(),"
+                        + " next_cleanup_at=CASE WHEN id=? THEN now()-interval '2 minutes'"
+                        + " ELSE now()-interval '1 minute' END WHERE id IN (?,?)",
+                blockedAttempt.attemptId(),
                 blockedAttempt.attemptId(),
                 freeAttempt.attemptId());
         var locked = new java.util.concurrent.CountDownLatch(1);
@@ -292,6 +295,13 @@ class FileRecoveryLeaseIntegrationTest {
                                                 }
                                             }));
             assertThat(locked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(
+                            persistence.findCandidates(
+                                    FileRecoveryPersistence.WorkKind.DELETE_ATTEMPT,
+                                    clock.now(),
+                                    1))
+                    .extracting(FileRecoveryPersistence.Candidate::attemptId)
+                    .containsExactly(freeAttempt.attemptId());
             assertThat(recovery.claimDelete(blocked.fileId(), blockedAttempt.attemptId()))
                     .isEmpty();
             assertThat(recovery.claimDelete(free.fileId(), freeAttempt.attemptId())).isPresent();

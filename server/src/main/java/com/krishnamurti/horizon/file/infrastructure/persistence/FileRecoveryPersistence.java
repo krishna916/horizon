@@ -56,7 +56,7 @@ public class FileRecoveryPersistence {
                             SELECT f.id AS file_id, NULL::uuid AS attempt_id, f.expires_at AS due_at
                             FROM file_metadata f WHERE f.claimed_at IS NULL AND f.cleanup_requested_at IS NULL
                               AND f.expiry_recorded_at IS NULL AND f.purged_at IS NULL AND f.expires_at <= ?
-                            ORDER BY due_at, f.id LIMIT ?
+                            ORDER BY due_at, f.id LIMIT ? FOR UPDATE OF f SKIP LOCKED
                             """;
                     case COMPACT_FILE ->
                             """
@@ -67,11 +67,12 @@ public class FileRecoveryPersistence {
                                 (a.cleanup_confirmed_at IS NULL OR a.object_key IS NOT NULL OR a.expected_size_bytes IS NOT NULL
                                 OR a.expected_sha256 IS NOT NULL OR a.verified_size_bytes IS NOT NULL OR a.verified_sha256 IS NOT NULL))
                               AND COALESCE(f.cleanup_requested_at,f.expiry_recorded_at) <= ?
-                            ORDER BY due_at, f.id LIMIT ?
+                            ORDER BY due_at, f.id LIMIT ? FOR UPDATE OF f SKIP LOCKED
                             """;
                     case DELETE_ATTEMPT ->
                             """
-                            SELECT file_id, attempt_id, due_at FROM (
+                            SELECT candidates.file_id, candidates.attempt_id, candidates.due_at
+                            FROM (
                               SELECT f.id AS file_id, a.id AS attempt_id, COALESCE(a.next_cleanup_at,a.cleanup_requested_at) AS due_at
                               FROM file_transfer_attempt a JOIN file_metadata f ON f.id=a.file_id
                               WHERE a.cleanup_requested_at IS NOT NULL AND a.cleanup_confirmed_at IS NULL AND a.object_key IS NOT NULL
@@ -87,7 +88,9 @@ public class FileRecoveryPersistence {
                                      OR (f.selected_attempt_id IS NOT NULL AND f.selected_attempt_id<>a.id)
                                      OR (a.outcome='FAILED' AND a.write_settled_at IS NOT NULL))
                                 AND (f.selected_attempt_id IS DISTINCT FROM a.id OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL OR (f.claimed_at IS NULL AND f.expires_at <= ?))
-                            ) candidates WHERE due_at <= ? ORDER BY due_at,attempt_id LIMIT ?
+                            ) candidates JOIN file_metadata f ON f.id=candidates.file_id
+                            WHERE candidates.due_at <= ? ORDER BY candidates.due_at,candidates.attempt_id
+                            LIMIT ? FOR UPDATE OF f SKIP LOCKED
                             """;
                 };
         OffsetDateTime t = OffsetDateTime.ofInstant(now, ZoneOffset.UTC);

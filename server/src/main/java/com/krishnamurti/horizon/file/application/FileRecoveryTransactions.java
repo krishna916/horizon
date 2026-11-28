@@ -10,6 +10,7 @@ import com.krishnamurti.horizon.file.infrastructure.persistence.FileMetadataRepo
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileRecoveryPersistence;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileTransferAttemptRepository;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -20,6 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class FileRecoveryTransactions {
+    private static final SecureRandom RETRY_JITTER = new SecureRandom();
+
     public record DeleteClaim(
             UUID fileId,
             UUID attemptId,
@@ -208,7 +211,7 @@ public class FileRecoveryTransactions {
                                     properties.getRecovery().getInitialRetryDelay(),
                                     properties.getRecovery().getMaxRetryDelay(),
                                     failures,
-                                    java.util.concurrent.ThreadLocalRandom.current()::nextDouble)));
+                                    RETRY_JITTER::nextDouble)));
             disposition = CompletionDisposition.RETRY_SCHEDULED;
         } else {
             attempt.setConsecutiveCleanupFailures(0);
