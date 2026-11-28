@@ -2,8 +2,11 @@ package com.krishnamurti.horizon.file.infrastructure;
 
 import com.krishnamurti.horizon.file.application.FileRecoveryWorker;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -26,15 +29,17 @@ public class FileRecoverySchedulingConfiguration {
     }
 
     @Bean
-    ScheduledRecovery scheduledRecovery(FileRecoveryWorker worker) {
-        return new ScheduledRecovery(worker);
+    ScheduledRecovery scheduledRecovery(FileRecoveryWorker worker, ApplicationContext context) {
+        return new ScheduledRecovery(worker, context);
     }
 
     static class ScheduledRecovery {
         private final FileRecoveryWorker worker;
+        private final ApplicationContext context;
 
-        ScheduledRecovery(FileRecoveryWorker worker) {
+        ScheduledRecovery(FileRecoveryWorker worker, ApplicationContext context) {
             this.worker = worker;
+            this.context = context;
         }
 
         @Scheduled(
@@ -42,6 +47,11 @@ public class FileRecoverySchedulingConfiguration {
                 fixedDelayString = "${horizon.file.recovery.poll-interval:30s}")
         public void poll() {
             worker.runCycle();
+        }
+
+        @EventListener
+        void stopOnContextClose(ContextClosedEvent event) {
+            if (event.getApplicationContext().equals(context)) worker.stopAcceptingWork();
         }
     }
 }

@@ -8,6 +8,8 @@ import com.krishnamurti.horizon.file.api.model.FileDescriptor;
 import com.krishnamurti.horizon.file.api.model.FileReference;
 import com.krishnamurti.horizon.file.api.model.FileScope;
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
+import com.krishnamurti.horizon.file.infrastructure.FileRecoveryMetrics;
+import com.krishnamurti.horizon.file.infrastructure.persistence.FileRecoveryPersistence;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -28,6 +30,10 @@ class FileRecoveryWorkerIntegrationTest {
     @Autowired TestFileOwner owner;
     @Autowired RecordingObjectStorage storage;
     @Autowired FileProperties properties;
+    @Autowired FileRecoveryTransactions recoveryTransactions;
+    @Autowired FileRecoveryPersistence persistence;
+    @Autowired RecoveryClock clock;
+    @Autowired FileRecoveryMetrics recoveryMetrics;
     @Autowired JdbcTemplate jdbc;
     @Autowired com.krishnamurti.horizon.file.api.FileService files;
 
@@ -39,6 +45,37 @@ class FileRecoveryWorkerIntegrationTest {
         jdbc.update("DELETE FROM file_metadata");
         storage.reset();
         properties.getRecovery().setBatchSize(25);
+    }
+
+    @Test
+    void stopBeforePollPreventsCandidateAdmissionAndStopIsIdempotent() {
+        var file = prepared();
+        var attempt = transfers.registerAttempt(file);
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET cleanup_requested_at=now() WHERE id=?",
+                attempt.attemptId());
+        var stoppingWorker =
+                new FileRecoveryWorker(
+                        persistence,
+                        recoveryTransactions,
+                        storage,
+                        clock,
+                        properties,
+                        recoveryMetrics);
+
+        stoppingWorker.stopAcceptingWork();
+        stoppingWorker.stopAcceptingWork();
+        stoppingWorker.runCycle();
+
+        assertThat(storage.deleteCount()).isZero();
+        assertThat(
+                        jdbc.queryForObject(
+                                "SELECT cleanup_lease_token IS NULL AND object_key IS NOT NULL"
+                                        + " AND cleanup_confirmed_at IS NULL FROM"
+                                        + " file_transfer_attempt WHERE id=?",
+                                Boolean.class,
+                                attempt.attemptId()))
+                .isTrue();
     }
 
     private FileReference prepared() {

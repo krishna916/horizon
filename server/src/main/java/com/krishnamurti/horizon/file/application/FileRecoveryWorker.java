@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -31,6 +32,8 @@ public class FileRecoveryWorker {
     private final FileRecoveryMetrics metrics;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicInteger start = new AtomicInteger();
+    private final Object admissionGate = new Object();
+    private boolean acceptingWork = true;
 
     @SuppressFBWarnings(
             value = "EI_EXPOSE_REP2",
@@ -53,7 +56,9 @@ public class FileRecoveryWorker {
 
     @Transactional(propagation = Propagation.NEVER)
     public void runCycle() {
-        if (!running.compareAndSet(false, true)) return;
+        synchronized (admissionGate) {
+            if (!acceptingWork || !running.compareAndSet(false, true)) return;
+        }
         long started = System.nanoTime();
         boolean completed = false;
         java.time.Instant completedAt = java.time.Instant.EPOCH;
@@ -61,8 +66,11 @@ public class FileRecoveryWorker {
             int batch = properties.getRecovery().getBatchSize();
             var now = clock.now();
             var queues = new EnumMap<WorkKind, ArrayDeque<Candidate>>(WorkKind.class);
-            for (WorkKind kind : WorkKind.values())
-                queues.put(kind, new ArrayDeque<>(persistence.findCandidates(kind, now, batch)));
+            for (WorkKind kind : WorkKind.values()) {
+                var candidates = admit(() -> persistence.findCandidates(kind, now, batch));
+                if (candidates == null) break;
+                queues.put(kind, new ArrayDeque<>(candidates));
+            }
             WorkKind[] kinds = WorkKind.values();
             int index =
                     Math.floorMod(start.getAndUpdate(n -> (n + 1) % kinds.length), kinds.length);
@@ -70,6 +78,7 @@ public class FileRecoveryWorker {
             int examined = 0, empty = 0;
             while (examined < batch
                     && empty < kinds.length
+                    && isAcceptingWork()
                     && !Thread.currentThread().isInterrupted()) {
                 var queue = queues.get(kinds[index]);
                 index = (index + 1) % kinds.length;
@@ -83,7 +92,7 @@ public class FileRecoveryWorker {
                 examined++;
                 process(candidate);
             }
-            if (!Thread.currentThread().isInterrupted()) {
+            if (!Thread.currentThread().isInterrupted() && isAcceptingWork()) {
                 completedAt = clock.now();
                 var counts = persistence.recoveryCounts(completedAt);
                 completed = true;
@@ -103,11 +112,15 @@ public class FileRecoveryWorker {
 
     private void process(Candidate candidate) {
         switch (candidate.kind()) {
-            case EXPIRE_FILE -> transactions.recordExpiry(candidate.fileId());
-            case COMPACT_FILE -> transactions.compactFile(candidate.fileId());
+            case EXPIRE_FILE -> admit(() -> transactions.recordExpiry(candidate.fileId()));
+            case COMPACT_FILE -> admit(() -> transactions.compactFile(candidate.fileId()));
             case DELETE_ATTEMPT -> {
-                var claim = transactions.claimDelete(candidate.fileId(), candidate.attemptId());
-                if (claim.isEmpty()) return;
+                var claim =
+                        admit(
+                                () ->
+                                        transactions.claimDelete(
+                                                candidate.fileId(), candidate.attemptId()));
+                if (claim == null || claim.isEmpty()) return;
                 if (claim.get().reclaimedLease()) safeMetric(metrics::recordLeaseReclaim);
                 FileRecoveryTransactions.DeleteCompletion completion;
                 try {
@@ -130,6 +143,26 @@ public class FileRecoveryWorker {
                     safeMetric(() -> metrics.recordError(error));
                 }
             }
+        }
+    }
+
+    /** Prevents this worker from admitting another database or provider operation. */
+    public void stopAcceptingWork() {
+        synchronized (admissionGate) {
+            acceptingWork = false;
+        }
+    }
+
+    boolean isAcceptingWork() {
+        synchronized (admissionGate) {
+            return acceptingWork;
+        }
+    }
+
+    private <T> T admit(Supplier<T> operation) {
+        synchronized (admissionGate) {
+            if (!acceptingWork) return null;
+            return operation.get();
         }
     }
 
