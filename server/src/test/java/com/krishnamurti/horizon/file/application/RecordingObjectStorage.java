@@ -36,6 +36,8 @@ public final class RecordingObjectStorage implements ObjectStorage {
     private final AtomicInteger closedReadStreams = new AtomicInteger();
     private final AtomicBoolean storeNextPut = new AtomicBoolean(true);
     private final AtomicBoolean unavailable = new AtomicBoolean();
+    private final AtomicInteger deletes = new AtomicInteger();
+    private final AtomicReference<Consumer<ObjectKey>> deleteHook = new AtomicReference<>();
 
     @Override
     public WriteResult put(ObjectWriteRequest request) {
@@ -85,6 +87,9 @@ public final class RecordingObjectStorage implements ObjectStorage {
 
     @Override
     public DeleteResult delete(ObjectKey key) {
+        deletes.incrementAndGet();
+        Consumer<ObjectKey> hook = deleteHook.get();
+        if (hook != null) hook.accept(key);
         objects.remove(key.value());
         return DeleteResult.ACKNOWLEDGED;
     }
@@ -122,6 +127,16 @@ public final class RecordingObjectStorage implements ObjectStorage {
         getObjectOverrides.clear();
         gets.set(0);
         closedReadStreams.set(0);
+        deletes.set(0);
+        deleteHook.set(null);
+    }
+
+    public int deleteCount() {
+        return deletes.get();
+    }
+
+    public void deleteHook(Consumer<ObjectKey> hook) {
+        deleteHook.set(hook);
     }
 
     public ObjectWriteRequest lastPut() {
