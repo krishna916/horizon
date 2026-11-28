@@ -39,6 +39,7 @@ import com.krishnamurti.horizon.file.infrastructure.storage.SeaweedFsTestConfigu
 import com.krishnamurti.horizon.file.infrastructure.storage.s3.RealProviderFixture;
 import com.krishnamurti.horizon.file.infrastructure.storage.s3.S3ObjectStorage;
 import com.krishnamurti.horizon.file.infrastructure.validation.FileValidationService;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -55,6 +56,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
@@ -279,6 +281,137 @@ class FileRealProviderIntegrationTest {
             makeRemovable(data);
             deleteTree(data);
         }
+    }
+
+    @Test
+    void heldPutCanBeCommittedByProviderThenItsSuccessfulResponseLost() throws Exception {
+        Path data = Files.createTempDirectory("horizon-real-held-lost-ack-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
+        try {
+            seaweed.start();
+            URI providerEndpoint = endpoint(seaweed);
+            try (RealProviderFixture provider = storage(providerEndpoint);
+                    S3FaultHarness gate =
+                            new S3FaultHarness(
+                                    providerEndpoint,
+                                    S3FaultHarness.Mode.HOLD_PUT_DROP_SUCCESSFUL_RESPONSE);
+                    RealProviderFixture gated = storage(gate.endpoint())) {
+                gated.storage().checkAvailability();
+                assertThat(gate.requests()).isPositive();
+                assertThat(gate.putRequests()).isZero();
+                assertThatThrownBy(() -> gate.awaitBufferedPut(java.time.Duration.ofMillis(100)))
+                        .isInstanceOf(AssertionError.class);
+                assertThatThrownBy(() -> gate.awaitCompletion(java.time.Duration.ofMillis(100)))
+                        .isInstanceOf(AssertionError.class);
+
+                FileScope scope = scope(99L, "held-lost-ack");
+                var prepared = prepare(scope, "held-lost-ack.webp");
+                var executor = Executors.newSingleThreadExecutor();
+                try {
+                    var transfer =
+                            executor.submit(
+                                    () ->
+                                            realService(gated.storage())
+                                                    .transfer(
+                                                            transferCommand(
+                                                                    prepared.fileId(), scope)));
+                    gate.awaitBufferedPut(java.time.Duration.ofSeconds(5));
+                    assertThat(gate.putRequests()).isEqualTo(1);
+                    assertThat(provider.listObjects().contents()).isEmpty();
+
+                    gate.releasePut();
+                    gate.awaitCompletion(java.time.Duration.ofSeconds(8));
+                    var result = transfer.get(8, TimeUnit.SECONDS);
+
+                    assertThat(gate.successfulPutResponseObserved()).isTrue();
+                    assertThat(result.disposition()).isEqualTo(TransferDisposition.OUTCOME_UNKNOWN);
+                    var attempt =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    try (StoredObject object =
+                                    provider.storage().get(new ObjectKey(attempt.getObjectKey()));
+                            ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                        object.content().transferTo(output);
+                        assertThat(output.toByteArray()).containsExactly(WEBP);
+                    }
+                } finally {
+                    gate.releasePut();
+                    executor.shutdownNow();
+                }
+            }
+        } finally {
+            makeContainerDataRemovable(seaweed);
+            if (seaweed.isRunning()) seaweed.stop();
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    @Test
+    void interruptedPutForwardsPrefixBeforeAbortingUpstream() throws Exception {
+        Path data = Files.createTempDirectory("horizon-real-partial-put-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
+        Path staged = Files.createTempFile(data, "partial-put-", ".png");
+        try {
+            byte[] png = largePng();
+            Files.write(staged, png);
+            seaweed.start();
+            URI providerEndpoint = endpoint(seaweed);
+            try (RealProviderFixture provider = storage(providerEndpoint);
+                    S3FaultHarness gate =
+                            new S3FaultHarness(
+                                    providerEndpoint, S3FaultHarness.Mode.HOLD_PARTIAL_PUT);
+                    RealProviderFixture gated = storage(gate.endpoint())) {
+                var executor = Executors.newSingleThreadExecutor();
+                ObjectKey key = new ObjectKey("fault-harness/partial-put.png");
+                try {
+                    var put =
+                            executor.submit(
+                                    () ->
+                                            gated.storage()
+                                                    .put(
+                                                            new ObjectWriteRequest(
+                                                                    key,
+                                                                    staged,
+                                                                    png.length,
+                                                                    "image/png")));
+                    gate.awaitForwardedBody(java.time.Duration.ofSeconds(8));
+                    assertThat(gate.putRequests()).isEqualTo(1);
+                    assertThat(gate.forwardedBodyBytes()).isPositive();
+                    assertThat(gate.forwardedBodyBytes()).isLessThan(png.length);
+
+                    gate.abortUpstream();
+                    assertThat(put.get(8, TimeUnit.SECONDS)).isEqualTo(WriteResult.UNKNOWN);
+                    assertThat(provider.storage().head(key).found()).isFalse();
+                } finally {
+                    gate.releasePut();
+                    executor.shutdownNow();
+                }
+            }
+        } finally {
+            makeContainerDataRemovable(seaweed);
+            if (seaweed.isRunning()) seaweed.stop();
+            Files.deleteIfExists(staged);
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    private static byte[] largePng() throws Exception {
+        BufferedImage image = new BufferedImage(512, 512, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int red = (x * 37 + y * 17) & 0xff;
+                int green = (x * 11 + y * 53) & 0xff;
+                int blue = (x * 97 + y * 7) & 0xff;
+                image.setRGB(x, y, (red << 16) | (green << 8) | blue);
+            }
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", output);
+        return output.toByteArray();
     }
 
     @Test
