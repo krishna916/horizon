@@ -44,6 +44,7 @@ class FileTransferFailureIntegrationTest {
     @Autowired private FileTransferAttemptRepository attempts;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private FileProperties properties;
+    @Autowired private FileTransactions transactions;
 
     @BeforeEach
     void resetFixture() {
@@ -180,6 +181,122 @@ class FileTransferFailureIntegrationTest {
         assertThat(rows.get(1).getOutcome()).isEqualTo(TransferOutcome.VERIFIED);
         assertThat(rows.get(1).getId()).isEqualTo(selectedAttempt(reference.fileId()));
         assertThat(storage.putCount()).isEqualTo(2);
+    }
+
+    @Test
+    void duplicateSelectedCompletionDoesNotRequestCleanup() {
+        FileReference reference = preparedFile(scope(75L, "duplicate-result"));
+        transfer(reference);
+        FileTransferAttemptEntity winner =
+                attempts.findAllByFileIdOrderByCreatedAtAsc(reference.fileId()).getFirst();
+        transactions.recordAttempt(
+                reference,
+                winner.getId(),
+                FileTransactions.AttemptResult.verified(
+                        winner.getVerifiedSizeBytes(), winner.getVerifiedSha256()),
+                com.krishnamurti.horizon.file.api.model.FileFormat.WEBP);
+        FileTransferAttemptEntity replayed = attempts.findById(winner.getId()).orElseThrow();
+        assertThat(replayed.getCleanupRequestedAt()).isNull();
+        assertThat(selectedAttempt(reference.fileId())).isEqualTo(winner.getId());
+        assertThat(replayed.getWriteSettledAt()).isEqualTo(winner.getWriteSettledAt());
+    }
+
+    @Test
+    void fencedLateVerifiedCompletionCannotSelect() {
+        FileReference reference = preparedFile(scope(74L, "fenced-result"));
+        var registration = transactions.registerAttempt(reference);
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET cleanup_requested_at=now() WHERE id=?",
+                registration.attemptId());
+        transactions.recordAttempt(
+                reference,
+                registration.attemptId(),
+                FileTransactions.AttemptResult.verified(
+                        (long) VALID_WEBP.length, sha256(VALID_WEBP)),
+                com.krishnamurti.horizon.file.api.model.FileFormat.WEBP);
+        assertThat(selectedAttempt(reference.fileId())).isNull();
+        var attempt = attempts.findById(registration.attemptId()).orElseThrow();
+        assertThat(attempt.getWriteSettledAt()).isNotNull();
+        assertThat(attempt.getNextCleanupAt()).isNotNull();
+    }
+
+    @Test
+    void staleUnknownCannotDowngradeSettledOutcome() {
+        FileReference reference = preparedFile(scope(73L, "stale-result"));
+        transfer(reference);
+        FileTransferAttemptEntity winner =
+                attempts.findAllByFileIdOrderByCreatedAtAsc(reference.fileId()).getFirst();
+        transactions.recordAttempt(
+                reference, winner.getId(), FileTransactions.AttemptResult.unknown(), null);
+        FileTransferAttemptEntity after = attempts.findById(winner.getId()).orElseThrow();
+        assertThat(after.getOutcome()).isEqualTo(TransferOutcome.VERIFIED);
+        assertThat(after.getWriteSettledAt()).isEqualTo(winner.getWriteSettledAt());
+        assertThat(after.getCleanupRequestedAt()).isNull();
+    }
+
+    @Test
+    void recordedExpirySurvivesClockRollbackAndDeniesRegistration() {
+        FileReference reference = preparedFile(scope(72L, "recorded-expiry"));
+        jdbc.update(
+                "UPDATE file_metadata SET expiry_recorded_at=expires_at WHERE id=?",
+                reference.fileId());
+        assertThat(
+                        files.inspect(
+                                        new com.krishnamurti.horizon.file.api.query
+                                                .InspectFileQuery(reference))
+                                .lifecycle())
+                .isEqualTo(com.krishnamurti.horizon.file.api.model.FileLifecycle.EXPIRED);
+        assertThatThrownBy(() -> transactions.registerAttempt(reference))
+                .isInstanceOf(com.krishnamurti.horizon.file.api.FileOperationException.class);
+    }
+
+    @Test
+    void lateSettlementMakesFencedAttemptDueWithoutReplacingLease() {
+        FileReference reference = preparedFile(scope(71L, "settlement-lease"));
+        var registration = transactions.registerAttempt(reference);
+        UUID token = UUID.randomUUID();
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET cleanup_requested_at=now(),"
+                        + " next_cleanup_at=now()+interval '1 hour', cleanup_lease_token=?,"
+                        + " cleanup_lease_until=now()+interval '10 minutes' WHERE id=?",
+                token,
+                registration.attemptId());
+        transactions.recordAttempt(
+                reference,
+                registration.attemptId(),
+                FileTransactions.AttemptResult.verified(
+                        (long) VALID_WEBP.length, sha256(VALID_WEBP)),
+                com.krishnamurti.horizon.file.api.model.FileFormat.WEBP);
+        var attempt = attempts.findById(registration.attemptId()).orElseThrow();
+        assertThat(attempt.getCleanupLeaseToken()).isEqualTo(token);
+        assertThat(attempt.getNextCleanupAt()).isBefore(attempt.getCleanupLeaseUntil());
+        assertThat(selectedAttempt(reference.fileId())).isNull();
+    }
+
+    @Test
+    void compactedAttemptCannotRestoreLocatorOrDigest() {
+        FileReference reference = preparedFile(scope(71L, "compacted-result"));
+        transfer(reference);
+        UUID winner = selectedAttempt(reference.fileId());
+        jdbc.update(
+                "UPDATE file_metadata SET cleanup_requested_at=now() WHERE id=?",
+                reference.fileId());
+        jdbc.update(
+                "UPDATE file_transfer_attempt SET cleanup_requested_at=now(),"
+                    + " cleanup_confirmed_at=now(), object_key=NULL, expected_size_bytes=NULL,"
+                    + " expected_sha256=NULL, verified_size_bytes=NULL, verified_sha256=NULL WHERE"
+                    + " id=?",
+                winner);
+        transactions.recordAttempt(
+                reference,
+                winner,
+                FileTransactions.AttemptResult.verified(
+                        (long) VALID_WEBP.length, sha256(VALID_WEBP)),
+                com.krishnamurti.horizon.file.api.model.FileFormat.WEBP);
+        var attempt = attempts.findById(winner).orElseThrow();
+        assertThat(attempt.getObjectKey()).isNull();
+        assertThat(attempt.getExpectedSha256()).isNull();
+        assertThat(attempt.getVerifiedSha256()).isNull();
     }
 
     private UUID selectedAttempt(UUID fileId) {

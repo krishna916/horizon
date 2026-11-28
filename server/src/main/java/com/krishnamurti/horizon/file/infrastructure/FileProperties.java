@@ -25,6 +25,7 @@ public class FileProperties {
     private final Staging staging = new Staging();
     private final Validation validation = new Validation();
     private final Storage storage = new Storage();
+    private final Recovery recovery = new Recovery();
 
     public DataSize getMaxFileSize() {
         return maxFileSize;
@@ -58,6 +59,10 @@ public class FileProperties {
         return storage;
     }
 
+    public Recovery getRecovery() {
+        return recovery;
+    }
+
     @PostConstruct
     public void validate() {
         long maximum = getMaxFileSizeBytes();
@@ -79,6 +84,86 @@ public class FileProperties {
         }
         validation.validate();
         storage.s3.validate();
+        recovery.validate(storage.s3.operationTimeout);
+    }
+
+    public static class Recovery {
+        private boolean enabled = true;
+        private Duration pollInterval = Duration.ofSeconds(30);
+        private int batchSize = 25;
+        private Duration leaseDuration = Duration.ofMinutes(10);
+        private Duration initialRetryDelay = Duration.ofSeconds(30);
+        private Duration maxRetryDelay = Duration.ofHours(1);
+        private Duration unknownRevisitInterval = Duration.ofHours(1);
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public Duration getPollInterval() {
+            return pollInterval;
+        }
+
+        public void setPollInterval(Duration pollInterval) {
+            this.pollInterval = pollInterval;
+        }
+
+        public int getBatchSize() {
+            return batchSize;
+        }
+
+        public void setBatchSize(int batchSize) {
+            this.batchSize = batchSize;
+        }
+
+        public Duration getLeaseDuration() {
+            return leaseDuration;
+        }
+
+        public void setLeaseDuration(Duration leaseDuration) {
+            this.leaseDuration = leaseDuration;
+        }
+
+        public Duration getInitialRetryDelay() {
+            return initialRetryDelay;
+        }
+
+        public void setInitialRetryDelay(Duration initialRetryDelay) {
+            this.initialRetryDelay = initialRetryDelay;
+        }
+
+        public Duration getMaxRetryDelay() {
+            return maxRetryDelay;
+        }
+
+        public void setMaxRetryDelay(Duration maxRetryDelay) {
+            this.maxRetryDelay = maxRetryDelay;
+        }
+
+        public Duration getUnknownRevisitInterval() {
+            return unknownRevisitInterval;
+        }
+
+        public void setUnknownRevisitInterval(Duration unknownRevisitInterval) {
+            this.unknownRevisitInterval = unknownRevisitInterval;
+        }
+
+        private void validate(Duration operationTimeout) {
+            if (batchSize <= 0
+                    || !S3.positive(pollInterval)
+                    || !S3.positive(leaseDuration)
+                    || !S3.positive(initialRetryDelay)
+                    || !S3.positive(maxRetryDelay)
+                    || !S3.positive(unknownRevisitInterval)
+                    || initialRetryDelay.compareTo(maxRetryDelay) > 0
+                    || leaseDuration.compareTo(operationTimeout.plusSeconds(30)) <= 0) {
+                throw new IllegalStateException("Invalid file recovery configuration");
+            }
+        }
     }
 
     public static class Staging {

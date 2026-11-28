@@ -12,6 +12,58 @@ import org.springframework.util.unit.DataSize;
 class FilePropertiesTest {
 
     @Test
+    void recoveryDefaultsMatchApprovedValues() {
+        var recovery = new FileProperties().getRecovery();
+        assertThat(recovery.isEnabled()).isTrue();
+        assertThat(recovery.getPollInterval()).isEqualTo(java.time.Duration.ofSeconds(30));
+        assertThat(recovery.getBatchSize()).isEqualTo(25);
+        assertThat(recovery.getLeaseDuration()).isEqualTo(java.time.Duration.ofMinutes(10));
+        assertThat(recovery.getInitialRetryDelay()).isEqualTo(java.time.Duration.ofSeconds(30));
+        assertThat(recovery.getMaxRetryDelay()).isEqualTo(java.time.Duration.ofHours(1));
+        assertThat(recovery.getUnknownRevisitInterval()).isEqualTo(java.time.Duration.ofHours(1));
+    }
+
+    @Test
+    void rejectsInvalidRecoveryDurationsAndBatch() {
+        FileProperties p = new FileProperties();
+        p.getRecovery().setBatchSize(0);
+        assertThatThrownBy(p::validate).isInstanceOf(IllegalStateException.class);
+        p.getRecovery().setBatchSize(1);
+        p.getRecovery().setPollInterval(java.time.Duration.ZERO);
+        assertThatThrownBy(p::validate).isInstanceOf(IllegalStateException.class);
+        p.getRecovery().setPollInterval(java.time.Duration.ofSeconds(1));
+        p.getRecovery().setInitialRetryDelay(java.time.Duration.ofHours(2));
+        assertThatThrownBy(p::validate).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void leaseMustExceedDeleteTimeoutPlusMargin() {
+        FileProperties p = new FileProperties();
+        p.getRecovery().setLeaseDuration(java.time.Duration.ofSeconds(330));
+        assertThatThrownBy(p::validate).isInstanceOf(IllegalStateException.class);
+        p.getRecovery().setLeaseDuration(java.time.Duration.ofSeconds(331));
+        p.validate();
+    }
+
+    @Test
+    void bindsRecoveryOverrides() {
+        var source =
+                new SystemEnvironmentPropertySource(
+                        "systemEnvironment",
+                        java.util.Map.of(
+                                "HORIZON_FILE_RECOVERY_ENABLED", "false",
+                                "HORIZON_FILE_RECOVERY_POLL_INTERVAL", "17s",
+                                "HORIZON_FILE_RECOVERY_BATCH_SIZE", "7"));
+        FileProperties p =
+                new Binder(ConfigurationPropertySources.from(source))
+                        .bind("horizon.file", FileProperties.class)
+                        .get();
+        assertThat(p.getRecovery().isEnabled()).isFalse();
+        assertThat(p.getRecovery().getPollInterval()).isEqualTo(java.time.Duration.ofSeconds(17));
+        assertThat(p.getRecovery().getBatchSize()).isEqualTo(7);
+    }
+
+    @Test
     void defaultsPreserveStrictTwentyMiB() {
         FileProperties properties = new FileProperties();
         assertThat(properties.getMaxFileSizeBytes()).isEqualTo(20_971_519L);

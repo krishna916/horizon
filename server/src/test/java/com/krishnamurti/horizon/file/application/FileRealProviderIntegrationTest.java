@@ -12,10 +12,12 @@ import com.krishnamurti.horizon.file.api.command.CleanupFileCommand;
 import com.krishnamurti.horizon.file.api.command.PrepareFileCommand;
 import com.krishnamurti.horizon.file.api.command.TransferFileCommand;
 import com.krishnamurti.horizon.file.api.model.FileDescriptor;
+import com.krishnamurti.horizon.file.api.model.FileLifecycle;
 import com.krishnamurti.horizon.file.api.model.FileReference;
 import com.krishnamurti.horizon.file.api.model.FileScope;
 import com.krishnamurti.horizon.file.api.model.FileSnapshot;
 import com.krishnamurti.horizon.file.api.model.TransferDisposition;
+import com.krishnamurti.horizon.file.api.query.InspectFileQuery;
 import com.krishnamurti.horizon.file.api.query.ReadFileQuery;
 import com.krishnamurti.horizon.file.application.port.DeleteResult;
 import com.krishnamurti.horizon.file.application.port.ObjectKey;
@@ -27,9 +29,11 @@ import com.krishnamurti.horizon.file.application.port.WriteResult;
 import com.krishnamurti.horizon.file.domain.TransferOutcome;
 import com.krishnamurti.horizon.file.infrastructure.FileMetrics;
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
+import com.krishnamurti.horizon.file.infrastructure.FileRecoveryMetrics;
 import com.krishnamurti.horizon.file.infrastructure.FileStorageHealthIndicator;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileMetadataPersistence;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileMetadataRepository;
+import com.krishnamurti.horizon.file.infrastructure.persistence.FileRecoveryPersistence;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileTransferAttemptRepository;
 import com.krishnamurti.horizon.file.infrastructure.staging.FileStagingService;
 import com.krishnamurti.horizon.file.infrastructure.storage.S3FaultHarness;
@@ -37,6 +41,7 @@ import com.krishnamurti.horizon.file.infrastructure.storage.SeaweedFsTestConfigu
 import com.krishnamurti.horizon.file.infrastructure.storage.s3.RealProviderFixture;
 import com.krishnamurti.horizon.file.infrastructure.storage.s3.S3ObjectStorage;
 import com.krishnamurti.horizon.file.infrastructure.validation.FileValidationService;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -53,7 +58,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.health.contributor.Status;
@@ -72,12 +79,154 @@ class FileRealProviderIntegrationTest {
     private static final String SECRET_KEY = SeaweedFsTestConfiguration.SECRET_KEY;
     private static final String BUCKET = SeaweedFsTestConfiguration.BUCKET;
 
+    private static final class DeleteCountingStorage implements ObjectStorage {
+        private final ObjectStorage delegate;
+        private final AtomicInteger deleteCalls = new AtomicInteger();
+
+        private DeleteCountingStorage(ObjectStorage delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public WriteResult put(ObjectWriteRequest request) {
+            return delegate.put(request);
+        }
+
+        @Override
+        public ObjectMetadata head(ObjectKey key) {
+            return delegate.head(key);
+        }
+
+        @Override
+        public StoredObject get(ObjectKey key) {
+            return delegate.get(key);
+        }
+
+        @Override
+        public DeleteResult delete(ObjectKey key) {
+            deleteCalls.incrementAndGet();
+            return delegate.delete(key);
+        }
+
+        @Override
+        public void checkAvailability() {
+            delegate.checkAvailability();
+        }
+
+        private int deleteCalls() {
+            return deleteCalls.get();
+        }
+    }
+
+    private static final class DeleteBarrierStorage implements ObjectStorage {
+        private final ObjectStorage delegate;
+        private final CountDownLatch deleted = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+
+        private DeleteBarrierStorage(ObjectStorage delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public WriteResult put(ObjectWriteRequest request) {
+            return delegate.put(request);
+        }
+
+        @Override
+        public ObjectMetadata head(ObjectKey key) {
+            return delegate.head(key);
+        }
+
+        @Override
+        public StoredObject get(ObjectKey key) {
+            return delegate.get(key);
+        }
+
+        @Override
+        public DeleteResult delete(ObjectKey key) {
+            DeleteResult result = delegate.delete(key);
+            deleted.countDown();
+            try {
+                if (!release.await(10, TimeUnit.SECONDS))
+                    throw new IllegalStateException("DELETE completion barrier timed out");
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(
+                        "Interrupted at DELETE completion barrier", exception);
+            }
+            return result;
+        }
+
+        @Override
+        public void checkAvailability() {
+            delegate.checkAvailability();
+        }
+
+        private void awaitDelete() throws InterruptedException {
+            assertThat(deleted.await(8, TimeUnit.SECONDS)).isTrue();
+        }
+
+        private void releaseDelete() {
+            release.countDown();
+        }
+    }
+
+    private static final class LeaseTokenObservingStorage implements ObjectStorage {
+        private final ObjectStorage delegate;
+        private final JdbcTemplate jdbc;
+        private UUID observedToken;
+
+        private LeaseTokenObservingStorage(ObjectStorage delegate, JdbcTemplate jdbc) {
+            this.delegate = delegate;
+            this.jdbc = jdbc;
+        }
+
+        @Override
+        public WriteResult put(ObjectWriteRequest request) {
+            return delegate.put(request);
+        }
+
+        @Override
+        public ObjectMetadata head(ObjectKey key) {
+            return delegate.head(key);
+        }
+
+        @Override
+        public StoredObject get(ObjectKey key) {
+            return delegate.get(key);
+        }
+
+        @Override
+        public DeleteResult delete(ObjectKey key) {
+            observedToken =
+                    jdbc.queryForObject(
+                            "select cleanup_lease_token from file_transfer_attempt where"
+                                    + " object_key=?",
+                            UUID.class,
+                            key.value());
+            return delegate.delete(key);
+        }
+
+        @Override
+        public void checkAvailability() {
+            delegate.checkAvailability();
+        }
+
+        private UUID observedToken() {
+            return observedToken;
+        }
+    }
+
     @Autowired private FileService files;
     @Autowired private TestFileOwner owner;
     @Autowired private FileProperties fileProperties;
     @Autowired private FileMetadataPersistence metadataPersistence;
     @Autowired private FileMetadataRepository metadataRepository;
     @Autowired private FileTransactions transactions;
+    @Autowired private FileRecoveryTransactions recoveryTransactions;
+    @Autowired private FileRecoveryPersistence recoveryPersistence;
+    @Autowired private RecoveryClock recoveryClock;
+    @Autowired private FileRecoveryMetrics recoveryMetrics;
     @Autowired private FileStagingService staging;
     @Autowired private FileValidationService validation;
     @Autowired private FileMetrics metrics;
@@ -245,6 +394,77 @@ class FileRealProviderIntegrationTest {
                         object.content().transferTo(output);
                         assertThat(output.toByteArray()).containsExactly(WEBP);
                     }
+                    var reference = new FileReference(prepared.fileId(), scope);
+                    DeleteCountingStorage countingStorage =
+                            new DeleteCountingStorage(provider.storage());
+                    recoveryWorker(countingStorage).runCycle();
+                    assertThat(countingStorage.deleteCalls()).isZero();
+                    assertThat(files.inspect(new InspectFileQuery(reference)).lifecycle())
+                            .isEqualTo(FileLifecycle.PREPARED);
+                    assertThat(
+                                    jdbc.queryForObject(
+                                            "select expiry_recorded_at is null from file_metadata"
+                                                    + " where id=?",
+                                            Boolean.class,
+                                            prepared.fileId()))
+                            .isTrue();
+
+                    jdbc.update(
+                            "update file_metadata set expires_at = clock_timestamp() -"
+                                    + " interval '1 second' where id=?",
+                            prepared.fileId());
+                    recoveryWorker(countingStorage).runCycle();
+                    var afterDelete =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    assertThat(countingStorage.deleteCalls()).isEqualTo(1);
+                    assertThat(files.inspect(new InspectFileQuery(reference)).lifecycle())
+                            .isEqualTo(FileLifecycle.EXPIRED);
+                    assertThat(
+                                    provider.storage()
+                                            .head(new ObjectKey(attempt.getObjectKey()))
+                                            .found())
+                            .isFalse();
+                    assertThat(afterDelete.getOutcome()).isEqualTo(TransferOutcome.UNKNOWN);
+                    assertThat(afterDelete.getObjectKey()).isEqualTo(attempt.getObjectKey());
+                    assertThat(afterDelete.getCleanupConfirmedAt()).isNull();
+                    assertThat(afterDelete.getCleanupAttemptCount()).isEqualTo(1);
+                    assertThat(afterDelete.getLastCleanupErrorCode()).isNull();
+
+                    jdbc.update(
+                            "update file_transfer_attempt set next_cleanup_at ="
+                                    + " clock_timestamp() - interval '1 second' where id=?",
+                            afterDelete.getId());
+                    recoveryWorker(countingStorage).runCycle();
+                    var revisited =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    assertThat(countingStorage.deleteCalls()).isEqualTo(2);
+                    assertThat(revisited.getOutcome()).isEqualTo(TransferOutcome.UNKNOWN);
+                    assertThat(revisited.getObjectKey()).isEqualTo(attempt.getObjectKey());
+                    assertThat(revisited.getCleanupConfirmedAt()).isNull();
+                    assertThat(revisited.getCleanupAttemptCount()).isEqualTo(2);
+                    assertThat(revisited.getLastCleanupErrorCode()).isNull();
+                    assertThat(
+                                    jdbc.queryForObject(
+                                            "select purged_at is null from file_metadata where"
+                                                    + " id=?",
+                                            Boolean.class,
+                                            prepared.fileId()))
+                            .isTrue();
+                    assertThat(files.inspect(new InspectFileQuery(reference)).lifecycle())
+                            .isEqualTo(FileLifecycle.EXPIRED);
+                    assertThatThrownBy(
+                                    () ->
+                                            owner.inTransaction(
+                                                    () -> {
+                                                        files.claim(
+                                                                new ClaimFileCommand(reference));
+                                                        return null;
+                                                    }))
+                            .isInstanceOf(FileOperationException.class);
+                    assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
+                            .isInstanceOf(FileOperationException.class);
                 }
             }
         } finally {
@@ -253,6 +473,647 @@ class FileRealProviderIntegrationTest {
             makeRemovable(data);
             deleteTree(data);
         }
+    }
+
+    @RepeatedTest(3)
+    void latePutAfterDeleteWithLostAckRemainsUnknownAcrossRevisits() throws Exception {
+        Path data = Files.createTempDirectory("horizon-real-late-lost-ack-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
+        try {
+            seaweed.start();
+            URI providerEndpoint = endpoint(seaweed);
+            try (RealProviderFixture provider = storage(providerEndpoint);
+                    S3FaultHarness gate =
+                            new S3FaultHarness(
+                                    providerEndpoint,
+                                    S3FaultHarness.Mode.HOLD_PUT_DROP_SUCCESSFUL_RESPONSE);
+                    RealProviderFixture gated = storage(gate.endpoint())) {
+                FileScope scope = scope(99L, "real-late-lost-ack");
+                var prepared = prepare(scope, "late-lost-ack.webp");
+                var reference = new FileReference(prepared.fileId(), scope);
+                var executor = Executors.newSingleThreadExecutor();
+                DeleteCountingStorage countingStorage =
+                        new DeleteCountingStorage(provider.storage());
+                try {
+                    var transfer =
+                            executor.submit(
+                                    () ->
+                                            realService(gated.storage())
+                                                    .transfer(
+                                                            transferCommand(
+                                                                    prepared.fileId(), scope)));
+                    gate.awaitBufferedPut(java.time.Duration.ofSeconds(5));
+                    var pending =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    String retainedKey = pending.getObjectKey();
+                    assertThat(pending.getOutcome()).isEqualTo(TransferOutcome.PENDING);
+                    assertThat(retainedKey).isNotBlank();
+
+                    owner.inTransaction(
+                            () -> {
+                                files.requestCleanup(new CleanupFileCommand(reference));
+                                return null;
+                            });
+                    recoveryWorker(countingStorage).runCycle();
+                    var afterFirstDelete =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    assertThat(countingStorage.deleteCalls()).isEqualTo(1);
+                    assertThat(provider.storage().head(new ObjectKey(retainedKey)).found())
+                            .isFalse();
+                    assertThat(afterFirstDelete.getOutcome()).isEqualTo(TransferOutcome.UNKNOWN);
+                    assertThat(afterFirstDelete.getObjectKey()).isEqualTo(retainedKey);
+                    assertThat(afterFirstDelete.getWriteSettledAt()).isNull();
+                    assertThat(afterFirstDelete.getCleanupConfirmedAt()).isNull();
+                    assertThat(afterFirstDelete.getCleanupRequestedAt()).isNotNull();
+                    assertThat(afterFirstDelete.getCleanupAttemptCount()).isEqualTo(1);
+                    assertThat(afterFirstDelete.getLastCleanupErrorCode()).isNull();
+                    assertThat(
+                                    jdbc.queryForObject(
+                                            "select next_cleanup_at between clock_timestamp() +"
+                                                    + " interval '55 minutes' and clock_timestamp()"
+                                                    + " + interval '65 minutes' from"
+                                                    + " file_transfer_attempt where id=?",
+                                            Boolean.class,
+                                            afterFirstDelete.getId()))
+                            .isTrue();
+                    assertThatThrownBy(
+                                    () ->
+                                            owner.inTransaction(
+                                                    () -> {
+                                                        files.claim(
+                                                                new ClaimFileCommand(reference));
+                                                        return null;
+                                                    }))
+                            .isInstanceOf(FileOperationException.class);
+                    assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
+                            .isInstanceOf(FileOperationException.class);
+
+                    gate.releasePut();
+                    gate.awaitCompletion(java.time.Duration.ofSeconds(8));
+                    var result = transfer.get(8, TimeUnit.SECONDS);
+                    assertThat(gate.successfulPutResponseObserved()).isTrue();
+                    assertThat(result.disposition()).isEqualTo(TransferDisposition.OUTCOME_UNKNOWN);
+                    assertThat(gate.putRequests()).isEqualTo(1);
+                    assertThat(selectedAttempt(prepared.fileId())).isNull();
+                    assertThat(provider.storage().head(new ObjectKey(retainedKey)).found())
+                            .isTrue();
+                    try (StoredObject object = provider.storage().get(new ObjectKey(retainedKey));
+                            ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                        object.content().transferTo(output);
+                        assertThat(output.toByteArray()).containsExactly(WEBP);
+                    }
+                    recoveryWorker(countingStorage).runCycle();
+                    assertThat(countingStorage.deleteCalls()).isEqualTo(1);
+                    assertThat(provider.storage().head(new ObjectKey(retainedKey)).found())
+                            .isTrue();
+
+                    jdbc.update(
+                            "update file_transfer_attempt set next_cleanup_at ="
+                                    + " clock_timestamp() - interval '1 second' where id=?",
+                            afterFirstDelete.getId());
+                    recoveryWorker(countingStorage).runCycle();
+                    var afterLateDelete =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    assertThat(countingStorage.deleteCalls()).isEqualTo(2);
+                    assertThat(provider.storage().head(new ObjectKey(retainedKey)).found())
+                            .isFalse();
+                    assertThat(afterLateDelete.getOutcome()).isEqualTo(TransferOutcome.UNKNOWN);
+                    assertThat(afterLateDelete.getObjectKey()).isEqualTo(retainedKey);
+                    assertThat(afterLateDelete.getCleanupConfirmedAt()).isNull();
+                    assertThat(afterLateDelete.getCleanupAttemptCount()).isEqualTo(2);
+                    assertThat(afterLateDelete.getLastCleanupErrorCode()).isNull();
+                    assertThat(
+                                    jdbc.queryForObject(
+                                            "select next_cleanup_at between clock_timestamp() +"
+                                                    + " interval '55 minutes' and clock_timestamp()"
+                                                    + " + interval '65 minutes' from"
+                                                    + " file_transfer_attempt where id=?",
+                                            Boolean.class,
+                                            afterLateDelete.getId()))
+                            .isTrue();
+
+                    jdbc.update(
+                            "update file_transfer_attempt set next_cleanup_at ="
+                                    + " clock_timestamp() - interval '1 second' where id=?",
+                            afterLateDelete.getId());
+                    recoveryWorker(countingStorage).runCycle();
+                    var afterAbsentRetry =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    assertThat(countingStorage.deleteCalls()).isEqualTo(3);
+                    assertThat(afterAbsentRetry.getOutcome()).isEqualTo(TransferOutcome.UNKNOWN);
+                    assertThat(afterAbsentRetry.getObjectKey()).isEqualTo(retainedKey);
+                    assertThat(afterAbsentRetry.getCleanupConfirmedAt()).isNull();
+                    assertThat(afterAbsentRetry.getCleanupAttemptCount()).isEqualTo(3);
+                    assertThat(afterAbsentRetry.getLastCleanupErrorCode()).isNull();
+                    assertThat(
+                                    jdbc.queryForObject(
+                                            "select purged_at is null from file_metadata where"
+                                                    + " id=?",
+                                            Boolean.class,
+                                            prepared.fileId()))
+                            .isTrue();
+                    assertThat(gate.putRequests()).isEqualTo(1);
+                } finally {
+                    gate.releasePut();
+                    executor.shutdownNow();
+                }
+            }
+        } finally {
+            makeContainerDataRemovable(seaweed);
+            if (seaweed.isRunning()) seaweed.stop();
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    @Test
+    void heldPutCanBeCommittedByProviderThenItsSuccessfulResponseLost() throws Exception {
+        Path data = Files.createTempDirectory("horizon-real-held-lost-ack-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
+        try {
+            seaweed.start();
+            URI providerEndpoint = endpoint(seaweed);
+            try (RealProviderFixture provider = storage(providerEndpoint);
+                    S3FaultHarness gate =
+                            new S3FaultHarness(
+                                    providerEndpoint,
+                                    S3FaultHarness.Mode.HOLD_PUT_DROP_SUCCESSFUL_RESPONSE);
+                    RealProviderFixture gated = storage(gate.endpoint())) {
+                gated.storage().checkAvailability();
+                assertThat(gate.requests()).isPositive();
+                assertThat(gate.putRequests()).isZero();
+                assertThatThrownBy(() -> gate.awaitBufferedPut(java.time.Duration.ofMillis(100)))
+                        .isInstanceOf(AssertionError.class);
+                assertThatThrownBy(() -> gate.awaitCompletion(java.time.Duration.ofMillis(100)))
+                        .isInstanceOf(AssertionError.class);
+
+                FileScope scope = scope(99L, "held-lost-ack");
+                var prepared = prepare(scope, "held-lost-ack.webp");
+                try (var executor = Executors.newSingleThreadExecutor()) {
+                    var transfer =
+                            executor.submit(
+                                    () ->
+                                            realService(gated.storage())
+                                                    .transfer(
+                                                            transferCommand(
+                                                                    prepared.fileId(), scope)));
+                    gate.awaitBufferedPut(java.time.Duration.ofSeconds(5));
+                    assertThat(gate.putRequests()).isEqualTo(1);
+                    assertThat(provider.listObjects().contents()).isEmpty();
+
+                    gate.releasePut();
+                    gate.awaitCompletion(java.time.Duration.ofSeconds(8));
+                    var result = transfer.get(8, TimeUnit.SECONDS);
+
+                    assertThat(gate.successfulPutResponseObserved()).isTrue();
+                    assertThat(result.disposition()).isEqualTo(TransferDisposition.OUTCOME_UNKNOWN);
+                    var attempt =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    try (StoredObject object =
+                                    provider.storage().get(new ObjectKey(attempt.getObjectKey()));
+                            ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                        object.content().transferTo(output);
+                        assertThat(output.toByteArray()).containsExactly(WEBP);
+                    }
+                } finally {
+                    gate.releasePut();
+                }
+            }
+        } finally {
+            makeContainerDataRemovable(seaweed);
+            if (seaweed.isRunning()) seaweed.stop();
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    @Test
+    void interruptedPutForwardsPrefixBeforeAbortingUpstream() throws Exception {
+        Path data = Files.createTempDirectory("horizon-real-partial-put-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
+        Path staged = Files.createTempFile(data, "partial-put-", ".png");
+        try {
+            byte[] png = largePng();
+            Files.write(staged, png);
+            seaweed.start();
+            URI providerEndpoint = endpoint(seaweed);
+            try (RealProviderFixture provider = storage(providerEndpoint);
+                    S3FaultHarness gate =
+                            new S3FaultHarness(
+                                    providerEndpoint, S3FaultHarness.Mode.HOLD_PARTIAL_PUT);
+                    RealProviderFixture gated = storage(gate.endpoint())) {
+                var executor = Executors.newSingleThreadExecutor();
+                ObjectKey key = new ObjectKey("fault-harness/partial-put.png");
+                try {
+                    var put =
+                            executor.submit(
+                                    () ->
+                                            gated.storage()
+                                                    .put(
+                                                            new ObjectWriteRequest(
+                                                                    key,
+                                                                    staged,
+                                                                    png.length,
+                                                                    "image/png")));
+                    gate.awaitForwardedBody(java.time.Duration.ofSeconds(8));
+                    assertThat(gate.putRequests()).isEqualTo(1);
+                    assertThat(gate.forwardedBodyBytes()).isPositive();
+                    assertThat(gate.forwardedBodyBytes()).isLessThan(png.length);
+
+                    gate.abortUpstream();
+                    assertThat(put.get(8, TimeUnit.SECONDS)).isEqualTo(WriteResult.UNKNOWN);
+                    assertThat(provider.storage().head(key).found()).isFalse();
+                } finally {
+                    gate.releasePut();
+                    executor.shutdownNow();
+                }
+            }
+        } finally {
+            makeContainerDataRemovable(seaweed);
+            if (seaweed.isRunning()) seaweed.stop();
+            Files.deleteIfExists(staged);
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    @Test
+    void realProviderSettledDeleteCompactionAndLateFinalizeReplayKeepTombstone() throws Exception {
+        Path data = Files.createTempDirectory("horizon-real-settled-delete-replay-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
+        try {
+            seaweed.start();
+            try (RealProviderFixture provider = storage(endpoint(seaweed))) {
+                FileScope scope = scope(99L, "real-settled-delete-replay");
+                FileSnapshot prepared = prepare(scope, "settled-delete.webp");
+                FileReference reference = new FileReference(prepared.fileId(), scope);
+                var transfer =
+                        realService(provider.storage())
+                                .transfer(transferCommand(prepared.fileId(), scope));
+                assertThat(transfer.disposition()).isEqualTo(TransferDisposition.VERIFIED);
+
+                var attempt =
+                        attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()).getFirst();
+                UUID attemptId = attempt.getId();
+                String objectKey = attempt.getObjectKey();
+                assertThat(attempt.getWriteSettledAt()).isNotNull();
+                assertThat(attempt.getExpectedSha256()).isEqualTo(sha256(WEBP));
+                assertThat(provider.storage().head(new ObjectKey(objectKey)).found()).isTrue();
+
+                owner.inTransaction(
+                        () -> {
+                            files.requestCleanup(new CleanupFileCommand(reference));
+                            return null;
+                        });
+                DeleteCountingStorage counting = new DeleteCountingStorage(provider.storage());
+                FileRecoveryWorker worker = recoveryWorker(counting);
+                worker.runCycle();
+
+                var confirmed =
+                        attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()).getFirst();
+                assertThat(counting.deleteCalls()).isEqualTo(1);
+                assertThat(provider.storage().head(new ObjectKey(objectKey)).found()).isFalse();
+                assertThat(confirmed.getCleanupConfirmedAt()).isNotNull();
+                assertThat(confirmed.getObjectKey()).isNull();
+                assertThat(confirmed.getExpectedSha256()).isNull();
+                assertThat(confirmed.getVerifiedSha256()).isNull();
+
+                worker.runCycle();
+                assertThat(
+                                jdbc.queryForObject(
+                                        "select purged_at is not null from file_metadata where"
+                                                + " id=?",
+                                        Boolean.class,
+                                        prepared.fileId()))
+                        .isTrue();
+
+                var replay =
+                        transactions.recordAttempt(
+                                reference,
+                                attemptId,
+                                FileTransactions.AttemptResult.verified(WEBP.length, sha256(WEBP)),
+                                com.krishnamurti.horizon.file.api.model.FileFormat.WEBP);
+                var afterReplay =
+                        attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()).getFirst();
+                assertThat(replay.selected()).isFalse();
+                assertThat(afterReplay.getCleanupConfirmedAt()).isNotNull();
+                assertThat(afterReplay.getObjectKey()).isNull();
+                assertThat(afterReplay.getExpectedSizeBytes()).isNull();
+                assertThat(afterReplay.getExpectedSha256()).isNull();
+                assertThat(afterReplay.getVerifiedSizeBytes()).isNull();
+                assertThat(afterReplay.getVerifiedSha256()).isNull();
+                assertThat(selectedAttempt(prepared.fileId())).isNull();
+                assertThat(counting.deleteCalls()).isEqualTo(1);
+                assertThat(provider.storage().head(new ObjectKey(objectKey)).found()).isFalse();
+            }
+        } finally {
+            if (seaweed.isRunning()) {
+                makeContainerDataRemovable(seaweed);
+                seaweed.stop();
+            }
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    @Test
+    void interruptedTrackedPutRemainsUnknownAfterRealProviderDelete() throws Exception {
+        Path data = Files.createTempDirectory("horizon-real-tracked-partial-put-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
+        Path staged = Files.createTempFile(data, "tracked-partial-put-", ".png");
+        try {
+            byte[] png = largePng();
+            Files.write(staged, png);
+            seaweed.start();
+            URI providerEndpoint = endpoint(seaweed);
+            try (RealProviderFixture provider = storage(providerEndpoint);
+                    S3FaultHarness gate =
+                            new S3FaultHarness(
+                                    providerEndpoint, S3FaultHarness.Mode.HOLD_PARTIAL_PUT);
+                    RealProviderFixture gated = storage(gate.endpoint())) {
+                FileScope scope = scope(99L, "real-tracked-partial-put");
+                var descriptor =
+                        new FileDescriptor("partial.png", "image/png", png.length, sha256(png));
+                var prepared =
+                        owner.prepare(new PrepareFileCommand(UUID.randomUUID(), scope, descriptor));
+                var reference = new FileReference(prepared.fileId(), scope);
+                try (var executor = Executors.newSingleThreadExecutor()) {
+                    var transfer =
+                            executor.submit(
+                                    () ->
+                                            realService(gated.storage())
+                                                    .transfer(
+                                                            new TransferFileCommand(
+                                                                    reference,
+                                                                    png.length,
+                                                                    new java.io
+                                                                            .ByteArrayInputStream(
+                                                                            png))));
+                    gate.awaitForwardedBody(java.time.Duration.ofSeconds(8));
+                    var registered =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    String retainedKey = registered.getObjectKey();
+                    assertThat(registered.getOutcome()).isEqualTo(TransferOutcome.PENDING);
+                    assertThat(gate.forwardedBodyBytes()).isPositive().isLessThan(png.length);
+
+                    gate.abortUpstream();
+                    var result = transfer.get(8, TimeUnit.SECONDS);
+                    assertThat(result.disposition()).isEqualTo(TransferDisposition.OUTCOME_UNKNOWN);
+                    assertThat(selectedAttempt(prepared.fileId())).isNull();
+                    assertThat(provider.storage().head(new ObjectKey(retainedKey)).found())
+                            .isFalse();
+
+                    owner.inTransaction(
+                            () -> {
+                                files.requestCleanup(new CleanupFileCommand(reference));
+                                return null;
+                            });
+                    DeleteCountingStorage countingStorage =
+                            new DeleteCountingStorage(provider.storage());
+                    recoveryWorker(countingStorage).runCycle();
+                    var afterCleanup =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    assertThat(countingStorage.deleteCalls()).isEqualTo(1);
+                    assertThat(afterCleanup.getOutcome()).isEqualTo(TransferOutcome.UNKNOWN);
+                    assertThat(afterCleanup.getObjectKey()).isEqualTo(retainedKey);
+                    assertThat(afterCleanup.getWriteSettledAt()).isNull();
+                    assertThat(afterCleanup.getCleanupConfirmedAt()).isNull();
+                    assertThat(provider.storage().head(new ObjectKey(retainedKey)).found())
+                            .isFalse();
+                    assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
+                            .isInstanceOf(FileOperationException.class);
+                } finally {
+                    gate.releasePut();
+                }
+            }
+        } finally {
+            makeContainerDataRemovable(seaweed);
+            if (seaweed.isRunning()) seaweed.stop();
+            Files.deleteIfExists(staged);
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    @Test
+    void providerRestartDuringHeldPartialPutRetainsUnknownLocatorAndReconciles() throws Exception {
+        Path data = Files.createTempDirectory("horizon-provider-restart-partial-put-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> firstProvider = SeaweedFsTestConfiguration.container(volume);
+        GenericContainer<?> restartedProvider = SeaweedFsTestConfiguration.container(volume);
+        Path staged = Files.createTempFile(data, "provider-restart-partial-", ".png");
+        try {
+            byte[] png = largePng();
+            Files.write(staged, png);
+            firstProvider.start();
+            URI firstEndpoint = endpoint(firstProvider);
+            try (RealProviderFixture first = storage(firstEndpoint);
+                    S3FaultHarness gate =
+                            new S3FaultHarness(
+                                    firstEndpoint, S3FaultHarness.Mode.HOLD_PARTIAL_PUT);
+                    RealProviderFixture gated = storage(gate.endpoint())) {
+                ObjectKey sentinel =
+                        new ObjectKey("fault-harness/restart-volume-sentinel-" + UUID.randomUUID());
+                first.storage()
+                        .put(new ObjectWriteRequest(sentinel, staged, png.length, "image/png"));
+                var scope = scope(99L, "real-partial-provider-restart");
+                var prepared =
+                        owner.prepare(
+                                new PrepareFileCommand(
+                                        UUID.randomUUID(),
+                                        scope,
+                                        new FileDescriptor(
+                                                "restart.png",
+                                                "image/png",
+                                                png.length,
+                                                sha256(png))));
+                FileReference reference = new FileReference(prepared.fileId(), scope);
+                try (var executor = Executors.newSingleThreadExecutor()) {
+                    var transfer =
+                            executor.submit(
+                                    () ->
+                                            realService(gated.storage())
+                                                    .transfer(
+                                                            new TransferFileCommand(
+                                                                    reference,
+                                                                    png.length,
+                                                                    new java.io
+                                                                            .ByteArrayInputStream(
+                                                                            png))));
+                    gate.awaitForwardedBody(java.time.Duration.ofSeconds(8));
+                    var registered =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    String retainedKey = registered.getObjectKey();
+                    assertThat(registered.getOutcome()).isEqualTo(TransferOutcome.PENDING);
+                    assertThat(gate.forwardedBodyBytes()).isPositive().isLessThan(png.length);
+
+                    makeContainerDataRemovable(firstProvider);
+                    firstProvider.stop();
+                    restartedProvider.start();
+                    try (RealProviderFixture afterRestart = storage(endpoint(restartedProvider))) {
+                        assertThat(afterRestart.storage().head(sentinel).found()).isTrue();
+                        boolean partialObjectSurvived =
+                                afterRestart.storage().head(new ObjectKey(retainedKey)).found();
+
+                        gate.releasePut();
+                        var result = transfer.get(8, TimeUnit.SECONDS);
+                        assertThat(result.disposition())
+                                .isEqualTo(TransferDisposition.OUTCOME_UNKNOWN);
+                        assertThat(selectedAttempt(prepared.fileId())).isNull();
+                        assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
+                                .isInstanceOf(FileOperationException.class);
+
+                        owner.inTransaction(
+                                () -> {
+                                    files.requestCleanup(new CleanupFileCommand(reference));
+                                    return null;
+                                });
+                        DeleteCountingStorage counting =
+                                new DeleteCountingStorage(afterRestart.storage());
+                        recoveryWorker(counting).runCycle();
+                        var afterCleanup =
+                                attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                        .getFirst();
+                        assertThat(counting.deleteCalls()).isEqualTo(1);
+                        assertThat(afterCleanup.getOutcome())
+                                .as(
+                                        "retain UNKNOWN regardless of partial object visibility "
+                                                + "after provider restart (was %s)",
+                                        partialObjectSurvived)
+                                .isEqualTo(TransferOutcome.UNKNOWN);
+                        assertThat(afterCleanup.getObjectKey()).isEqualTo(retainedKey);
+                        assertThat(afterCleanup.getWriteSettledAt()).isNull();
+                        assertThat(afterCleanup.getCleanupConfirmedAt()).isNull();
+                        assertThat(afterRestart.storage().head(new ObjectKey(retainedKey)).found())
+                                .isFalse();
+                        assertThat(afterRestart.storage().head(sentinel).found()).isTrue();
+                        afterRestart.storage().delete(sentinel);
+                    }
+                } finally {
+                    gate.releasePut();
+                }
+            }
+        } finally {
+            if (firstProvider.isRunning()) {
+                makeContainerDataRemovable(firstProvider);
+                firstProvider.stop();
+            }
+            if (restartedProvider.isRunning()) {
+                makeContainerDataRemovable(restartedProvider);
+                restartedProvider.stop();
+            }
+            Files.deleteIfExists(staged);
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    @RepeatedTest(3)
+    void staleWorkerCannotFinalizeAfterRealLeaseReclaim() throws Exception {
+        Path data = Files.createTempDirectory("horizon-real-stale-delete-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
+        try {
+            seaweed.start();
+            try (RealProviderFixture provider = storage(endpoint(seaweed))) {
+                FileScope scope = scope(99L, "real-stale-delete");
+                var prepared = prepare(scope, "stale-delete.webp");
+                var reference = new FileReference(prepared.fileId(), scope);
+                assertThat(
+                                realService(provider.storage())
+                                        .transfer(transferCommand(prepared.fileId(), scope))
+                                        .disposition())
+                        .isEqualTo(TransferDisposition.VERIFIED);
+                owner.inTransaction(
+                        () -> {
+                            files.requestCleanup(new CleanupFileCommand(reference));
+                            return null;
+                        });
+                var attempt =
+                        attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()).getFirst();
+                String objectKey = attempt.getObjectKey();
+                DeleteBarrierStorage barrier = new DeleteBarrierStorage(provider.storage());
+                var firstWorker = recoveryWorker(barrier);
+                LeaseTokenObservingStorage observingStorage =
+                        new LeaseTokenObservingStorage(provider.storage(), jdbc);
+                var secondWorker = recoveryWorker(observingStorage);
+                try (var executor = Executors.newSingleThreadExecutor()) {
+                    var firstCycle = executor.submit(firstWorker::runCycle);
+                    barrier.awaitDelete();
+                    UUID staleToken =
+                            jdbc.queryForObject(
+                                    "select cleanup_lease_token from file_transfer_attempt where"
+                                            + " id=?",
+                                    UUID.class,
+                                    attempt.getId());
+                    assertThat(provider.storage().head(new ObjectKey(objectKey)).found()).isFalse();
+
+                    jdbc.update(
+                            "update file_transfer_attempt set cleanup_lease_until ="
+                                    + " clock_timestamp() - interval '1 second' where id=?",
+                            attempt.getId());
+                    secondWorker.runCycle();
+                    assertThat(observingStorage.observedToken())
+                            .isNotNull()
+                            .isNotEqualTo(staleToken);
+                    var afterReclaim =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    assertThat(afterReclaim.getCleanupLeaseToken()).isNull();
+                    assertThat(afterReclaim.getCleanupConfirmedAt()).isNotNull();
+                    assertThat(afterReclaim.getObjectKey()).isNull();
+                    assertThat(afterReclaim.getCleanupAttemptCount()).isEqualTo(2);
+
+                    barrier.releaseDelete();
+                    firstCycle.get(8, TimeUnit.SECONDS);
+                    var afterStaleCompletion =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    assertThat(afterStaleCompletion.getCleanupLeaseToken()).isNull();
+                    assertThat(afterStaleCompletion.getCleanupConfirmedAt())
+                            .isEqualTo(afterReclaim.getCleanupConfirmedAt());
+                    assertThat(afterStaleCompletion.getObjectKey()).isNull();
+                    assertThat(afterStaleCompletion.getCleanupAttemptCount()).isEqualTo(2);
+                    assertThat(staleToken).isNotNull();
+                    assertThat(provider.storage().head(new ObjectKey(objectKey)).found()).isFalse();
+                } finally {
+                    barrier.releaseDelete();
+                }
+            }
+        } finally {
+            makeContainerDataRemovable(seaweed);
+            if (seaweed.isRunning()) seaweed.stop();
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    private static byte[] largePng() throws Exception {
+        BufferedImage image = new BufferedImage(512, 512, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int red = (x * 37 + y * 17) & 0xff;
+                int green = (x * 11 + y * 53) & 0xff;
+                int blue = (x * 97 + y * 7) & 0xff;
+                image.setRGB(x, y, (red << 16) | (green << 8) | blue);
+            }
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", output);
+        return output.toByteArray();
     }
 
     @Test
@@ -283,7 +1144,7 @@ class FileRealProviderIntegrationTest {
         }
     }
 
-    @Test
+    @RepeatedTest(3)
     void lateProviderPutAfterCleanupIsDiscoverableAndRetryUsesDistinctKeys() throws Exception {
         Path data = Files.createTempDirectory("horizon-real-late-put-");
         Path volume = Files.createDirectories(data.resolve("storage"));
@@ -331,12 +1192,19 @@ class FileRealProviderIntegrationTest {
                                             Boolean.class,
                                             latePrepared.fileId()))
                             .isTrue();
-                    provider.storage().delete(new ObjectKey(pendingAttempt.getObjectKey()));
+                    recoveryWorker(provider.storage()).runCycle();
                     assertThat(
                                     provider.storage()
                                             .head(new ObjectKey(pendingAttempt.getObjectKey()))
                                             .found())
                             .isFalse();
+                    var unknownAttempt =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(latePrepared.fileId())
+                                    .getFirst();
+                    assertThat(unknownAttempt.getOutcome()).isEqualTo(TransferOutcome.UNKNOWN);
+                    assertThat(unknownAttempt.getCleanupConfirmedAt()).isNull();
+                    assertThat(unknownAttempt.getObjectKey())
+                            .isEqualTo(pendingAttempt.getObjectKey());
 
                     gate.releasePut();
                     gate.awaitCompletion(java.time.Duration.ofSeconds(8));
@@ -364,6 +1232,17 @@ class FileRealProviderIntegrationTest {
                         object.content().transferTo(output);
                         assertThat(output.toByteArray()).containsExactly(WEBP);
                     }
+                    recoveryWorker(provider.storage()).runCycle();
+                    var recovered =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(latePrepared.fileId())
+                                    .getFirst();
+                    assertThat(recovered.getCleanupConfirmedAt()).isNotNull();
+                    assertThat(recovered.getObjectKey()).isNull();
+                    assertThat(
+                                    provider.storage()
+                                            .head(new ObjectKey(settledAttempt.getObjectKey()))
+                                            .found())
+                            .isFalse();
                 } finally {
                     executor.shutdownNow();
                 }
@@ -451,6 +1330,42 @@ class FileRealProviderIntegrationTest {
         try (StoredObject object = storage.get(new ObjectKey(loser.getObjectKey()));
                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             object.content().transferTo(output);
+            assertThat(output.toByteArray()).containsExactly(WEBP);
+        }
+
+        owner.inTransaction(
+                () -> {
+                    files.claim(new ClaimFileCommand(new FileReference(prepared.fileId(), scope)));
+                    return null;
+                });
+        DeleteCountingStorage countingStorage = new DeleteCountingStorage(storage);
+        recoveryWorker(countingStorage).runCycle();
+        var afterLoserCleanup = attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId());
+        var recoveredWinner =
+                afterLoserCleanup.stream()
+                        .filter(attempt -> attempt.getId().equals(selected))
+                        .findFirst()
+                        .orElseThrow();
+        var recoveredLoser =
+                afterLoserCleanup.stream()
+                        .filter(attempt -> !attempt.getId().equals(selected))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(countingStorage.deleteCalls()).isEqualTo(1);
+        assertThat(recoveredWinner.getObjectKey()).isEqualTo(winner.getObjectKey());
+        assertThat(recoveredWinner.getCleanupConfirmedAt()).isNull();
+        assertThat(recoveredLoser.getObjectKey()).isNull();
+        assertThat(recoveredLoser.getCleanupConfirmedAt()).isNotNull();
+        assertThat(storage.head(new ObjectKey(winner.getObjectKey())).found()).isTrue();
+        assertThat(storage.head(new ObjectKey(loser.getObjectKey())).found()).isFalse();
+        assertThat(selectedAttempt(prepared.fileId())).isEqualTo(selected);
+        try (var content =
+                        realService(storage)
+                                .openRead(
+                                        new ReadFileQuery(
+                                                new FileReference(prepared.fileId(), scope)));
+                ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            content.stream().transferTo(output);
             assertThat(output.toByteArray()).containsExactly(WEBP);
         }
     }
@@ -543,7 +1458,8 @@ class FileRealProviderIntegrationTest {
                 staging,
                 validation,
                 storage,
-                metrics);
+                metrics,
+                recoveryClock);
     }
 
     private static final class BarrierObjectStorage implements ObjectStorage {
@@ -637,6 +1553,16 @@ class FileRealProviderIntegrationTest {
 
     private static RealProviderFixture storage(URI endpoint) {
         return RealProviderFixture.connect(endpoint, BUCKET, ACCESS_KEY, SECRET_KEY);
+    }
+
+    private FileRecoveryWorker recoveryWorker(ObjectStorage storage) {
+        return new FileRecoveryWorker(
+                recoveryPersistence,
+                recoveryTransactions,
+                storage,
+                recoveryClock,
+                fileProperties,
+                recoveryMetrics);
     }
 
     private static URI endpoint(GenericContainer<?> seaweed) {

@@ -16,7 +16,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -25,7 +27,9 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class S3FaultHarness implements AutoCloseable {
     public enum Mode {
         HOLD_PUT,
-        DROP_SUCCESSFUL_PUT_RESPONSE
+        DROP_SUCCESSFUL_PUT_RESPONSE,
+        HOLD_PUT_DROP_SUCCESSFUL_RESPONSE,
+        HOLD_PARTIAL_PUT
     }
 
     private final ServerSocket listener;
@@ -33,10 +37,15 @@ public final class S3FaultHarness implements AutoCloseable {
     private final Mode mode;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final CountDownLatch putBuffered = new CountDownLatch(1);
+    private final CountDownLatch forwardedBody = new CountDownLatch(1);
     private final CountDownLatch releasePut = new CountDownLatch(1);
     private final CountDownLatch completed = new CountDownLatch(1);
     private final AtomicInteger requests = new AtomicInteger();
     private final AtomicInteger putRequests = new AtomicInteger();
+    private final AtomicLong forwardedBodyBytes = new AtomicLong();
+    private final AtomicBoolean successfulPutResponseObserved = new AtomicBoolean();
+    private final AtomicBoolean abortRequested = new AtomicBoolean();
+    private final AtomicReference<Socket> upstreamConnection = new AtomicReference<>();
     private final AtomicReference<Throwable> failure = new AtomicReference<>();
 
     public S3FaultHarness(URI upstream, Mode mode) throws IOException {
@@ -59,6 +68,14 @@ public final class S3FaultHarness implements AutoCloseable {
         return requests.get();
     }
 
+    public long forwardedBodyBytes() {
+        return forwardedBodyBytes.get();
+    }
+
+    public boolean successfulPutResponseObserved() {
+        return successfulPutResponseObserved.get();
+    }
+
     public void awaitBufferedPut(Duration timeout) throws Exception {
         if (!putBuffered.await(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
             throw new AssertionError("S3 gate did not receive the complete PUT request");
@@ -68,6 +85,26 @@ public final class S3FaultHarness implements AutoCloseable {
 
     public void releasePut() {
         releasePut.countDown();
+    }
+
+    public void awaitForwardedBody(Duration timeout) throws Exception {
+        if (!forwardedBody.await(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+            throw new AssertionError("S3 gate did not forward the PUT body prefix");
+        }
+        rethrowFailure();
+    }
+
+    public void abortUpstream() {
+        abortRequested.set(true);
+        releasePut.countDown();
+        Socket provider = upstreamConnection.get();
+        if (provider != null) {
+            try {
+                provider.close();
+            } catch (IOException exception) {
+                failure.compareAndSet(null, exception);
+            }
+        }
     }
 
     public void awaitCompletion(Duration timeout) throws Exception {
@@ -86,9 +123,6 @@ public final class S3FaultHarness implements AutoCloseable {
             }
         } catch (IOException exception) {
             if (!listener.isClosed()) failure.compareAndSet(null, exception);
-        } finally {
-            putBuffered.countDown();
-            completed.countDown();
         }
     }
 
@@ -100,34 +134,63 @@ public final class S3FaultHarness implements AutoCloseable {
             String requestText = new String(requestHeader, StandardCharsets.ISO_8859_1);
             boolean isPut = requestText.startsWith("PUT ");
             requests.incrementAndGet();
-            byte[] requestBody = readRequestBody(clientInput, requestText);
-            if (isPut) {
-                putRequests.incrementAndGet();
-                putBuffered.countDown();
-            }
-
-            if (isPut && mode == Mode.HOLD_PUT) {
-                if (!releasePut.await(10, TimeUnit.SECONDS)) {
-                    throw new IOException("Timed out waiting to release the held PUT");
+            int contentLength = contentLength(requestText);
+            byte[] bufferedBody = null;
+            if (!isPut || mode != Mode.HOLD_PARTIAL_PUT) {
+                bufferedBody = readRequestBody(clientInput, contentLength);
+                if (isPut) {
+                    putRequests.incrementAndGet();
+                    putBuffered.countDown();
+                    if (mode == Mode.HOLD_PUT || mode == Mode.HOLD_PUT_DROP_SUCCESSFUL_RESPONSE) {
+                        if (!releasePut.await(10, TimeUnit.SECONDS)) {
+                            throw new IOException("Timed out waiting to release the held PUT");
+                        }
+                    }
                 }
             }
 
             try (Socket provider = new Socket()) {
                 provider.connect(
                         new InetSocketAddress(upstream.getHost(), upstream.getPort()), 3_000);
+                upstreamConnection.set(provider);
                 provider.setSoTimeout(8_000);
                 OutputStream providerOutput = provider.getOutputStream();
                 providerOutput.write(requestHeader);
-                providerOutput.write(requestBody);
-                providerOutput.flush();
+
+                if (isPut) {
+                    if (mode == Mode.HOLD_PARTIAL_PUT) {
+                        providerOutput.flush();
+                        putRequests.incrementAndGet();
+                        forwardPartialBody(clientInput, providerOutput, contentLength);
+                        if (!releasePut.await(10, TimeUnit.SECONDS)) {
+                            throw new IOException("Timed out waiting to release the partial PUT");
+                        }
+                        if (abortRequested.get()) {
+                            completed.countDown();
+                            return;
+                        }
+                        forwardRemainingBody(clientInput, providerOutput, contentLength);
+                    } else {
+                        providerOutput.write(bufferedBody);
+                        providerOutput.flush();
+                        forwardedBodyBytes.set(bufferedBody.length);
+                        forwardedBody.countDown();
+                    }
+                } else {
+                    providerOutput.write(bufferedBody);
+                    providerOutput.flush();
+                }
 
                 InputStream providerInput = provider.getInputStream();
                 byte[] responseHeader = readFinalResponseHeader(providerInput);
                 String responseText = new String(responseHeader, StandardCharsets.ISO_8859_1);
                 boolean successfulPutResponse =
                         isPut && responseText.startsWith("HTTP/") && responseText.contains(" 200 ");
-                completed.countDown();
-                if (mode == Mode.DROP_SUCCESSFUL_PUT_RESPONSE && successfulPutResponse) return;
+                if (successfulPutResponse) successfulPutResponseObserved.set(true);
+                if (isPut) completed.countDown();
+                if ((mode == Mode.DROP_SUCCESSFUL_PUT_RESPONSE
+                                || mode == Mode.HOLD_PUT_DROP_SUCCESSFUL_RESPONSE)
+                        && successfulPutResponse) return;
 
                 OutputStream clientOutput = client.getOutputStream();
                 clientOutput.write(responseHeader);
@@ -135,7 +198,9 @@ public final class S3FaultHarness implements AutoCloseable {
                 clientOutput.flush();
             }
         } catch (Throwable exception) {
-            failure.compareAndSet(null, exception);
+            if (!abortRequested.get()) failure.compareAndSet(null, exception);
+        } finally {
+            upstreamConnection.set(null);
         }
     }
 
@@ -159,8 +224,30 @@ public final class S3FaultHarness implements AutoCloseable {
         throw new IOException("S3 HTTP header exceeded the test gate bound");
     }
 
-    private static byte[] readRequestBody(InputStream input, String header) throws IOException {
-        int contentLength = contentLength(header);
+    private void forwardPartialBody(InputStream input, OutputStream output, int contentLength)
+            throws IOException {
+        if (contentLength < 2) throw new IOException("Partial PUT body is too short for a prefix");
+        int prefixLength = Math.min(16 * 1024, contentLength - 1);
+        byte[] prefix = input.readNBytes(prefixLength);
+        if (prefix.length != prefixLength)
+            throw new IOException("Incomplete S3 request body prefix");
+        output.write(prefix);
+        output.flush();
+        forwardedBodyBytes.set(prefix.length);
+        forwardedBody.countDown();
+    }
+
+    private void forwardRemainingBody(InputStream input, OutputStream output, int contentLength)
+            throws IOException {
+        int remaining = contentLength - Math.toIntExact(forwardedBodyBytes.get());
+        byte[] body = input.readNBytes(remaining);
+        if (body.length != remaining) throw new IOException("Incomplete S3 request body");
+        output.write(body);
+        output.flush();
+        forwardedBodyBytes.addAndGet(body.length);
+    }
+
+    private static byte[] readRequestBody(InputStream input, int contentLength) throws IOException {
         byte[] body = input.readNBytes(contentLength);
         if (body.length != contentLength) throw new IOException("Incomplete S3 request body");
         return body;
@@ -206,6 +293,8 @@ public final class S3FaultHarness implements AutoCloseable {
     public void close() throws IOException {
         releasePut.countDown();
         listener.close();
+        Socket provider = upstreamConnection.getAndSet(null);
+        if (provider != null) provider.close();
         executor.shutdownNow();
     }
 }

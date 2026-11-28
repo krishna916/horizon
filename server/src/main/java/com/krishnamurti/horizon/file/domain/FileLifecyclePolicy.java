@@ -10,6 +10,7 @@ public final class FileLifecyclePolicy {
     public static FileLifecycle derive(
             Instant now,
             Instant expiresAt,
+            Instant expiryRecordedAt,
             UUID selectedAttemptId,
             Instant claimedAt,
             Instant cleanupRequestedAt,
@@ -23,7 +24,7 @@ public final class FileLifecyclePolicy {
         if (claimedAt != null) {
             return FileLifecycle.CLAIMED;
         }
-        if (now.compareTo(expiresAt) >= 0) {
+        if (expiryRecordedAt != null || now.compareTo(expiresAt) >= 0) {
             return FileLifecycle.EXPIRED;
         }
         if (selectedAttemptId != null) {
