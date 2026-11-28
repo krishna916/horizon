@@ -59,6 +59,21 @@ public class FileTransferAttemptEntity {
     @Column(name = "cleanup_requested_at", columnDefinition = "timestamptz")
     private Instant cleanupRequestedAt;
 
+    @Column(name = "next_cleanup_at", columnDefinition = "timestamptz")
+    private Instant nextCleanupAt;
+
+    @Column(name = "cleanup_lease_token")
+    private UUID cleanupLeaseToken;
+
+    @Column(name = "cleanup_lease_until", columnDefinition = "timestamptz")
+    private Instant cleanupLeaseUntil;
+
+    @Column(name = "consecutive_cleanup_failures", nullable = false)
+    private long consecutiveCleanupFailures;
+
+    @Column(name = "last_cleanup_error_code", length = 64)
+    private String lastCleanupErrorCode;
+
     @Column(name = "last_cleanup_attempt_at", columnDefinition = "timestamptz")
     private Instant lastCleanupAttemptAt;
 

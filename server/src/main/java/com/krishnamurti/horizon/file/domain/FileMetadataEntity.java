@@ -68,6 +68,9 @@ public class FileMetadataEntity {
     @Column(name = "expires_at", nullable = false, columnDefinition = "timestamptz")
     private Instant expiresAt;
 
+    @Column(name = "expiry_recorded_at", columnDefinition = "timestamptz")
+    private Instant expiryRecordedAt;
+
     @Column(name = "claimed_at", columnDefinition = "timestamptz")
     private Instant claimedAt;
 

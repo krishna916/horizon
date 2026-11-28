@@ -31,6 +31,14 @@ horizon:
   file:
     max-file-size: ${HORIZON_FILE_MAX_FILE_SIZE:20971519B}
     unclaimed-expiry: ${HORIZON_FILE_UNCLAIMED_EXPIRY:24h}
+    recovery:
+      enabled: ${HORIZON_FILE_RECOVERY_ENABLED:true}
+      poll-interval: ${HORIZON_FILE_RECOVERY_POLL_INTERVAL:30s}
+      batch-size: ${HORIZON_FILE_RECOVERY_BATCH_SIZE:25}
+      lease-duration: ${HORIZON_FILE_RECOVERY_LEASE_DURATION:10m}
+      initial-retry-delay: ${HORIZON_FILE_RECOVERY_INITIAL_RETRY_DELAY:30s}
+      max-retry-delay: ${HORIZON_FILE_RECOVERY_MAX_RETRY_DELAY:1h}
+      unknown-revisit-interval: ${HORIZON_FILE_RECOVERY_UNKNOWN_REVISIT_INTERVAL:1h}
     staging:
       directory: ${HORIZON_FILE_STAGING_DIRECTORY:./data/file-staging}
       max-concurrent-transfers: ${HORIZON_FILE_MAX_CONCURRENT_TRANSFERS:4}

@@ -308,8 +308,9 @@ class FilePersistenceIntegrationTest {
         OffsetDateTime now = now();
         insertAttempt(attempt, file, "users/1/notes/" + attempt, now);
         jdbc.update(
-                "UPDATE file_transfer_attempt SET write_settled_at = ?, cleanup_confirmed_at = ?,"
-                        + " updated_at = ? WHERE id = ?",
+                "UPDATE file_transfer_attempt SET write_settled_at = ?, cleanup_requested_at = ?,"
+                        + " cleanup_confirmed_at = ?, updated_at = ? WHERE id = ?",
+                now,
                 now,
                 now,
                 now,
