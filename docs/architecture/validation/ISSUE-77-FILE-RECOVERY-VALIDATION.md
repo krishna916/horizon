@@ -143,9 +143,11 @@ Status is against the full local test run after the Task 7 A13/B09 follow-up.
 Backend verification passed 552 tests (zero failures/errors, one existing skip),
 SpotBugs, and coverage validation. Client verification passed 738 unit tests,
 coverage checks, build, and the 105-test Playwright suite. Hosted CI evidence for
-the final pushed head is still pending. Real-provider results use pinned
-SeaweedFS 4.54 Testcontainers; the owner integration is a test-only surrogate
-and does not establish Note route or transaction behavior.
+the tested head `ec18b38a77cdffe8976a7697a608859df8c01c67` is run `46156991786`
+(workflow run 247); backend, frontend, Playwright, and SonarCloud all passed.
+Real-provider results use pinned SeaweedFS 4.54 Testcontainers; the owner
+integration is a test-only surrogate and does not establish Note route or
+transaction behavior.
 
 ### Issue #77 acceptance criteria
 
@@ -205,7 +207,7 @@ and does not establish Note route or transaction behavior.
 | F97-04 owner mutation surrogate | **Addressed as authorized:** Task 4, commit `54120a1`; actual Note integration remains downstream. |
 | F97-05 shutdown admission | **Addressed:** Task 5, commit `99d5c95`; current context-close event test drives the owning event directly because Spring's test-managed context cannot be manually closed in-method. |
 | F97-06 diagnostics/fairness/query plans | **Addressed:** Task 6, commit `02e40af`; 32-test matrix plus opt-in PostgreSQL 17 EXPLAIN fixture, no unjustified index/schema change. |
-| F97-07 stale validation report | **Addressed locally:** this matrix corrects the baseline, records evidence/gaps, and includes full local backend, client, and Playwright verification. Hosted CI for the final pushed head remains pending. |
+| F97-07 stale validation report | **Addressed:** this matrix corrects the baseline and records local evidence; hosted run 247 passed backend, frontend, Playwright, and SonarCloud on the tested code head `ec18b38`. |
 
 ## Deployment gate and limitations
 
@@ -228,8 +230,9 @@ check. No actual deployment bucket has been accessed or mutated by this
 verification. The request remains unanswered as of this report update.
 R5 remains BLOCKED/OPEN pending that operator evidence. The branch's
 Actions workflow runs backend, frontend, Playwright and SonarCloud for pull
-requests targeting `master`; hosted checks must be checked against the final
-remediation head and are not established by this historical report.
+requests targeting `master`. Run 247 for tested head `ec18b38` passed all four
+jobs. Later commits should use their own Actions run as the current hosted CI
+result; this report records the exact head covered above.
 
 UNKNOWN writes can remain unresolved indefinitely if a provider keeps
 accepting late writes or cannot provide a conclusive outcome. Their key and
