@@ -27,10 +27,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class FileTransactions {
     private final FileMetadataRepository files;
     private final FileTransferAttemptRepository attempts;
+    private final RecoveryClock clock;
 
-    public FileTransactions(FileMetadataRepository files, FileTransferAttemptRepository attempts) {
+    public FileTransactions(
+            FileMetadataRepository files,
+            FileTransferAttemptRepository attempts,
+            RecoveryClock clock) {
         this.files = files;
         this.attempts = attempts;
+        this.clock = clock;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
@@ -43,7 +48,7 @@ public class FileTransactions {
         FileMetadataEntity file =
                 files.lockById(reference.fileId()).orElseThrow(FileTransactions::notFound);
         requireScope(file, reference.scope());
-        Instant now = Instant.now();
+        Instant now = clock.now();
         FileLifecycle lifecycle = lifecycle(file, now);
         if (lifecycle == FileLifecycle.VERIFIED && file.getSelectedAttemptId() != null) {
             return Registration.alreadyVerified(snapshot(file, now));
@@ -77,7 +82,15 @@ public class FileTransactions {
         FileTransferAttemptEntity attempt =
                 attempts.lockByFileIdAndId(file.getId(), attemptId)
                         .orElseThrow(FileTransactions::notFound);
-        Instant now = Instant.now();
+        Instant now = clock.now();
+        boolean isWinner = Objects.equals(file.getSelectedAttemptId(), attemptId);
+        if (attempt.getCleanupConfirmedAt() != null || file.getPurgedAt() != null) {
+            return new Completion(snapshot(file, now), false);
+        }
+        if (attempt.getWriteSettledAt() != null) {
+            // Already settled facts and the chosen winner are immutable, including on replay.
+            return new Completion(snapshot(file, now), isWinner);
+        }
         attempt.setOutcome(result.outcome());
         attempt.setUpdatedAt(now);
         if (result.writeSettled()) attempt.setWriteSettledAt(now);
@@ -86,13 +99,11 @@ public class FileTransactions {
             attempt.setVerifiedSha256(result.verifiedSha256());
             attempt.setVerifiedAt(now);
         }
-
+        boolean fenced = attempt.getCleanupRequestedAt() != null;
         boolean selected = false;
         if (result.verified()) {
             FileLifecycle lifecycle = lifecycle(file, now);
-            boolean cleanupRequested =
-                    file.getCleanupRequestedAt() != null || file.getPurgedAt() != null;
-            if (!cleanupRequested
+            if (!fenced
                     && file.getSelectedAttemptId() == null
                     && (lifecycle == FileLifecycle.PREPARED
                             || lifecycle == FileLifecycle.VERIFIED)) {
@@ -100,12 +111,15 @@ public class FileTransactions {
                 file.setValidatedFormat(Objects.requireNonNull(verifiedFormat));
                 file.setUpdatedAt(now);
                 selected = true;
-            } else {
+            } else if (!isWinner && !fenced) {
                 attempt.setCleanupRequestedAt(now);
+                fenced = true;
             }
-        } else if (result.cleanupRequested()) {
+        } else if (result.cleanupRequested() && !isWinner && !fenced) {
             attempt.setCleanupRequestedAt(now);
+            fenced = true;
         }
+        if (fenced && result.writeSettled()) attempt.setNextCleanupAt(now);
         attempts.saveAndFlush(attempt);
         files.saveAndFlush(file);
         return new Completion(snapshot(file, now), selected);
@@ -116,7 +130,7 @@ public class FileTransactions {
         FileMetadataEntity file =
                 files.lockById(reference.fileId()).orElseThrow(FileTransactions::notFound);
         requireScope(file, reference.scope());
-        Instant now = Instant.now();
+        Instant now = clock.now();
         FileLifecycle lifecycle = lifecycle(file, now);
         if (lifecycle == FileLifecycle.CLAIMED) return ClaimResult.ALREADY_CLAIMED;
         if (lifecycle != FileLifecycle.VERIFIED || file.getSelectedAttemptId() == null) {
@@ -126,8 +140,14 @@ public class FileTransactions {
         FileTransferAttemptEntity selected =
                 attempts.lockByFileIdAndId(file.getId(), file.getSelectedAttemptId())
                         .orElseThrow(FileTransactions::notFound);
+        now = clock.now();
+        if (lifecycle(file, now) != FileLifecycle.VERIFIED) {
+            throw failure(
+                    FileOperationException.Reason.CONFLICT, "File is not eligible to be claimed");
+        }
         if (selected.getOutcome() != TransferOutcome.VERIFIED
                 || selected.getObjectKey() == null
+                || selected.getCleanupRequestedAt() != null
                 || !Objects.equals(selected.getVerifiedSizeBytes(), file.getExpectedSizeBytes())
                 || !Objects.equals(selected.getVerifiedSha256(), file.getExpectedSha256())) {
             throw failure(
@@ -142,7 +162,7 @@ public class FileTransactions {
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public ReadSnapshot loadClaimedFile(FileReference reference) {
         FileMetadataEntity file = scoped(reference).orElseThrow(FileTransactions::notFound);
-        Instant now = Instant.now();
+        Instant now = clock.now();
         if (lifecycle(file, now) != FileLifecycle.CLAIMED
                 || file.getClaimedAt() == null
                 || file.getSelectedAttemptId() == null) {
@@ -178,7 +198,7 @@ public class FileTransactions {
                 files.lockById(reference.fileId()).orElseThrow(FileTransactions::notFound);
         requireScope(file, reference.scope());
         if (file.getPurgedAt() != null) return;
-        Instant now = Instant.now();
+        Instant now = clock.now();
         if (file.getCleanupRequestedAt() == null) file.setCleanupRequestedAt(now);
         file.setUpdatedAt(now);
         for (FileTransferAttemptEntity attempt :
@@ -195,7 +215,7 @@ public class FileTransactions {
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public FileSnapshot inspect(FileReference reference) {
         FileMetadataEntity file = scoped(reference).orElseThrow(FileTransactions::notFound);
-        return snapshot(file, Instant.now());
+        return snapshot(file, clock.now());
     }
 
     private java.util.Optional<FileMetadataEntity> scoped(FileReference reference) {
@@ -222,6 +242,7 @@ public class FileTransactions {
         return FileLifecyclePolicy.derive(
                 now,
                 file.getExpiresAt(),
+                file.getExpiryRecordedAt(),
                 file.getSelectedAttemptId(),
                 file.getClaimedAt(),
                 file.getCleanupRequestedAt(),

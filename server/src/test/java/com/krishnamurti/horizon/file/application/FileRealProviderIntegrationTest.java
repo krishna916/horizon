@@ -78,6 +78,7 @@ class FileRealProviderIntegrationTest {
     @Autowired private FileMetadataPersistence metadataPersistence;
     @Autowired private FileMetadataRepository metadataRepository;
     @Autowired private FileTransactions transactions;
+    @Autowired private RecoveryClock recoveryClock;
     @Autowired private FileStagingService staging;
     @Autowired private FileValidationService validation;
     @Autowired private FileMetrics metrics;
@@ -543,7 +544,8 @@ class FileRealProviderIntegrationTest {
                 staging,
                 validation,
                 storage,
-                metrics);
+                metrics,
+                recoveryClock);
     }
 
     private static final class BarrierObjectStorage implements ObjectStorage {

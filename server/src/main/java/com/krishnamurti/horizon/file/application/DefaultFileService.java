@@ -68,6 +68,7 @@ public class DefaultFileService implements FileService {
     private final FileValidationService validation;
     private final ObjectStorage storage;
     private final FileMetrics metrics;
+    private final RecoveryClock clock;
 
     public DefaultFileService(
             FileMetadataPersistence metadataPersistence,
@@ -77,7 +78,8 @@ public class DefaultFileService implements FileService {
             FileStagingService staging,
             FileValidationService validation,
             ObjectStorage storage,
-            FileMetrics metrics) {
+            FileMetrics metrics,
+            RecoveryClock clock) {
         this.metadataPersistence = metadataPersistence;
         this.metadataRepository = metadataRepository;
         this.transactions = transactions;
@@ -86,6 +88,7 @@ public class DefaultFileService implements FileService {
         this.validation = validation;
         this.storage = storage;
         this.metrics = metrics;
+        this.clock = clock;
     }
 
     @Override
@@ -103,7 +106,7 @@ public class DefaultFileService implements FileService {
                     "File exceeds the effective upload limit");
         }
 
-        Instant createdAt = Instant.now();
+        Instant createdAt = clock.now();
         FileMetadataEntity candidate =
                 FileMetadataEntity.createReservation(
                         UUID.randomUUID(),
@@ -136,7 +139,7 @@ public class DefaultFileService implements FileService {
         Objects.requireNonNull(command);
         FileReference reference = command.file();
         FileMetadataEntity file = transactions.loadTransferFile(reference);
-        Instant now = Instant.now();
+        Instant now = clock.now();
         FileLifecycle lifecycle = lifecycle(file, now);
         if (lifecycle == FileLifecycle.VERIFIED && file.getSelectedAttemptId() != null) {
             if (command.contentLength() <= 0
@@ -327,7 +330,7 @@ public class DefaultFileService implements FileService {
                 || !existing.getBindingFingerprint().equals(command.scope().bindingFingerprint())) {
             throw failure(FileOperationException.Reason.CONFLICT, "Conflicting file reservation");
         }
-        return FileTransactions.snapshot(existing, Instant.now());
+        return FileTransactions.snapshot(existing, clock.now());
     }
 
     private static FileDescriptor descriptor(FileMetadataEntity file) {
@@ -342,6 +345,7 @@ public class DefaultFileService implements FileService {
         return FileLifecyclePolicy.derive(
                 now,
                 file.getExpiresAt(),
+                file.getExpiryRecordedAt(),
                 file.getSelectedAttemptId(),
                 file.getClaimedAt(),
                 file.getCleanupRequestedAt(),

@@ -74,6 +74,7 @@ class FileTransferIntegrationTest {
     @Autowired private FileMetadataPersistence metadataPersistence;
     @Autowired private FileMetadataRepository metadataRepository;
     @Autowired private FileTransactions transactions;
+    @Autowired private RecoveryClock recoveryClock;
     @Autowired private FileStagingService staging;
     @Autowired private FileValidationService validation;
     @Autowired private FileMetrics metrics;
@@ -688,7 +689,8 @@ class FileTransferIntegrationTest {
                         staging,
                         validation,
                         networkStorage,
-                        metrics);
+                        metrics,
+                        recoveryClock);
         try {
             var result =
                     networkFiles.transfer(

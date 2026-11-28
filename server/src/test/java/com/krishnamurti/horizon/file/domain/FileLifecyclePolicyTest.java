@@ -11,18 +11,42 @@ class FileLifecyclePolicyTest {
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
 
     @Test
-    void expiryBoundaryAndClaimPriority() {
-        assertThat(FileLifecyclePolicy.derive(NOW, NOW, UUID.randomUUID(), null, null, null))
+    void recordedExpirySurvivesClockRollback() {
+        assertThat(
+                        FileLifecyclePolicy.derive(
+                                NOW,
+                                NOW.plusSeconds(60),
+                                NOW.plusSeconds(60),
+                                null,
+                                null,
+                                null,
+                                null))
                 .isEqualTo(FileLifecycle.EXPIRED);
-        assertThat(FileLifecyclePolicy.derive(NOW, NOW, UUID.randomUUID(), NOW, null, null))
+        assertThat(
+                        FileLifecyclePolicy.derive(
+                                NOW,
+                                NOW.plusSeconds(60),
+                                NOW.plusSeconds(60),
+                                null,
+                                null,
+                                NOW,
+                                null))
+                .isEqualTo(FileLifecycle.CLEANUP_REQUESTED);
+    }
+
+    @Test
+    void expiryBoundaryAndClaimPriority() {
+        assertThat(FileLifecyclePolicy.derive(NOW, NOW, null, UUID.randomUUID(), null, null, null))
+                .isEqualTo(FileLifecycle.EXPIRED);
+        assertThat(FileLifecyclePolicy.derive(NOW, NOW, null, UUID.randomUUID(), NOW, null, null))
                 .isEqualTo(FileLifecycle.CLAIMED);
     }
 
     @Test
     void cleanupAndPurgeTakePrecedence() {
-        assertThat(FileLifecyclePolicy.derive(NOW, NOW, null, null, NOW, null))
+        assertThat(FileLifecyclePolicy.derive(NOW, NOW, null, null, null, NOW, null))
                 .isEqualTo(FileLifecycle.CLEANUP_REQUESTED);
-        assertThat(FileLifecyclePolicy.derive(NOW, NOW, null, null, NOW, NOW))
+        assertThat(FileLifecyclePolicy.derive(NOW, NOW, null, null, null, NOW, NOW))
                 .isEqualTo(FileLifecycle.PURGED);
     }
 }
