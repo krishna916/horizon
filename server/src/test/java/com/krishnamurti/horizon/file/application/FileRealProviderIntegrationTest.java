@@ -748,6 +748,86 @@ class FileRealProviderIntegrationTest {
     }
 
     @Test
+    void realProviderSettledDeleteCompactionAndLateFinalizeReplayKeepTombstone() throws Exception {
+        Path data = Files.createTempDirectory("horizon-real-settled-delete-replay-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
+        try {
+            seaweed.start();
+            try (RealProviderFixture provider = storage(endpoint(seaweed))) {
+                FileScope scope = scope(99L, "real-settled-delete-replay");
+                FileSnapshot prepared = prepare(scope, "settled-delete.webp");
+                FileReference reference = new FileReference(prepared.fileId(), scope);
+                var transfer =
+                        realService(provider.storage())
+                                .transfer(transferCommand(prepared.fileId(), scope));
+                assertThat(transfer.disposition()).isEqualTo(TransferDisposition.VERIFIED);
+
+                var attempt =
+                        attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()).getFirst();
+                UUID attemptId = attempt.getId();
+                String objectKey = attempt.getObjectKey();
+                assertThat(attempt.getWriteSettledAt()).isNotNull();
+                assertThat(attempt.getExpectedSha256()).isEqualTo(sha256(WEBP));
+                assertThat(provider.storage().head(new ObjectKey(objectKey)).found()).isTrue();
+
+                owner.inTransaction(
+                        () -> {
+                            files.requestCleanup(new CleanupFileCommand(reference));
+                            return null;
+                        });
+                DeleteCountingStorage counting = new DeleteCountingStorage(provider.storage());
+                FileRecoveryWorker worker = recoveryWorker(counting);
+                worker.runCycle();
+
+                var confirmed =
+                        attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()).getFirst();
+                assertThat(counting.deleteCalls()).isEqualTo(1);
+                assertThat(provider.storage().head(new ObjectKey(objectKey)).found()).isFalse();
+                assertThat(confirmed.getCleanupConfirmedAt()).isNotNull();
+                assertThat(confirmed.getObjectKey()).isNull();
+                assertThat(confirmed.getExpectedSha256()).isNull();
+                assertThat(confirmed.getVerifiedSha256()).isNull();
+
+                worker.runCycle();
+                assertThat(
+                                jdbc.queryForObject(
+                                        "select purged_at is not null from file_metadata where"
+                                                + " id=?",
+                                        Boolean.class,
+                                        prepared.fileId()))
+                        .isTrue();
+
+                var replay =
+                        transactions.recordAttempt(
+                                reference,
+                                attemptId,
+                                FileTransactions.AttemptResult.verified(WEBP.length, sha256(WEBP)),
+                                com.krishnamurti.horizon.file.api.model.FileFormat.WEBP);
+                var afterReplay =
+                        attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId()).getFirst();
+                assertThat(replay.selected()).isFalse();
+                assertThat(afterReplay.getCleanupConfirmedAt()).isNotNull();
+                assertThat(afterReplay.getObjectKey()).isNull();
+                assertThat(afterReplay.getExpectedSizeBytes()).isNull();
+                assertThat(afterReplay.getExpectedSha256()).isNull();
+                assertThat(afterReplay.getVerifiedSizeBytes()).isNull();
+                assertThat(afterReplay.getVerifiedSha256()).isNull();
+                assertThat(selectedAttempt(prepared.fileId())).isNull();
+                assertThat(counting.deleteCalls()).isEqualTo(1);
+                assertThat(provider.storage().head(new ObjectKey(objectKey)).found()).isFalse();
+            }
+        } finally {
+            if (seaweed.isRunning()) {
+                makeContainerDataRemovable(seaweed);
+                seaweed.stop();
+            }
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    @Test
     void interruptedTrackedPutRemainsUnknownAfterRealProviderDelete() throws Exception {
         Path data = Files.createTempDirectory("horizon-real-tracked-partial-put-");
         Path volume = Files.createDirectories(data.resolve("storage"));
@@ -825,6 +905,122 @@ class FileRealProviderIntegrationTest {
         } finally {
             makeContainerDataRemovable(seaweed);
             if (seaweed.isRunning()) seaweed.stop();
+            Files.deleteIfExists(staged);
+            makeRemovable(data);
+            deleteTree(data);
+        }
+    }
+
+    @Test
+    void providerRestartDuringHeldPartialPutRetainsUnknownLocatorAndReconciles() throws Exception {
+        Path data = Files.createTempDirectory("horizon-provider-restart-partial-put-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        GenericContainer<?> firstProvider = SeaweedFsTestConfiguration.container(volume);
+        GenericContainer<?> restartedProvider = SeaweedFsTestConfiguration.container(volume);
+        Path staged = Files.createTempFile(data, "provider-restart-partial-", ".png");
+        try {
+            byte[] png = largePng();
+            Files.write(staged, png);
+            firstProvider.start();
+            URI firstEndpoint = endpoint(firstProvider);
+            try (RealProviderFixture first = storage(firstEndpoint);
+                    S3FaultHarness gate =
+                            new S3FaultHarness(
+                                    firstEndpoint, S3FaultHarness.Mode.HOLD_PARTIAL_PUT);
+                    RealProviderFixture gated = storage(gate.endpoint())) {
+                ObjectKey sentinel =
+                        new ObjectKey("fault-harness/restart-volume-sentinel-" + UUID.randomUUID());
+                first.storage()
+                        .put(new ObjectWriteRequest(sentinel, staged, png.length, "image/png"));
+                var scope = scope(99L, "real-partial-provider-restart");
+                var prepared =
+                        owner.prepare(
+                                new PrepareFileCommand(
+                                        UUID.randomUUID(),
+                                        scope,
+                                        new FileDescriptor(
+                                                "restart.png",
+                                                "image/png",
+                                                png.length,
+                                                sha256(png))));
+                FileReference reference = new FileReference(prepared.fileId(), scope);
+                var executor = Executors.newSingleThreadExecutor();
+                try {
+                    var transfer =
+                            executor.submit(
+                                    () ->
+                                            realService(gated.storage())
+                                                    .transfer(
+                                                            new TransferFileCommand(
+                                                                    reference,
+                                                                    png.length,
+                                                                    new java.io
+                                                                            .ByteArrayInputStream(
+                                                                            png))));
+                    gate.awaitForwardedBody(java.time.Duration.ofSeconds(8));
+                    var registered =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    String retainedKey = registered.getObjectKey();
+                    assertThat(registered.getOutcome()).isEqualTo(TransferOutcome.PENDING);
+                    assertThat(gate.forwardedBodyBytes()).isPositive().isLessThan(png.length);
+
+                    makeContainerDataRemovable(firstProvider);
+                    firstProvider.stop();
+                    restartedProvider.start();
+                    try (RealProviderFixture afterRestart = storage(endpoint(restartedProvider))) {
+                        assertThat(afterRestart.storage().head(sentinel).found()).isTrue();
+                        boolean partialObjectSurvived =
+                                afterRestart.storage().head(new ObjectKey(retainedKey)).found();
+
+                        gate.releasePut();
+                        var result = transfer.get(8, TimeUnit.SECONDS);
+                        assertThat(result.disposition())
+                                .isEqualTo(TransferDisposition.OUTCOME_UNKNOWN);
+                        assertThat(selectedAttempt(prepared.fileId())).isNull();
+                        assertThatThrownBy(() -> files.openRead(new ReadFileQuery(reference)))
+                                .isInstanceOf(FileOperationException.class);
+
+                        owner.inTransaction(
+                                () -> {
+                                    files.requestCleanup(new CleanupFileCommand(reference));
+                                    return null;
+                                });
+                        DeleteCountingStorage counting =
+                                new DeleteCountingStorage(afterRestart.storage());
+                        recoveryWorker(counting).runCycle();
+                        var afterCleanup =
+                                attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                        .getFirst();
+                        assertThat(counting.deleteCalls()).isEqualTo(1);
+                        assertThat(afterCleanup.getOutcome())
+                                .as(
+                                        "retain UNKNOWN regardless of partial object visibility "
+                                                + "after provider restart (was %s)",
+                                        partialObjectSurvived)
+                                .isEqualTo(TransferOutcome.UNKNOWN);
+                        assertThat(afterCleanup.getObjectKey()).isEqualTo(retainedKey);
+                        assertThat(afterCleanup.getWriteSettledAt()).isNull();
+                        assertThat(afterCleanup.getCleanupConfirmedAt()).isNull();
+                        assertThat(afterRestart.storage().head(new ObjectKey(retainedKey)).found())
+                                .isFalse();
+                        assertThat(afterRestart.storage().head(sentinel).found()).isTrue();
+                        afterRestart.storage().delete(sentinel);
+                    }
+                } finally {
+                    gate.releasePut();
+                    executor.shutdownNow();
+                }
+            }
+        } finally {
+            if (firstProvider.isRunning()) {
+                makeContainerDataRemovable(firstProvider);
+                firstProvider.stop();
+            }
+            if (restartedProvider.isRunning()) {
+                makeContainerDataRemovable(restartedProvider);
+                restartedProvider.stop();
+            }
             Files.deleteIfExists(staged);
             makeRemovable(data);
             deleteTree(data);

@@ -137,6 +137,76 @@ and cleanup eligibility rules; no query correction was needed there.
   PUT test provide the production-path evidence listed above. No POC-only
   simulation is represented as proof of deployment configuration.
 
+## Acceptance and review traceability
+
+Status is against the full local test run after the Task 7 A13/B09 follow-up.
+Backend verification passed 552 tests (zero failures/errors, one existing skip),
+SpotBugs, and coverage validation. Client verification passed 738 unit tests,
+coverage checks, build, and the 105-test Playwright suite. Hosted CI evidence for
+the final pushed head is still pending. Real-provider results use pinned
+SeaweedFS 4.54 Testcontainers; the owner integration is a test-only surrogate
+and does not establish Note route or transaction behavior.
+
+### Issue #77 acceptance criteria
+
+| Acceptance criterion | Evidence and status |
+| --- | --- |
+| Failed/restarted cleanup keeps known-object intent | **Pass:** `FileRealRestartIntegrationTest.realApplicationRestartRetainsDatabaseAndObjectVolume` exercises durable locator/lease state across app and provider restart; `FileRecoveryCompletionIntegrationTest.failureAfterSuccessfulDeleteBeforeCommitLeavesLeaseAndLocator` covers a failed completion commit. |
+| Removal becomes inaccessible when logical deletion commits; physical cleanup retries | **File path pass; Note route deferred:** `FileOwnerContractIntegrationTest.permanentParentRemovalIsAtomicAndRetainsUnknownAttemptLocator` proves surrogate transaction behavior, rollback, denial and async cleanup. Actual Note owner route remains downstream scope (#78/#79/Epic #9). |
+| Incomplete upload cleanup does not delete live associations | **Pass for File:** `FileRealProviderIntegrationTest.interruptedTrackedPutRemainsUnknownAfterRealProviderDelete`, `latePutAfterDeleteWithLostAckRemainsUnknownAcrossRevisits`, and `FileOwnerContractIntegrationTest.finalizeReplayAndArchiveTrashSurrogatePreserveVersionAndBytes` cover unresolved writes, selected-winner safety and owner-surrogate associations. Actual Note association integration remains deferred. |
+| Concurrency, idempotency and transient storage failures are tested | **Pass:** `FileRealProviderIntegrationTest.staleWorkerCannotFinalizeAfterRealLeaseReclaim` (3 repetitions), `lateProviderPutAfterCleanupIsDiscoverableAndRetryUsesDistinctKeys` (3 repetitions), `FileRecoveryWorkerIntegrationTest.storageFailureSchedulesRetryWithoutHotLoop`, and `FileTransferFailureIntegrationTest.retryUsesDifferentKeyAndFirstVerifiedCommitWins`. |
+
+### Required #77 implementation details and D77-01–08 / R1–R6
+
+| Requirement | Evidence and status |
+| --- | --- |
+| PostgreSQL is the durable queue; one managed scheduler survives restart (D77-01, R3) | **Pass:** durable File tables and scheduled single worker; `FileRealRestartIntegrationTest.realApplicationRestartRetainsDatabaseAndObjectVolume`. Task 5 shutdown admission test proves no second item is admitted after `ContextClosedEvent`. |
+| Short locked transactions, lease and unique fencing token (D77-02, R3) | **Pass:** `FileRecoveryLeaseIntegrationTest.twoConcurrentClaimersOnlyOneValidLease`, `expiredLeaseReclaimedWithDifferentToken`, and `FileRealProviderIntegrationTest.staleWorkerCannotFinalizeAfterRealLeaseReclaim` (3 repetitions). |
+| 30s poll, batch 25, 10m lease, jitter retry 30s–1h, hourly UNKNOWN revisit, unlimited attempts (D77-03, R4) | **Pass locally:** configuration defaults and validation in `FilePropertiesTest`; `FileRecoveryWorkerIntegrationTest.cycleProcessesAtMostConfiguredBatch`, `rotatingKindsAvoidStarvationUnderUnknownBacklog`, `storageFailureSchedulesRetryWithoutHotLoop`; `FileRecoveryCompletionIntegrationTest.ackUnsettledReschedulesOneHourWithoutConfirmation` and `failedDeletePersistsRetryAndClearsLease`. Real lost-ACK schedule is asserted in `latePutAfterDeleteWithLostAckRemainsUnknownAcrossRevisits`. |
+| UNKNOWN is never promoted; retries use new physical keys (D77-04, R2/R4) | **Pass:** `FileRealProviderIntegrationTest.latePutAfterDeleteWithLostAckRemainsUnknownAcrossRevisits` and `lateProviderPutAfterCleanupIsDiscoverableAndRetryUsesDistinctKeys`; no timeout, HEAD/GET absence, DELETE ACK or lease expiry settles an unsettled PUT. |
+| Keep identity/fingerprints and minimal tombstones until safe terminal cleanup (D77-05, R6) | **Pass in File tests:** `FileRecoveryCompletionIntegrationTest.unknownRetainsDescriptorAndSelectedFkUntilAllAttemptsConfirmed`, `FileTransferFailureIntegrationTest.compactedAttemptCannotRestoreLocatorOrDigest`, and owner-surrogate permanent removal/replay tests. |
+| Expiry remains EXPIRED, durably fenced before cleanup (D77-06, R1) | **Pass:** `FileRecoveryEligibilityIntegrationTest.expiryAtBoundaryDeniesClaimEvenAfterWaitedLock`, `clockRollbackCannotBackdateParentCompaction`, `FileTransferFailureIntegrationTest.recordedExpirySurvivesClockRollbackAndDeniesRegistration`, plus real unclaimed expiry/reconciliation tests. |
+| Restricted diagnostics, safe tags, runbook, no public retry endpoint (D77-07, R6) | **Pass:** `FileRecoveryObservabilityTest.noSensitiveTagsOrRawExceptionMessage`, `countsMatchDueDiscoveryAndPendingUnknown`, `diagnosticsMatchDiscoveryWithoutCountingLiveWinner`, and `diagnosticsDoNotExposeAdditionalPublicEndpoint`; Task 6 PostgreSQL plan evidence is above. |
+| Cleanup intent shares the owning mutation transaction (D77-08) | **File API pass; Note owner deferred:** `FileOwnershipIntegrationTest.cleanupAndCallerDetachRollbackTogether` and `FileOwnerContractIntegrationTest.permanentParentRemovalIsAtomicAndRetainsUnknownAttemptLocator` prove rollback/commit with test-only owner transactions. No File→Note call or S3 I/O inside owner transaction. |
+| R1 expiry fence / authoritative time | **Pass:** durable expiry fact, clock rollback and lock-wait boundary tests above. |
+| R2 irreversible attempt fence / settlement | **Pass:** `FileRecoveryCompletionIntegrationTest.ackUnsettledReschedulesOneHourWithoutConfirmation`, `settlementRecordedAfterClaimRequiresFreshDelete`, and real late-writer tests. |
+| R3 exact bounded fair queue / one-at-a-time lease | **Pass:** worker batch/rotation tests and Task 6 all-work-kind locked-head matrix (batch 1); actual restart and stale-token tests above. |
+| R4 capped equal-jitter retry / fresh DELETE after settlement | **Pass locally:** `FileRecoveryBackoffTest`, completion retry tests and `settlementRecordedAfterClaimRequiresFreshDelete`; real provider race proves a later actual DELETE removes late bytes. |
+| R5 private, non-retaining deployment bucket | **BLOCKED:** only pinned local SeaweedFS behavior is verified. No deployment manifest, target bucket evidence or authorized disposable operation has been provided. No production bucket was accessed. |
+| R6 metrics and no-attempt/mixed-attempt compaction | **Pass locally:** observability tests and `FileOwnerContractIntegrationTest.permanentParentRemovalIsAtomicAndRetainsUnknownAttemptLocator`; `FileRecoveryCompletionIntegrationTest.expiredNoAttemptParentPurges` covers no-attempt compaction. |
+
+### #75 production fault inputs A11–A15 and B01–B10
+
+| Input | Production-path evidence and remaining gap |
+| --- | --- |
+| A11 partial/interrupted PUT | **Pass:** `FileRealProviderIntegrationTest.interruptedPutForwardsPrefixBeforeAbortingUpstream` proves a nonzero forwarded prefix; `interruptedTrackedPutRemainsUnknownAfterRealProviderDelete` uses the real provider/worker and retains an unresolved locator after DELETE. |
+| A12 successful PUT response lost | **Pass:** `heldPutCanBeCommittedByProviderThenItsSuccessfulResponseLost`; combined late PUT + lost acknowledgement is repeated 3 times by `latePutAfterDeleteWithLostAckRemainsUnknownAcrossRevisits`. |
+| A13 provider restart during held partial PUT | **Pass:** `FileRealProviderIntegrationTest.providerRestartDuringHeldPartialPutRetainsUnknownLocatorAndReconciles` holds a real partial PUT, restarts SeaweedFS on the same volume, then reconciles through a fresh provider connection. It proves the sentinel survived the restart, the attempt remains UNKNOWN with the exact locator and no settlement/confirmation, no selected file becomes accessible, and worker DELETE removes any partial object whether it survived restart or not. |
+| A14 late object after DELETE | **Pass:** `latePutAfterDeleteWithLostAckRemainsUnknownAcrossRevisits` (3 repetitions) independently observes the late bytes and actual worker DELETE/revisit. `lateProviderPutAfterCleanupIsDiscoverableAndRetryUsesDistinctKeys` also repeats the late-provider retry race 3 times. |
+| A15 conditional-PUT hazard | **Production equivalent covered; historical reproduction not repeated:** every transfer has a distinct committed attempt key, and the A12/A14 late-writer races prove reconciliation. No conditional-PUT production fencing or claim that conditional writes solve late PUT after DELETE. |
+| B01 durable intent/lease/locator across restart | **Pass:** `FileRealRestartIntegrationTest.realApplicationRestartRetainsDatabaseAndObjectVolume`. |
+| B02 actual PUT then DB commit failure | **Pass:** `realApplicationRestartRetainsDatabaseAndObjectVolume` injects the post-PUT DB commit failure, verifies provider bytes and recovers the committed attempt locator after restart. |
+| B03 logical idempotency with new physical key per PUT | **Pass:** `FileTransferFailureIntegrationTest.retryUsesDifferentKeyAndFirstVerifiedCommitWins` and real-provider `lateProviderPutAfterCleanupIsDiscoverableAndRetryUsesDistinctKeys`. |
+| B04 scope/fingerprint mismatch and terminal non-resurrection | **Pass in File tests:** `FileOwnershipIntegrationTest.unverifiedExpiredUnclaimedAndWrongScopeCannotRead`, `FileTransferIntegrationTest.expiredFileCannotBeClaimedAndScopeMismatchCannotRead`, and `FileTransferFailureIntegrationTest.compactedAttemptCannotRestoreLocatorOrDigest`. |
+| B05 stale owner version/rollback | **Surrogate proof:** `FileOwnerContractIntegrationTest.permanentParentRemovalIsAtomicAndRetainsUnknownAttemptLocator` proves stale-version rejection/rollback preserves association and staged bytes; actual Note version integration remains downstream. |
+| B06 competing claims and live winner | **Pass:** `FileRealProviderIntegrationTest.lateProviderPutAfterCleanupIsDiscoverableAndRetryUsesDistinctKeys` and `FileOwnerContractIntegrationTest.finalizeReplayAndArchiveTrashSurrogatePreserveVersionAndBytes`; the owner mutation itself is a surrogate. |
+| B07 indefinite UNKNOWN locator | **Pass:** repeated A12/A14 real-provider test retains the exact committed locator with null settlement/confirmation across absent checks and DELETE ACKs. |
+| B08 outage/restart retry | **Pass:** `FileRealRestartIntegrationTest.realApplicationRestartRetainsDatabaseAndObjectVolume` restarts with the same DB/object volume and resumes cleanup. |
+| B09 settled deletion tombstone/replay | **Pass:** `FileRealProviderIntegrationTest.realProviderSettledDeleteCompactionAndLateFinalizeReplayKeepTombstone` combines a settled real-provider PUT and DELETE, recovery compaction, and a late verified completion replay. The object remains absent, its attempt stays cleanup-confirmed with locator/digests cleared, and the parent remains purged with no selected attempt. |
+| B10 lost finalize response/replay | **Surrogate proof:** `FileOwnerContractIntegrationTest.finalizeReplayAndArchiveTrashSurrogatePreserveVersionAndBytes`; actual Note finalize endpoint is downstream. |
+
+### F97 review findings
+
+| Finding | Disposition |
+| --- | --- |
+| F97-01 R5 deployment evidence | **Blocked** pending operator evidence; no waiver. |
+| F97-02 late PUT + lost ACK | **Addressed:** Tasks 1–2; commit `d68ba37`; real provider success, lost response, late object, hourly revisit, repeated 3 times. |
+| F97-03 real provider/restart/lease matrix | **Addressed:** Tasks 1–3 plus Task 7 follow-up tests; A13 restart-during-partial-PUT and B09 settled-delete/compaction/replay now have dedicated real-provider coverage. |
+| F97-04 owner mutation surrogate | **Addressed as authorized:** Task 4, commit `54120a1`; actual Note integration remains downstream. |
+| F97-05 shutdown admission | **Addressed:** Task 5, commit `99d5c95`; current context-close event test drives the owning event directly because Spring's test-managed context cannot be manually closed in-method. |
+| F97-06 diagnostics/fairness/query plans | **Addressed:** Task 6, commit `02e40af`; 32-test matrix plus opt-in PostgreSQL 17 EXPLAIN fixture, no unjustified index/schema change. |
+| F97-07 stale validation report | **Addressed locally:** this matrix corrects the baseline, records evidence/gaps, and includes full local backend, client, and Playwright verification. Hosted CI for the final pushed head remains pending. |
+
 ## Deployment gate and limitations
 
 Repository inspection found local Compose and test configuration but no
@@ -155,7 +225,8 @@ PR #97 is the existing review vehicle. A deployment evidence request was
 posted there as comment `7239547131`; it asks the operator for sanitized
 configuration evidence and the results of an authorized disposable-object
 check. No actual deployment bucket has been accessed or mutated by this
-verification. R5 remains OPEN pending that operator evidence. The branch's
+verification. The request remains unanswered as of this report update.
+R5 remains BLOCKED/OPEN pending that operator evidence. The branch's
 Actions workflow runs backend, frontend, Playwright and SonarCloud for pull
 requests targeting `master`; hosted checks must be checked against the final
 remediation head and are not established by this historical report.
