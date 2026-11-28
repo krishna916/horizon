@@ -11,6 +11,8 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.ArrayDeque;
 import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -67,9 +69,9 @@ public class FileRecoveryWorker {
             var now = clock.now();
             var queues = new EnumMap<WorkKind, ArrayDeque<Candidate>>(WorkKind.class);
             for (WorkKind kind : WorkKind.values()) {
-                var candidates = admit(() -> persistence.findCandidates(kind, now, batch));
-                if (candidates == null) break;
-                queues.put(kind, new ArrayDeque<>(candidates));
+                var admission = admit(() -> persistence.findCandidates(kind, now, batch));
+                if (admission.isEmpty()) break;
+                queues.put(kind, new ArrayDeque<>(admission.get()));
             }
             WorkKind[] kinds = WorkKind.values();
             int index =
@@ -116,11 +118,11 @@ public class FileRecoveryWorker {
             case COMPACT_FILE -> admit(() -> transactions.compactFile(candidate.fileId()));
             case DELETE_ATTEMPT -> {
                 var claim =
-                        admit(
+                        admitOptional(
                                 () ->
                                         transactions.claimDelete(
                                                 candidate.fileId(), candidate.attemptId()));
-                if (claim == null || claim.isEmpty()) return;
+                if (claim.isEmpty()) return;
                 if (claim.get().reclaimedLease()) safeMetric(metrics::recordLeaseReclaim);
                 FileRecoveryTransactions.DeleteCompletion completion;
                 try {
@@ -159,10 +161,17 @@ public class FileRecoveryWorker {
         }
     }
 
-    private <T> T admit(Supplier<T> operation) {
+    private <T> Optional<T> admit(Supplier<T> operation) {
         synchronized (admissionGate) {
-            if (!acceptingWork) return null;
-            return operation.get();
+            if (!acceptingWork) return Optional.empty();
+            return Optional.of(operation.get());
+        }
+    }
+
+    private <T> Optional<T> admitOptional(Supplier<Optional<T>> operation) {
+        synchronized (admissionGate) {
+            if (!acceptingWork) return Optional.empty();
+            return Objects.requireNonNull(operation.get(), "admitted Optional must not be null");
         }
     }
 
