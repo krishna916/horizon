@@ -3,9 +3,11 @@ package com.krishnamurti.horizon.file.application;
 import com.krishnamurti.horizon.file.application.port.ObjectStorage;
 import com.krishnamurti.horizon.file.application.port.ObjectStorageException;
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
+import com.krishnamurti.horizon.file.infrastructure.FileRecoveryMetrics;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileRecoveryPersistence;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileRecoveryPersistence.Candidate;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileRecoveryPersistence.WorkKind;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.ArrayDeque;
 import java.util.EnumMap;
 import java.util.HashSet;
@@ -26,25 +28,35 @@ public class FileRecoveryWorker {
     private final ObjectStorage storage;
     private final RecoveryClock clock;
     private final FileProperties properties;
+    private final FileRecoveryMetrics metrics;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicInteger start = new AtomicInteger();
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification =
+                    "The injected collaborators are private final Spring-managed dependencies.")
     public FileRecoveryWorker(
             FileRecoveryPersistence persistence,
             FileRecoveryTransactions transactions,
             ObjectStorage storage,
             RecoveryClock clock,
-            FileProperties properties) {
+            FileProperties properties,
+            FileRecoveryMetrics metrics) {
         this.persistence = persistence;
         this.transactions = transactions;
         this.storage = storage;
         this.clock = clock;
         this.properties = properties;
+        this.metrics = metrics;
     }
 
     @Transactional(propagation = Propagation.NEVER)
     public void runCycle() {
         if (!running.compareAndSet(false, true)) return;
+        long started = System.nanoTime();
+        boolean completed = false;
+        java.time.Instant completedAt = java.time.Instant.EPOCH;
         try {
             int batch = properties.getRecovery().getBatchSize();
             var now = clock.now();
@@ -71,9 +83,20 @@ public class FileRecoveryWorker {
                 examined++;
                 process(candidate);
             }
+            if (!Thread.currentThread().isInterrupted()) {
+                completedAt = clock.now();
+                var counts = persistence.recoveryCounts(completedAt);
+                completed = true;
+                safeMetric(() -> metrics.updateCounts(counts));
+            }
         } catch (RuntimeException exception) {
             log.warn("File recovery cycle failed: DB_RETRY");
+            safeMetric(() -> metrics.recordError(FileRecoveryTransactions.CleanupError.DB_RETRY));
         } finally {
+            var elapsed = java.time.Duration.ofNanos(System.nanoTime() - started);
+            boolean success = completed;
+            java.time.Instant finished = completedAt;
+            safeMetric(() -> metrics.recordCycle(elapsed, success, finished));
             running.set(false);
         }
     }
@@ -85,6 +108,7 @@ public class FileRecoveryWorker {
             case DELETE_ATTEMPT -> {
                 var claim = transactions.claimDelete(candidate.fileId(), candidate.attemptId());
                 if (claim.isEmpty()) return;
+                if (claim.get().reclaimedLease()) safeMetric(metrics::recordLeaseReclaim);
                 FileRecoveryTransactions.DeleteCompletion completion;
                 try {
                     storage.delete(claim.get().key());
@@ -99,8 +123,21 @@ public class FileRecoveryWorker {
                                     FileRecoveryTransactions.CleanupError.DELETE_FAILED);
                 }
                 if (Thread.currentThread().isInterrupted()) return;
-                transactions.completeDelete(claim.get(), completion);
+                var disposition = transactions.completeDelete(claim.get(), completion);
+                safeMetric(() -> metrics.recordDelete(disposition));
+                if (!completion.acknowledged()) {
+                    var error = completion.error();
+                    safeMetric(() -> metrics.recordError(error));
+                }
             }
+        }
+    }
+
+    private static void safeMetric(Runnable update) {
+        try {
+            update.run();
+        } catch (RuntimeException ignored) {
+            log.warn("File recovery metrics update failed");
         }
     }
 }

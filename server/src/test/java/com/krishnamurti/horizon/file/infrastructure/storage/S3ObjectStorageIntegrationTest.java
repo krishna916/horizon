@@ -29,12 +29,62 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 class S3ObjectStorageIntegrationTest {
 
     private static final String ACCESS_KEY = SeaweedFsTestConfiguration.ACCESS_KEY;
     private static final String SECRET_KEY = SeaweedFsTestConfiguration.SECRET_KEY;
     private static final String BUCKET = SeaweedFsTestConfiguration.BUCKET;
+
+    @Test
+    void unversionedBucketDeleteRemovesObjectAndDoesNotRetainOlderVersions() throws Exception {
+        Path data = Files.createTempDirectory("horizon-seaweedfs-retention-");
+        Path volume = Files.createDirectories(data.resolve("storage"));
+        Path staged = Files.createTempFile("horizon-retention-", ".txt");
+        byte[] payload = "non-retaining-provider-check".getBytes(StandardCharsets.UTF_8);
+        Files.write(staged, payload);
+        try (var seaweed = SeaweedFsTestConfiguration.container(volume)) {
+            seaweed.start();
+            try (var sdk = clients(properties(endpoint(seaweed)))) {
+                sdk.write().createBucket(request -> request.bucket(BUCKET));
+                var status =
+                        sdk.read().getBucketVersioning(request -> request.bucket(BUCKET)).status();
+                assertThat(status).as("never-versioned bucket has no versioning status").isNull();
+                var key = new ObjectKey("retention/" + UUID.randomUUID());
+                var storage = new S3ObjectStorage(sdk.write(), sdk.read(), BUCKET);
+                assertThat(
+                                storage.put(
+                                        new ObjectWriteRequest(
+                                                key, staged, payload.length, "text/plain")))
+                        .isEqualTo(WriteResult.ACKNOWLEDGED);
+                try (var object = storage.get(key)) {
+                    assertThat(object.content().readAllBytes()).containsExactly(payload);
+                }
+                assertThat(storage.delete(key)).isEqualTo(DeleteResult.ACKNOWLEDGED);
+                assertThat(storage.head(key).found()).isFalse();
+                var versions =
+                        sdk.read()
+                                .listObjectVersions(
+                                        request -> request.bucket(BUCKET).prefix(key.value()));
+                assertThat(versions.versions()).isEmpty();
+                assertThat(versions.deleteMarkers()).isEmpty();
+                assertThatThrownBy(
+                                () ->
+                                        sdk.read()
+                                                .getObjectLockConfiguration(
+                                                        request -> request.bucket(BUCKET)))
+                        .isInstanceOfSatisfying(
+                                S3Exception.class,
+                                error -> assertThat(error.statusCode()).isEqualTo(404));
+            } finally {
+                makeContainerDataRemovable(seaweed);
+            }
+        } finally {
+            Files.deleteIfExists(staged);
+            deleteTree(data);
+        }
+    }
 
     @Test
     void privatePutHeadGetDeleteRoundTripAndUnsignedRequestIsDenied() throws Exception {

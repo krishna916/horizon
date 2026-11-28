@@ -9,6 +9,7 @@ import com.krishnamurti.horizon.file.infrastructure.FileProperties;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileMetadataRepository;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileRecoveryPersistence;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileTransferAttemptRepository;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -25,7 +26,8 @@ public class FileRecoveryTransactions {
             ObjectKey key,
             UUID token,
             Instant leaseUntil,
-            boolean settledAtClaim) {}
+            boolean settledAtClaim,
+            boolean reclaimedLease) {}
 
     private final FileRecoveryPersistence recovery;
     private final FileMetadataRepository files;
@@ -33,6 +35,10 @@ public class FileRecoveryTransactions {
     private final RecoveryClock clock;
     private final FileProperties properties;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification =
+                    "The injected collaborators are private final Spring-managed dependencies.")
     public FileRecoveryTransactions(
             FileRecoveryPersistence recovery,
             FileMetadataRepository files,
@@ -103,6 +109,7 @@ public class FileRecoveryTransactions {
         if (attempt.getCleanupRequestedAt() == null) attempt.setCleanupRequestedAt(now);
         if (attempt.getOutcome() == TransferOutcome.PENDING && attempt.getWriteSettledAt() == null)
             attempt.setOutcome(TransferOutcome.UNKNOWN);
+        boolean reclaimed = attempt.getCleanupLeaseToken() != null;
         UUID token = UUID.randomUUID();
         Instant lease = now.plus(properties.getRecovery().getLeaseDuration());
         attempt.setCleanupLeaseToken(token);
@@ -119,7 +126,8 @@ public class FileRecoveryTransactions {
                         new ObjectKey(attempt.getObjectKey()),
                         token,
                         lease,
-                        attempt.getWriteSettledAt() != null));
+                        attempt.getWriteSettledAt() != null,
+                        reclaimed));
     }
 
     public enum CleanupError {

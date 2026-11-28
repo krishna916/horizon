@@ -1,5 +1,6 @@
 package com.krishnamurti.horizon.file.infrastructure.persistence;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -20,6 +21,10 @@ public class FileRecoveryPersistence {
 
     private final JdbcTemplate jdbc;
 
+    @SuppressFBWarnings(
+            value = "EI_EXPOSE_REP2",
+            justification =
+                    "The injected JdbcTemplate is a private final Spring-managed dependency.")
     public FileRecoveryPersistence(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
@@ -99,5 +104,62 @@ public class FileRecoveryPersistence {
                                 rs.getObject("attempt_id", UUID.class),
                                 rs.getObject("due_at", OffsetDateTime.class).toInstant()),
                 args);
+    }
+
+    public record RecoveryCounts(
+            long pending,
+            long due,
+            long overdue,
+            long unresolved,
+            long activeLeases,
+            long expiredLeases,
+            long oldestUnresolvedAgeSeconds) {}
+
+    public RecoveryCounts recoveryCounts(Instant now) {
+        String sql =
+                """
+                WITH work AS (
+                  SELECT f.expires_at AS due_at, FALSE AS leased FROM file_metadata f
+                  WHERE f.claimed_at IS NULL AND f.cleanup_requested_at IS NULL AND f.expiry_recorded_at IS NULL AND f.purged_at IS NULL
+                  UNION ALL
+                  SELECT COALESCE(a.next_cleanup_at,a.cleanup_requested_at,a.created_at),
+                         (a.cleanup_lease_until IS NOT NULL AND a.cleanup_lease_until > :now)
+                  FROM file_transfer_attempt a JOIN file_metadata f ON f.id=a.file_id
+                  WHERE f.purged_at IS NULL AND a.object_key IS NOT NULL AND a.cleanup_confirmed_at IS NULL
+                    AND (a.cleanup_requested_at IS NOT NULL OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL
+                         OR (f.claimed_at IS NULL AND f.expires_at <= :now)
+                         OR (f.selected_attempt_id IS NOT NULL AND f.selected_attempt_id<>a.id)
+                         OR (a.outcome='FAILED' AND a.write_settled_at IS NOT NULL))
+                    AND (f.selected_attempt_id IS DISTINCT FROM a.id OR f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL
+                         OR (f.claimed_at IS NULL AND f.expires_at <= :now))
+                  UNION ALL
+                  SELECT COALESCE(f.cleanup_requested_at,f.expiry_recorded_at), FALSE FROM file_metadata f
+                  WHERE f.purged_at IS NULL AND (f.cleanup_requested_at IS NOT NULL OR f.expiry_recorded_at IS NOT NULL)
+                    AND NOT EXISTS (SELECT 1 FROM file_transfer_attempt a WHERE a.file_id=f.id AND
+                     (a.cleanup_confirmed_at IS NULL OR a.object_key IS NOT NULL OR a.expected_size_bytes IS NOT NULL
+                      OR a.expected_sha256 IS NOT NULL OR a.verified_size_bytes IS NOT NULL OR a.verified_sha256 IS NOT NULL))
+                )
+                SELECT count(*) AS pending,
+                       count(*) FILTER (WHERE due_at<=:now AND NOT leased) AS due,
+                       count(*) FILTER (WHERE due_at<:now AND NOT leased) AS overdue,
+                       (SELECT count(*) FROM file_transfer_attempt WHERE object_key IS NOT NULL AND write_settled_at IS NULL AND outcome IN ('PENDING','UNKNOWN')) AS unresolved,
+                       (SELECT count(*) FROM file_transfer_attempt WHERE cleanup_lease_token IS NOT NULL AND cleanup_lease_until>:now) AS active_leases,
+                       (SELECT count(*) FROM file_transfer_attempt WHERE cleanup_lease_token IS NOT NULL AND cleanup_lease_until<=:now) AS expired_leases,
+                       (SELECT COALESCE(GREATEST(0, EXTRACT(EPOCH FROM (:now - MIN(created_at)))::bigint),0) FROM file_transfer_attempt WHERE object_key IS NOT NULL AND write_settled_at IS NULL AND outcome IN ('PENDING','UNKNOWN')) AS oldest
+                FROM work
+                """;
+        var named = new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(jdbc);
+        return named.queryForObject(
+                sql,
+                java.util.Map.of("now", OffsetDateTime.ofInstant(now, ZoneOffset.UTC)),
+                (rs, n) ->
+                        new RecoveryCounts(
+                                rs.getLong("pending"),
+                                rs.getLong("due"),
+                                rs.getLong("overdue"),
+                                rs.getLong("unresolved"),
+                                rs.getLong("active_leases"),
+                                rs.getLong("expired_leases"),
+                                rs.getLong("oldest")));
     }
 }

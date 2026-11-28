@@ -1,15 +1,19 @@
 package com.krishnamurti.horizon.file.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.krishnamurti.horizon.HorizonApplication;
+import com.krishnamurti.horizon.file.api.FileOperationException;
 import com.krishnamurti.horizon.file.api.FileService;
 import com.krishnamurti.horizon.file.api.command.ClaimFileCommand;
+import com.krishnamurti.horizon.file.api.command.CleanupFileCommand;
 import com.krishnamurti.horizon.file.api.command.PrepareFileCommand;
 import com.krishnamurti.horizon.file.api.model.FileDescriptor;
 import com.krishnamurti.horizon.file.api.model.FileReference;
 import com.krishnamurti.horizon.file.api.model.FileScope;
 import com.krishnamurti.horizon.file.api.query.ReadFileQuery;
+import com.krishnamurti.horizon.file.application.port.ObjectKey;
 import com.krishnamurti.horizon.file.application.port.ObjectStorage;
 import com.krishnamurti.horizon.file.domain.TransferOutcome;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileTransferAttemptRepository;
@@ -55,6 +59,10 @@ class FileRealRestartIntegrationTest {
         UUID pendingFile;
         String selectedKey;
         String pendingKey;
+        UUID interruptedCleanupFile;
+        String interruptedCleanupKey;
+        UUID unavailableCleanupFile;
+        String unavailableCleanupKey;
         GenericContainer<?> seaweed = SeaweedFsTestConfiguration.container(volume);
 
         try (PostgreSQLContainer database =
@@ -127,11 +135,95 @@ class FileRealRestartIntegrationTest {
                             first.getBean(FileTransactions.class)
                                     .registerAttempt(new FileReference(pendingFile, pendingScope));
                     pendingKey = registration.key().value();
+
+                    FileScope cleanupScope =
+                            FilePrepareIntegrationTest.scope(98L, "real-cleanup-restart");
+                    var cleanupPrepared =
+                            transaction.execute(
+                                    status ->
+                                            files.prepare(
+                                                    new PrepareFileCommand(
+                                                            UUID.randomUUID(),
+                                                            cleanupScope,
+                                                            new FileDescriptor(
+                                                                    "cleanup.webp",
+                                                                    "image/webp",
+                                                                    WEBP.length,
+                                                                    sha256(WEBP)))));
+                    interruptedCleanupFile = cleanupPrepared.fileId();
+                    FileReference cleanupReference =
+                            new FileReference(interruptedCleanupFile, cleanupScope);
+                    files.transfer(
+                            new com.krishnamurti.horizon.file.api.command.TransferFileCommand(
+                                    cleanupReference,
+                                    WEBP.length,
+                                    new java.io.ByteArrayInputStream(WEBP)));
+                    transaction.executeWithoutResult(
+                            status ->
+                                    files.requestCleanup(new CleanupFileCommand(cleanupReference)));
+                    var cleanupAttempt =
+                            first.getBean(FileTransferAttemptRepository.class)
+                                    .findAllByFileIdOrderByCreatedAtAsc(interruptedCleanupFile)
+                                    .getFirst();
+                    interruptedCleanupKey = cleanupAttempt.getObjectKey();
+                    var cleanupClaim =
+                            first.getBean(FileRecoveryTransactions.class)
+                                    .claimDelete(interruptedCleanupFile, cleanupAttempt.getId())
+                                    .orElseThrow();
+                    assertThat(cleanupClaim.settledAtClaim()).isTrue();
+                    assertThat(first.getBean(ObjectStorage.class).delete(cleanupClaim.key()))
+                            .isEqualTo(
+                                    com.krishnamurti.horizon.file.application.port.DeleteResult
+                                            .ACKNOWLEDGED);
+
+                    FileScope unavailableScope =
+                            FilePrepareIntegrationTest.scope(98L, "real-unavailable-restart");
+                    var unavailablePrepared =
+                            transaction.execute(
+                                    status ->
+                                            files.prepare(
+                                                    new PrepareFileCommand(
+                                                            UUID.randomUUID(),
+                                                            unavailableScope,
+                                                            new FileDescriptor(
+                                                                    "unavailable.webp",
+                                                                    "image/webp",
+                                                                    WEBP.length,
+                                                                    sha256(WEBP)))));
+                    unavailableCleanupFile = unavailablePrepared.fileId();
+                    FileReference unavailableReference =
+                            new FileReference(unavailableCleanupFile, unavailableScope);
+                    files.transfer(
+                            new com.krishnamurti.horizon.file.api.command.TransferFileCommand(
+                                    unavailableReference,
+                                    WEBP.length,
+                                    new java.io.ByteArrayInputStream(WEBP)));
+                    transaction.executeWithoutResult(
+                            status ->
+                                    files.requestCleanup(
+                                            new CleanupFileCommand(unavailableReference)));
+                    assertThatThrownBy(
+                                    () -> files.openRead(new ReadFileQuery(unavailableReference)))
+                            .isInstanceOf(FileOperationException.class);
+                    var unavailableAttempt =
+                            first.getBean(FileTransferAttemptRepository.class)
+                                    .findAllByFileIdOrderByCreatedAtAsc(unavailableCleanupFile)
+                                    .getFirst();
+                    unavailableCleanupKey = unavailableAttempt.getObjectKey();
                     assertThat(first.getBean(RealProviderFixture.class).listObjects().contents())
                             .anySatisfy(object -> assertThat(object.key()).isEqualTo(selectedKey));
+                    seaweed.stop();
+                    first.getBean(FileRecoveryWorker.class).runCycle();
+                    var failedDelete =
+                            first.getBean(FileTransferAttemptRepository.class)
+                                    .findAllByFileIdOrderByCreatedAtAsc(unavailableCleanupFile)
+                                    .getFirst();
+                    assertThat(failedDelete.getConsecutiveCleanupFailures()).isPositive();
+                    assertThat(failedDelete.getObjectKey()).isEqualTo(unavailableCleanupKey);
+                    assertThat(failedDelete.getCleanupConfirmedAt()).isNull();
                 }
 
-                seaweed.stop();
+                if (seaweed.isRunning()) seaweed.stop();
                 seaweed.start();
                 try (ConfigurableApplicationContext restarted =
                         start(database, staging, endpoint(seaweed))) {
@@ -169,6 +261,58 @@ class FileRealRestartIntegrationTest {
                                                             .port.ObjectKey(selectedKey))
                                             .found())
                             .isTrue();
+
+                    JdbcTemplate restartedJdbc = restarted.getBean(JdbcTemplate.class);
+                    restartedJdbc.update(
+                            "update file_transfer_attempt set cleanup_lease_until=now()-interval"
+                                    + " '1 second' where file_id=?",
+                            interruptedCleanupFile);
+                    restartedJdbc.update(
+                            "update file_transfer_attempt set next_cleanup_at=now()-interval"
+                                    + " '1 second' where file_id=?",
+                            unavailableCleanupFile);
+                    restarted.getBean(FileRecoveryWorker.class).runCycle();
+                    var restartedMetrics =
+                            restarted.getBean(io.micrometer.core.instrument.MeterRegistry.class);
+                    assertThat(
+                                    restartedMetrics
+                                            .get("horizon.file.recovery.unresolved")
+                                            .gauge()
+                                            .value())
+                            .isEqualTo(1);
+                    assertThat(
+                                    restartedMetrics
+                                            .get(
+                                                    "horizon.file.recovery.oldest.unresolved.age.seconds")
+                                            .gauge()
+                                            .value())
+                            .isPositive();
+                    var recoveredAttempt =
+                            restarted
+                                    .getBean(FileTransferAttemptRepository.class)
+                                    .findAllByFileIdOrderByCreatedAtAsc(interruptedCleanupFile)
+                                    .getFirst();
+                    assertThat(recoveredAttempt.getCleanupConfirmedAt()).isNotNull();
+                    assertThat(recoveredAttempt.getObjectKey()).isNull();
+                    assertThat(
+                                    restarted
+                                            .getBean(ObjectStorage.class)
+                                            .head(new ObjectKey(interruptedCleanupKey))
+                                            .found())
+                            .isFalse();
+                    var recoveredUnavailable =
+                            restarted
+                                    .getBean(FileTransferAttemptRepository.class)
+                                    .findAllByFileIdOrderByCreatedAtAsc(unavailableCleanupFile)
+                                    .getFirst();
+                    assertThat(recoveredUnavailable.getCleanupConfirmedAt()).isNotNull();
+                    assertThat(recoveredUnavailable.getObjectKey()).isNull();
+                    assertThat(
+                                    restarted
+                                            .getBean(ObjectStorage.class)
+                                            .head(new ObjectKey(unavailableCleanupKey))
+                                            .found())
+                            .isFalse();
 
                     seaweed.stop();
                     assertThat(health.healthForPath("readiness").getStatus())

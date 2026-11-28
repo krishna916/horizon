@@ -27,9 +27,11 @@ import com.krishnamurti.horizon.file.application.port.WriteResult;
 import com.krishnamurti.horizon.file.domain.TransferOutcome;
 import com.krishnamurti.horizon.file.infrastructure.FileMetrics;
 import com.krishnamurti.horizon.file.infrastructure.FileProperties;
+import com.krishnamurti.horizon.file.infrastructure.FileRecoveryMetrics;
 import com.krishnamurti.horizon.file.infrastructure.FileStorageHealthIndicator;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileMetadataPersistence;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileMetadataRepository;
+import com.krishnamurti.horizon.file.infrastructure.persistence.FileRecoveryPersistence;
 import com.krishnamurti.horizon.file.infrastructure.persistence.FileTransferAttemptRepository;
 import com.krishnamurti.horizon.file.infrastructure.staging.FileStagingService;
 import com.krishnamurti.horizon.file.infrastructure.storage.S3FaultHarness;
@@ -54,6 +56,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.health.contributor.Status;
@@ -78,7 +81,10 @@ class FileRealProviderIntegrationTest {
     @Autowired private FileMetadataPersistence metadataPersistence;
     @Autowired private FileMetadataRepository metadataRepository;
     @Autowired private FileTransactions transactions;
+    @Autowired private FileRecoveryTransactions recoveryTransactions;
+    @Autowired private FileRecoveryPersistence recoveryPersistence;
     @Autowired private RecoveryClock recoveryClock;
+    @Autowired private FileRecoveryMetrics recoveryMetrics;
     @Autowired private FileStagingService staging;
     @Autowired private FileValidationService validation;
     @Autowired private FileMetrics metrics;
@@ -246,6 +252,25 @@ class FileRealProviderIntegrationTest {
                         object.content().transferTo(output);
                         assertThat(output.toByteArray()).containsExactly(WEBP);
                     }
+                    owner.inTransaction(
+                            () -> {
+                                files.requestCleanup(
+                                        new CleanupFileCommand(
+                                                new FileReference(prepared.fileId(), scope)));
+                                return null;
+                            });
+                    recoveryWorker(provider.storage()).runCycle();
+                    var afterDelete =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(prepared.fileId())
+                                    .getFirst();
+                    assertThat(
+                                    provider.storage()
+                                            .head(new ObjectKey(attempt.getObjectKey()))
+                                            .found())
+                            .isFalse();
+                    assertThat(afterDelete.getOutcome()).isEqualTo(TransferOutcome.UNKNOWN);
+                    assertThat(afterDelete.getObjectKey()).isEqualTo(attempt.getObjectKey());
+                    assertThat(afterDelete.getCleanupConfirmedAt()).isNull();
                 }
             }
         } finally {
@@ -284,7 +309,7 @@ class FileRealProviderIntegrationTest {
         }
     }
 
-    @Test
+    @RepeatedTest(3)
     void lateProviderPutAfterCleanupIsDiscoverableAndRetryUsesDistinctKeys() throws Exception {
         Path data = Files.createTempDirectory("horizon-real-late-put-");
         Path volume = Files.createDirectories(data.resolve("storage"));
@@ -332,12 +357,19 @@ class FileRealProviderIntegrationTest {
                                             Boolean.class,
                                             latePrepared.fileId()))
                             .isTrue();
-                    provider.storage().delete(new ObjectKey(pendingAttempt.getObjectKey()));
+                    recoveryWorker(provider.storage()).runCycle();
                     assertThat(
                                     provider.storage()
                                             .head(new ObjectKey(pendingAttempt.getObjectKey()))
                                             .found())
                             .isFalse();
+                    var unknownAttempt =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(latePrepared.fileId())
+                                    .getFirst();
+                    assertThat(unknownAttempt.getOutcome()).isEqualTo(TransferOutcome.UNKNOWN);
+                    assertThat(unknownAttempt.getCleanupConfirmedAt()).isNull();
+                    assertThat(unknownAttempt.getObjectKey())
+                            .isEqualTo(pendingAttempt.getObjectKey());
 
                     gate.releasePut();
                     gate.awaitCompletion(java.time.Duration.ofSeconds(8));
@@ -365,6 +397,17 @@ class FileRealProviderIntegrationTest {
                         object.content().transferTo(output);
                         assertThat(output.toByteArray()).containsExactly(WEBP);
                     }
+                    recoveryWorker(provider.storage()).runCycle();
+                    var recovered =
+                            attempts.findAllByFileIdOrderByCreatedAtAsc(latePrepared.fileId())
+                                    .getFirst();
+                    assertThat(recovered.getCleanupConfirmedAt()).isNotNull();
+                    assertThat(recovered.getObjectKey()).isNull();
+                    assertThat(
+                                    provider.storage()
+                                            .head(new ObjectKey(settledAttempt.getObjectKey()))
+                                            .found())
+                            .isFalse();
                 } finally {
                     executor.shutdownNow();
                 }
@@ -639,6 +682,16 @@ class FileRealProviderIntegrationTest {
 
     private static RealProviderFixture storage(URI endpoint) {
         return RealProviderFixture.connect(endpoint, BUCKET, ACCESS_KEY, SECRET_KEY);
+    }
+
+    private FileRecoveryWorker recoveryWorker(ObjectStorage storage) {
+        return new FileRecoveryWorker(
+                recoveryPersistence,
+                recoveryTransactions,
+                storage,
+                recoveryClock,
+                fileProperties,
+                recoveryMetrics);
     }
 
     private static URI endpoint(GenericContainer<?> seaweed) {

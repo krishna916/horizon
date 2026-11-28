@@ -196,6 +196,7 @@ class FileRecoveryEligibilityIntegrationTest {
             this.delegate = delegate;
         }
 
+        @Override
         public Instant now() {
             Instant result = fixed;
             CountDownLatch signal = observed;
