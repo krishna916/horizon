@@ -655,8 +655,7 @@ class FileRealProviderIntegrationTest {
 
                 FileScope scope = scope(99L, "held-lost-ack");
                 var prepared = prepare(scope, "held-lost-ack.webp");
-                var executor = Executors.newSingleThreadExecutor();
-                try {
+                try (var executor = Executors.newSingleThreadExecutor()) {
                     var transfer =
                             executor.submit(
                                     () ->
@@ -685,7 +684,6 @@ class FileRealProviderIntegrationTest {
                     }
                 } finally {
                     gate.releasePut();
-                    executor.shutdownNow();
                 }
             }
         } finally {
@@ -849,8 +847,7 @@ class FileRealProviderIntegrationTest {
                 var prepared =
                         owner.prepare(new PrepareFileCommand(UUID.randomUUID(), scope, descriptor));
                 var reference = new FileReference(prepared.fileId(), scope);
-                var executor = Executors.newSingleThreadExecutor();
-                try {
+                try (var executor = Executors.newSingleThreadExecutor()) {
                     var transfer =
                             executor.submit(
                                     () ->
@@ -899,7 +896,6 @@ class FileRealProviderIntegrationTest {
                             .isInstanceOf(FileOperationException.class);
                 } finally {
                     gate.releasePut();
-                    executor.shutdownNow();
                 }
             }
         } finally {
@@ -944,8 +940,7 @@ class FileRealProviderIntegrationTest {
                                                 png.length,
                                                 sha256(png))));
                 FileReference reference = new FileReference(prepared.fileId(), scope);
-                var executor = Executors.newSingleThreadExecutor();
-                try {
+                try (var executor = Executors.newSingleThreadExecutor()) {
                     var transfer =
                             executor.submit(
                                     () ->
@@ -1009,7 +1004,6 @@ class FileRealProviderIntegrationTest {
                     }
                 } finally {
                     gate.releasePut();
-                    executor.shutdownNow();
                 }
             }
         } finally {
