@@ -1,12 +1,12 @@
 # Issue #77 File recovery validation
 
 This report records implementation and local verification for the approved
-Issue #77 recovery plan. The implementation is based on `master` baseline
-`4b94f2cd8930da4d20fdfb7d50eb3492580fe8fe` and the approved recovery commits
-through `b6ff9c0f07a851510f20981f8a2e9a4ddaab2044` on
-`feature/77-file-recovery`. The final implementation commit is
-`2fe3a9403f2c610f4c7c8ba765b4cafdcab42c09`; this report is committed
-immediately after it.
+Issue #77 recovery plan and its PR #97 review remediation. The implementation
+is based on `master` baseline `d2c11bf64b7af1420d840e71b4b90c267cc85654` and
+the recovery commits through `2fe3a9403f2c610f4c7c8ba765b4cafdcab42c09` on
+`feature/77-file-recovery`. PR #97 is open. Its remediation-plan commit is
+`1d0d584321806c5cd863bc9ff63c165ef38de618`; local verification and review
+remediation results will be appended against the final remediation commit.
 
 ## Scope and behavior
 
@@ -46,6 +46,25 @@ The failed first backend full-test run reported one error because the new
 unversioned-bucket assertion queried a bucket before creating it. The test now
 creates the bucket first; the focused S3 suite passed 8/8 and both subsequent
 full backend runs passed 532/532.
+
+### PR #97 remediation baseline (2026-11-28, head `1d0d584`)
+
+The working checkout matched `origin/feature/77-file-recovery` at
+`1d0d584321806c5cd863bc9ff63c165ef38de618`, with `origin/master` at the stated
+base. The baseline ran before remediation edits:
+
+| Command | Result |
+| --- | --- |
+| `./mvnw -Duser.timezone=UTC test -Dtest=FileRealProviderIntegrationTest,S3ObjectStorageIntegrationTest` | Passed: 14 tests, 0 failures, 0 errors, 0 skipped. |
+| `./mvnw -Duser.timezone=UTC test` | Passed: 532 tests, 0 failures, 0 errors, 0 skipped. |
+| `./mvnw -Duser.timezone=UTC verify` | Passed: 532 tests, SpotBugs 0 findings, JaCoCo XML validation passed. |
+
+Toolchain and isolation observed: Java 25.0.4, Node 24.21.0, npm 11.19.0,
+Testcontainers with PostgreSQL 17.11, and per-test temporary SeaweedFS 4.54
+storage pinned to digest
+`sha256:e7d4b80af9bd49b2630a60ac6fbb7ffb620ac6a2c501f689c22a71b9f89f0203`.
+These runs establish the baseline only; they do not verify remediation changes
+or the actual deployment bucket.
 
 ## Recovery and provider proof
 
@@ -88,11 +107,14 @@ must not be approved for merge or deployment until an operator supplies
 read-only configuration evidence and completes an authenticated disposable
 object write/read/delete check against the actual bucket.
 
-No PR or issue comment has been created while this release gate is unknown.
-The branch's Actions workflow runs backend, frontend, Playwright and SonarCloud
-for pull requests targeting `master`; a feature-branch push by itself cannot
-provide those hosted results. Hosted checks and the SonarCloud quality gate
-therefore remain pending until the deployment evidence allows a PR.
+PR #97 is the existing review vehicle. A deployment evidence request was
+posted there as comment `7239547131`; it asks the operator for sanitized
+configuration evidence and the results of an authorized disposable-object
+check. No actual deployment bucket has been accessed or mutated by this
+verification. R5 remains OPEN pending that operator evidence. The branch's
+Actions workflow runs backend, frontend, Playwright and SonarCloud for pull
+requests targeting `master`; hosted checks must be checked against the final
+remediation head and are not established by this historical report.
 
 UNKNOWN writes can remain unresolved indefinitely if a provider keeps
 accepting late writes or cannot provide a conclusive outcome. Their key and
